@@ -15,6 +15,7 @@ import { apiFetch, errorText } from "@/lib/api-fetch"
 import { formatAmount } from "@/lib/format/money"
 import { channelLabel, type Money, type SpendingReport } from "@/lib/reports/spending-assemble"
 import { SpendingPdfButton } from "./spending-pdf-button"
+import { useCountUp } from "@/hooks/use-count-up"
 
 type Kind = "today" | "week" | "month" | "custom"
 type Response = SpendingReport & {
@@ -82,9 +83,21 @@ function readUrl(): { kind: Kind; from: string; to: string } {
   return { kind: k && KINDS.includes(k) ? k : "month", from: DAY_RE.test(f) ? f : "", to: DAY_RE.test(t) ? t : "" }
 }
 
-function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
+/** An amount that counts up the first time the report shows it (never for
+ *  somebody who asked for less motion, never again on a refresh). */
+function AnimatedAmount({ amount, currency }: { amount: number; currency: string }) {
+  const shown = useCountUp(amount)
+  return <>{formatAmount(shown, currency)}</>
+}
+
+function Kpi({ label, value, sub, index = 0 }: { label: string; value: React.ReactNode; sub?: string; index?: number }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-3.5">
+    // Each card eases in a moment after the one before it: opacity and
+    // position only, 400 ms in all. The app's CSS cancels it for reduced motion.
+    <div
+      className="animate-in fade-in slide-in-from-bottom-2 fill-mode-backwards duration-300 min-w-0 rounded-2xl border border-slate-200 bg-white p-3.5"
+      style={{ animationDelay: `${index * 30}ms` }}
+    >
       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-1 text-[18px] font-bold leading-tight tabular-nums text-slate-900 [overflow-wrap:anywhere] sm:text-[22px]">{value}</p>
       {sub && <p className="mt-0.5 text-[11.5px] text-slate-500">{sub}</p>}
@@ -288,33 +301,39 @@ export function SpendingReportView() {
         <div className={loading ? "opacity-60 transition-opacity" : "transition-opacity"}>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
             <Kpi
+              index={0}
               label="Total spend"
-              value={formatAmount(data.totals.combined, business)}
+              value={<AnimatedAmount amount={data.totals.combined} currency={business} />}
               sub={data.totals.excluded.length ? "Some amounts left out, see below" : "WhatsApp, AI and Meta Ads"}
             />
             <Kpi
+              index={1}
               label="WhatsApp messages"
-              value={moneyText(data.whatsapp.total)}
+              value={Object.keys(data.whatsapp.total).length === 1 ? <AnimatedAmount amount={Object.values(data.whatsapp.total)[0]} currency={Object.keys(data.whatsapp.total)[0]} /> : moneyText(data.whatsapp.total)}
               sub={`${count(data.whatsapp.delivered)} delivered · ${count(data.whatsapp.free)} free`}
             />
             <Kpi
+              index={2}
               label="AI (estimated)"
-              value={aiText}
+              value={ai ? <AnimatedAmount amount={ai.inBusinessCurrency ? ai.inBusinessCurrency.amount : ai.costUsd} currency={ai.inBusinessCurrency ? ai.inBusinessCurrency.currency : "USD"} /> : aiText}
               sub={`${count(data.ai.calls)} calls${data.ai.inBusinessCurrency?.currency === "INR" ? ` · at ₹${data.ai.inBusinessCurrency.rate}/$` : ""}`}
             />
             <Kpi
+              index={3}
               label="Meta Ads"
-              value={!data.ads.connected ? "Not connected" : data.ads.spend === null ? "Not available" : formatAmount(data.ads.spend, data.ads.currency ?? business)}
+              value={!data.ads.connected ? "Not connected" : data.ads.spend === null ? "Not available" : <AnimatedAmount amount={data.ads.spend} currency={data.ads.currency ?? business} />}
               sub={data.ads.error ?? (data.ads.connected ? `${count(data.ads.clicks)} clicks` : "Connect it in Settings → Ads")}
             />
             <Kpi
+              index={4}
               label="Cost per lead"
-              value={data.outcomes.costPerLead === null ? "—" : formatAmount(data.outcomes.costPerLead, business)}
+              value={data.outcomes.costPerLead === null ? "—" : <AnimatedAmount amount={data.outcomes.costPerLead} currency={business} />}
               sub={`${count(data.outcomes.leads)} leads in this period`}
             />
             <Kpi
+              index={5}
               label="Cost per won deal"
-              value={data.outcomes.costPerWon === null ? "—" : formatAmount(data.outcomes.costPerWon, business)}
+              value={data.outcomes.costPerWon === null ? "—" : <AnimatedAmount amount={data.outcomes.costPerWon} currency={business} />}
               sub={`${count(data.outcomes.wonDeals)} deals won`}
             />
           </div>
