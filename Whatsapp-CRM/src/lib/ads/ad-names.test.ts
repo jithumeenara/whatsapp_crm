@@ -23,7 +23,7 @@ const NOW = new Date('2026-11-09T10:00:00Z')
 const AD = '120213456789'
 const graphAd = {
   id: AD, name: 'Diwali offer', effective_status: 'ACTIVE',
-  adset: { id: '555', name: 'Kerala 18-35' }, campaign: { id: '777', name: 'November leads' },
+  adset: { id: '555', name: 'Kerala 18-35', targeting: { publisher_platforms: ['instagram'] } }, campaign: { id: '777', name: 'November leads' },
   creative: { thumbnail_url: 'https://scontent.example/t.jpg' },
 }
 
@@ -39,7 +39,7 @@ describe('namesFromGraph', () => {
   it('reads ad, ad set, campaign and thumbnail', () => {
     expect(namesFromGraph(graphAd)).toEqual({
       adName: 'Diwali offer', adsetId: '555', adsetName: 'Kerala 18-35', campaignId: '777', campaignName: 'November leads',
-      thumbnailUrl: 'https://scontent.example/t.jpg', effectiveStatus: 'ACTIVE',
+      thumbnailUrl: 'https://scontent.example/t.jpg', effectiveStatus: 'ACTIVE', platforms: 'instagram',
     })
     expect(namesFromGraph({ id: AD })).toBeNull()
   })
@@ -53,7 +53,8 @@ describe('ensureAdNames', () => {
     expect(u).toContain(`/${AD}?fields=`)
     expect(u).not.toContain('plain-enc')
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer plain-enc')
-    expect(h.upserts[0].create).toMatchObject({ account_id: 'acc', ad_id: AD, ad_name: 'Diwali offer', campaign_name: 'November leads', error: null })
+    expect(h.upserts[0].create).toMatchObject({ account_id: 'acc', ad_id: AD, ad_name: 'Diwali offer', campaign_name: 'November leads', platforms: 'instagram', error: null })
+    expect(decodeURIComponent(u)).toContain('targeting{publisher_platforms}')
   })
 
   it('a name read this week is not asked for again', async () => {

@@ -37,6 +37,8 @@ describe('referralFromWhatsApp', () => {
     })).toEqual({
       adId: '120213456789', postId: null, sourceType: 'ad', headline: 'Diwali offer', clickId: 'ARAk…',
       sourceUrl: 'https://fb.me/abc', mediaUrl: 'https://scontent.example/x.jpg',
+      // A short fb.me link does not say Facebook or Instagram.
+      platform: null,
     })
   })
 
@@ -111,5 +113,45 @@ describe('recordAdTouch', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(await recordAdTouch(base)).toBe(false)
     spy.mockRestore()
+  })
+})
+
+describe('where the ad was seen (Facebook or Instagram)', () => {
+  it('a full Instagram or Facebook link says so; a short fb.me link says nothing', async () => {
+    const { platformFromUrl } = await import('./attribution')
+    expect(platformFromUrl('https://www.instagram.com/p/Cx1/')).toBe('instagram')
+    expect(platformFromUrl('https://m.facebook.com/story.php?id=1')).toBe('facebook')
+    expect(platformFromUrl('https://fb.me/3abc')).toBeNull()
+    expect(platformFromUrl('https://instagram.com.evil.example/x')).toBeNull()
+    expect(platformFromUrl(null)).toBeNull()
+  })
+
+  it('an ad set on one platform family is certain; both, or automatic placements, is not', async () => {
+    const { platformFromPlacements } = await import('./attribution')
+    expect(platformFromPlacements('instagram')).toBe('instagram')
+    expect(platformFromPlacements('facebook,messenger')).toBe('facebook')
+    expect(platformFromPlacements('facebook,instagram')).toBeNull()
+    expect(platformFromPlacements(null)).toBeNull()
+  })
+
+  it('the click wins over the ad set; unknown stays unknown', async () => {
+    const { seenOn } = await import('./attribution')
+    expect(seenOn('instagram', 'facebook')).toBe('instagram')
+    expect(seenOn(null, 'instagram')).toBe('instagram')
+    expect(seenOn(null, 'facebook,instagram')).toBeNull()
+  })
+
+  it('a WhatsApp ad clicked on Instagram is stored as seen on Instagram', async () => {
+    const ref = referralFromWhatsApp({ source_type: 'ad', source_id: '120213456789', source_url: 'https://www.instagram.com/p/Cx1/' })
+    expect(ref?.platform).toBe('instagram')
+    await recordAdTouch({ accountId: 'acc', channel: 'whatsapp', externalId: 'wamid.1', referral: ref!, contactId: 'c1' })
+    expect(h.touches[0]).toMatchObject({ channel: 'whatsapp', platform: 'instagram' })
+  })
+
+  it('a message in Instagram Direct means they were on Instagram; Messenger alone does not decide', async () => {
+    const ref = referralFromMeta({ ad_id: '238510000000000', source: 'ADS' })!
+    await recordAdTouch({ accountId: 'acc', channel: 'instagram', externalId: 'ig.1', referral: ref })
+    await recordAdTouch({ accountId: 'acc', channel: 'messenger', externalId: 'fb.1', referral: ref })
+    expect(h.touches.map((t) => t.platform)).toEqual(['instagram', null])
   })
 })

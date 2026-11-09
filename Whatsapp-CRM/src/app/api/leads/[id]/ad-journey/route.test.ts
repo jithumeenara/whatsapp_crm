@@ -19,12 +19,12 @@ vi.mock('@/lib/db', () => ({
       findMany: async ({ where }: { where: Record<string, unknown> }) => {
         h.touchWhere = where
         return [
-          { channel: 'instagram', ad_id: '120000000000002', post_id: null, headline: 'Second ad', media_url: null, touched_at: new Date('2026-11-05T10:00:00Z') },
-          { channel: 'whatsapp', ad_id: '120000000000001', post_id: null, headline: 'Diwali 50% off', media_url: null, touched_at: new Date('2026-11-01T10:00:00Z') },
+          { channel: 'instagram', platform: 'instagram', ad_id: '120000000000002', post_id: null, headline: 'Second ad', media_url: null, touched_at: new Date('2026-11-05T10:00:00Z') },
+          { channel: 'whatsapp', platform: null, ad_id: '120000000000001', post_id: null, headline: 'Diwali 50% off', media_url: null, touched_at: new Date('2026-11-01T10:00:00Z') },
         ]
       },
     },
-    adCatalog: { findMany: async () => [{ ad_id: '120000000000001', ad_name: 'Diwali offer', adset_name: 'Kerala', campaign_name: 'November', thumbnail_url: null, effective_status: 'ACTIVE', error: null }] },
+    adCatalog: { findMany: async () => [{ ad_id: '120000000000001', ad_name: 'Diwali offer', adset_name: 'Kerala', campaign_name: 'November', thumbnail_url: null, effective_status: 'ACTIVE', platforms: 'facebook', error: null }] },
   },
 }))
 
@@ -43,6 +43,9 @@ describe('GET /api/leads/[id]/ad-journey', () => {
     const body = await res.json()
     expect(body.ad).toMatchObject({ adId: '120000000000001', adName: 'Diwali offer', campaignName: 'November', channel: 'whatsapp', headline: 'Diwali 50% off' })
     expect(body.touches).toHaveLength(2)
+    // A WhatsApp click with no certain link: the ad set shows only on Facebook, so it was seen there.
+    expect(body.ad.seenOn).toBe('facebook')
+    expect(body.touches[0].seenOn).toBe('instagram')
     expect(JSON.stringify(body)).not.toContain('click')
   })
 

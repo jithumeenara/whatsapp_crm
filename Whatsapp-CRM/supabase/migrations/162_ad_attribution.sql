@@ -14,13 +14,19 @@
 --
 -- Safe to run twice. Additive only.
 
+-- The columns are also added on their own, for a database that ran an
+-- earlier draft of this file.
+
 CREATE TABLE IF NOT EXISTS ad_touches (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id      uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   contact_id      uuid REFERENCES contacts(id) ON DELETE SET NULL,
   conversation_id uuid REFERENCES conversations(id) ON DELETE SET NULL,
-  -- whatsapp | messenger | instagram | lead_form
+  -- whatsapp | messenger | instagram | lead_form — where they wrote to us.
   channel         text NOT NULL,
+  -- facebook | instagram — where they saw the ad, when it can be told
+  -- for sure (an Instagram or facebook.com link, or the chat itself).
+  platform        text,
   -- Meta's id for what brought it in: the message id, or the leadgen id.
   external_id     text NOT NULL,
   ad_id           text,
@@ -49,11 +55,17 @@ CREATE TABLE IF NOT EXISTS ad_catalog (
   campaign_name    text,
   thumbnail_url    text,
   effective_status text,
+  -- Where the ad set may show the ad, e.g. 'facebook' or
+  -- 'facebook,instagram'. One platform means every click came from it.
+  platforms        text,
   -- Why the names are missing (no ad account connected, no permission…).
   error            text,
   fetched_at       timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ad_catalog_account_ad ON ad_catalog (account_id, ad_id);
+
+ALTER TABLE ad_touches ADD COLUMN IF NOT EXISTS platform  text;
+ALTER TABLE ad_catalog ADD COLUMN IF NOT EXISTS platforms text;
 
 -- Reports group leads by ad.
 CREATE INDEX IF NOT EXISTS leads_account_ad_created ON leads (account_id, ad_id, created_at) WHERE ad_id IS NOT NULL;

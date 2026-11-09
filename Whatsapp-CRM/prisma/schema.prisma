@@ -4251,6 +4251,8 @@ model AdTouch {
   contact_id      String?  @db.Uuid
   conversation_id String?  @db.Uuid
   channel         String
+  /// facebook | instagram — where the ad was seen, only when certain.
+  platform        String?
   external_id     String
   ad_id           String?
   post_id         String?
@@ -4280,6 +4282,8 @@ model AdCatalog {
   campaign_name    String?
   thumbnail_url    String?
   effective_status String?
+  /// Where the ad set may show it: 'facebook', 'instagram' or both, comma-separated.
+  platforms        String?
   error            String?
   fetched_at       DateTime @default(now()) @db.Timestamptz(6)
 

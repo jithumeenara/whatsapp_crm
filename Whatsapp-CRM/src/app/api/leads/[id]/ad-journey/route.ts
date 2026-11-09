@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { assertPageAccess, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 import { businessTimezone } from '@/lib/ai/human-date'
+import { seenOn } from '@/lib/ads/attribution'
 
 const MAX_TOUCHES = 20
 
@@ -31,14 +32,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           where: { account_id: ctx.accountId, contact_id: lead.contact_id },
           orderBy: { touched_at: 'desc' },
           take: MAX_TOUCHES,
-          select: { channel: true, ad_id: true, post_id: true, headline: true, media_url: true, touched_at: true },
+          select: { channel: true, platform: true, ad_id: true, post_id: true, headline: true, media_url: true, touched_at: true },
         })
       : []
     const adIds = [...new Set([lead.ad_id, ...touches.map((t) => t.ad_id)].filter((x): x is string => Boolean(x)))]
     const catalog = adIds.length
       ? await prisma.adCatalog.findMany({
           where: { account_id: ctx.accountId, ad_id: { in: adIds } },
-          select: { ad_id: true, ad_name: true, adset_name: true, campaign_name: true, thumbnail_url: true, effective_status: true, error: true },
+          select: { ad_id: true, ad_name: true, adset_name: true, campaign_name: true, thumbnail_url: true, effective_status: true, platforms: true, error: true },
         })
       : []
     const names = (adId: string | null) => {
@@ -57,10 +58,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
     return NextResponse.json({
       ad: lead.ad_id
-        ? { adId: lead.ad_id, ...names(lead.ad_id), headline: firstTouch?.headline ?? null, channel: firstTouch?.channel ?? null, namesMissing: catalog.find((c) => c.ad_id === lead.ad_id)?.error ?? null }
+        ? {
+            adId: lead.ad_id, ...names(lead.ad_id), headline: firstTouch?.headline ?? null, channel: firstTouch?.channel ?? null,
+            // Facebook / Instagram only when certain; null means "Facebook or Instagram".
+            seenOn: seenOn(firstTouch?.platform, catalog.find((c) => c.ad_id === lead.ad_id)?.platforms),
+            namesMissing: catalog.find((c) => c.ad_id === lead.ad_id)?.error ?? null,
+          }
         : null,
       touches: touches.map((t) => ({
         channel: t.channel,
+        seenOn: seenOn(t.platform, t.ad_id ? catalog.find((c) => c.ad_id === t.ad_id)?.platforms : null),
         adId: t.ad_id,
         postId: t.post_id,
         headline: t.headline,

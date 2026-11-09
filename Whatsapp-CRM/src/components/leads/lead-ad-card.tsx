@@ -11,13 +11,16 @@ import { Megaphone } from "lucide-react"
 import { apiFetch } from "@/lib/api-fetch"
 
 interface Names { adName: string | null; adsetName: string | null; campaignName: string | null; thumbnailUrl: string | null; status: string | null }
-interface Touch extends Names { channel: string; adId: string | null; postId: string | null; headline: string | null; at: string; day: string }
+interface Touch extends Names { channel: string; seenOn: "facebook" | "instagram" | null; adId: string | null; postId: string | null; headline: string | null; at: string; day: string }
 interface Journey {
-  ad: (Names & { adId: string; headline: string | null; channel: string | null; namesMissing: string | null }) | null
+  ad: (Names & { adId: string; headline: string | null; channel: string | null; seenOn: "facebook" | "instagram" | null; namesMissing: string | null }) | null
   touches: Touch[]
 }
 
-const CHANNEL: Record<string, string> = { whatsapp: "WhatsApp ad", messenger: "Messenger ad", instagram: "Instagram ad", lead_form: "Lead form" }
+/** Where they wrote to us. */
+const CHANNEL: Record<string, string> = { whatsapp: "WhatsApp", messenger: "Messenger", instagram: "Instagram Direct", lead_form: "Lead form" }
+/** Where they saw the ad; unknown is said plainly, never guessed. */
+const SEEN = (s: "facebook" | "instagram" | null) => (s === "facebook" ? "Facebook" : s === "instagram" ? "Instagram" : "Facebook or Instagram")
 
 function title(n: { adName: string | null; headline: string | null; adId?: string | null; postId?: string | null }) {
   return n.adName ?? n.headline ?? (n.adId ? `Ad ${n.adId}` : n.postId ? "Boosted post" : "Ad")
@@ -55,7 +58,13 @@ export function LeadAdCard({ leadId }: { leadId: string }) {
           <div className="min-w-0">
             <p className="text-[14px] font-semibold text-slate-900 [overflow-wrap:anywhere]">{title(first)}</p>
             {first.campaignName && <p className="text-[12.5px] text-slate-600 [overflow-wrap:anywhere]">Campaign: {first.campaignName}{first.adsetName ? ` · ${first.adsetName}` : ""}</p>}
-            <p className="mt-0.5 text-[12px] text-slate-500">{first.channel ? CHANNEL[first.channel] ?? first.channel : "Ad"}{first.status && first.status !== "ACTIVE" ? ` · ${first.status.toLowerCase().replace(/_/g, " ")}` : ""}</p>
+            <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[12.5px]">
+              <dt className="text-slate-500">Ad seen on</dt>
+              <dd className="font-medium text-slate-800">{SEEN(first.seenOn)}</dd>
+              <dt className="text-slate-500">Came in on</dt>
+              <dd className="font-medium text-slate-800">{first.channel ? CHANNEL[first.channel] ?? first.channel : "—"}</dd>
+            </dl>
+            {first.status && first.status !== "ACTIVE" && <p className="mt-0.5 text-[12px] text-slate-500">Ad is {first.status.toLowerCase().replace(/_/g, " ")}</p>}
             {first.namesMissing && !first.adName && <p className="mt-1 text-[12px] text-slate-500">{first.namesMissing}</p>}
           </div>
         </div>
@@ -67,7 +76,7 @@ export function LeadAdCard({ leadId }: { leadId: string }) {
             {later.slice(0, 5).map((t, i) => (
               <li key={`${t.at}-${i}`} className="flex items-baseline justify-between gap-3 text-[12.5px]">
                 <span className="min-w-0 text-slate-700 [overflow-wrap:anywhere]">{title(t)}{t.campaignName ? ` · ${t.campaignName}` : ""}</span>
-                <span className="shrink-0 text-slate-500">{CHANNEL[t.channel] ?? t.channel} · {t.day}</span>
+                <span className="shrink-0 text-slate-500">{SEEN(t.seenOn)} → {CHANNEL[t.channel] ?? t.channel} · {t.day}</span>
               </li>
             ))}
           </ul>

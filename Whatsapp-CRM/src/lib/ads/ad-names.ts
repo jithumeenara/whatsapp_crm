@@ -33,6 +33,8 @@ export interface AdNames {
   campaignName: string | null
   thumbnailUrl: string | null
   effectiveStatus: string | null
+  /** The ad set's placements, e.g. 'facebook,instagram'; null when automatic. */
+  platforms: string | null
 }
 
 const str = (v: unknown, max = 300): string | null => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
@@ -45,6 +47,10 @@ export function namesFromGraph(body: unknown): AdNames | null {
   const campaign = (b.campaign && typeof b.campaign === 'object' ? b.campaign : {}) as Record<string, unknown>
   const creative = (b.creative && typeof b.creative === 'object' ? b.creative : {}) as Record<string, unknown>
   const thumb = str(creative.thumbnail_url, 2000)
+  const targeting = (adset.targeting && typeof adset.targeting === 'object' ? adset.targeting : {}) as Record<string, unknown>
+  const places = Array.isArray(targeting.publisher_platforms)
+    ? targeting.publisher_platforms.filter((p): p is string => typeof p === 'string' && /^[a-z_]{2,30}$/.test(p))
+    : []
   const names: AdNames = {
     adName: str(b.name),
     adsetId: str(adset.id, 40),
@@ -53,12 +59,13 @@ export function namesFromGraph(body: unknown): AdNames | null {
     campaignName: str(campaign.name),
     thumbnailUrl: thumb && /^https:\/\//i.test(thumb) ? thumb : null,
     effectiveStatus: str(b.effective_status, 40),
+    platforms: places.length ? places.join(',') : null,
   }
   return names.adName || names.campaignName ? names : null
 }
 
 async function fetchAd(adId: string, token: string): Promise<AdNames | null> {
-  const fields = 'name,effective_status,adset{id,name},campaign{id,name},creative{thumbnail_url}'
+  const fields = 'name,effective_status,adset{id,name,targeting{publisher_platforms}},campaign{id,name},creative{thumbnail_url}'
   const res = await fetch(`${GRAPH}/${adId}?fields=${encodeURIComponent(fields)}`, {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(8000),
@@ -119,6 +126,7 @@ export async function ensureAdNames(accountId: string, adIds: string[], now = ne
         campaign_name: names?.campaignName ?? null,
         thumbnail_url: names?.thumbnailUrl ?? null,
         effective_status: names?.effectiveStatus ?? null,
+        platforms: names?.platforms ?? null,
         error,
         fetched_at: now,
       }

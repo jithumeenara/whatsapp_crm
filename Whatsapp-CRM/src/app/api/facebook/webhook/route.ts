@@ -467,7 +467,9 @@ async function processLeadgenChange(
       accountId,
       channel: "lead_form",
       externalId: leadgenId,
-      referral: { adId: /^\d{5,30}$/.test(value.ad_id) ? value.ad_id : null, postId: null, sourceType: "lead_form", headline: form?.name ?? null, clickId: null, sourceUrl: null, mediaUrl: null },
+      referral: { adId: /^\d{5,30}$/.test(value.ad_id) ? value.ad_id : null, postId: null, sourceType: "lead_form", headline: form?.name ?? null, clickId: null, sourceUrl: null, mediaUrl: null,
+        // From the ad set's placement above: certain only when it shows on one platform.
+        platform: platform === "facebook" || platform === "instagram" ? platform : null },
       contactId: contact.id,
     })
   }

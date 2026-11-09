@@ -34,6 +34,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 
 export type AdChannel = 'whatsapp' | 'messenger' | 'instagram' | 'lead_form'
+export type AdPlatform = 'facebook' | 'instagram'
 
 export interface AdReferral {
   adId: string | null
@@ -43,6 +44,8 @@ export interface AdReferral {
   clickId: string | null
   sourceUrl: string | null
   mediaUrl: string | null
+  /** Where the ad was seen, only when certain; otherwise null (never guessed). */
+  platform?: AdPlatform | null
 }
 
 /** Meta ids are digits; anything else is not trusted as an id. */
@@ -59,6 +62,42 @@ const url = (v: unknown): string | null => {
 }
 const obj = (v: unknown): Record<string, unknown> | null => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null)
 
+/**
+ * Where an ad was seen, from its link — only full Instagram / Facebook
+ * addresses. A short link (fb.me) is used for both, so it says nothing.
+ */
+export function platformFromUrl(u: string | null): AdPlatform | null {
+  if (!u) return null
+  try {
+    const host = new URL(u).hostname.toLowerCase()
+    if (host === 'instagram.com' || host.endsWith('.instagram.com') || host === 'ig.me') return 'instagram'
+    if (host === 'facebook.com' || host.endsWith('.facebook.com')) return 'facebook'
+  } catch {
+    // not a URL
+  }
+  return null
+}
+
+/**
+ * Where the ad was seen, from its ad set's placements (ad-names.ts): one
+ * family only means every click came from it. Messenger placements are
+ * Facebook's; Audience Network is neither. Null when it can show on both,
+ * or when placements are automatic (Advantage+) and Meta lists none.
+ */
+export function platformFromPlacements(platforms: string | null | undefined): AdPlatform | null {
+  if (!platforms) return null
+  const list = platforms.split(',').map((p) => p.trim().toLowerCase()).filter(Boolean)
+  const fb = list.some((p) => p === 'facebook' || p === 'messenger')
+  const ig = list.includes('instagram')
+  return fb && !ig ? 'facebook' : ig && !fb ? 'instagram' : null
+}
+
+/** The best certain answer: the click itself first, then the ad set. */
+export function seenOn(touchPlatform: string | null | undefined, placements: string | null | undefined): AdPlatform | null {
+  if (touchPlatform === 'facebook' || touchPlatform === 'instagram') return touchPlatform
+  return platformFromPlacements(placements)
+}
+
 /** WhatsApp Cloud API messages[].referral. Null when it is not from an ad or post. */
 export function referralFromWhatsApp(raw: unknown): AdReferral | null {
   const r = obj(raw)
@@ -74,6 +113,7 @@ export function referralFromWhatsApp(raw: unknown): AdReferral | null {
     sourceUrl: url(r.source_url),
     mediaUrl: url(r.image_url) ?? url(r.thumbnail_url) ?? url(r.video_url),
   }
+  ref.platform = platformFromUrl(ref.sourceUrl)
   return ref.adId || ref.postId || ref.clickId ? ref : null
 }
 
@@ -123,6 +163,8 @@ export async function recordAdTouch(t: TouchInput): Promise<boolean> {
           contact_id: t.contactId ?? null,
           conversation_id: t.conversationId ?? null,
           channel: t.channel,
+          // Writing in Instagram Direct means they were on Instagram.
+          platform: r.platform ?? (t.channel === 'instagram' ? 'instagram' : null),
           external_id: externalId,
           ad_id: r.adId,
           post_id: r.postId,
