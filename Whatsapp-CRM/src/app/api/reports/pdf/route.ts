@@ -10,17 +10,13 @@ import { resolvePeriod, type PeriodInput } from '@/lib/reports/period'
 import { buildSummary } from '@/lib/reports/summary'
 import { replySpeed } from '@/lib/reports/reply-speed'
 import { buildLeadsPdf } from '@/lib/reports/pdf/leads-pdf'
+import { tryAcquirePdfSlot } from '@/lib/reports/pdf/build-slots'
 import type { PdfBusiness } from '@/lib/reports/pdf/spending-pdf'
 import { isValidReportLanguage } from '@/lib/countries'
 
 /** A PDF builds the whole report and holds it in memory: a few a minute is plenty. */
 const PDF_LIMIT = { limit: 6, windowMs: 60_000 }
 const MAX_LOGO_BYTES = 2 * 1024 * 1024
-// TODO(build-slots): swap for the shared tryAcquirePdfSlot() from
-// src/lib/reports/pdf/build-slots.ts once it is on master, so the Leads and
-// Spending PDFs share one limit of builds at once.
-const MAX_CONCURRENT_BUILDS = 2
-let activeBuilds = 0
 
 /**
  * GET /api/reports/pdf?period=today|week|month|custom&from=&to=
@@ -75,10 +71,11 @@ export async function GET(req: NextRequest) {
     }
     const language = isValidReportLanguage(extra?.report_language) ? extra.report_language : 'en'
 
-    if (activeBuilds >= MAX_CONCURRENT_BUILDS) {
+    // One limit shared with the Spending PDF: a build uses a CPU for seconds.
+    const release = tryAcquirePdfSlot()
+    if (!release) {
       return NextResponse.json({ error: 'Other reports are being built right now. Try again in a few seconds.' }, { status: 503, headers: { 'Retry-After': '5' } })
     }
-    activeBuilds += 1
     let pdf: Buffer
     try {
       pdf = await buildLeadsPdf({
@@ -94,7 +91,7 @@ export async function GET(req: NextRequest) {
       console.error('[leads-pdf] build failed:', err instanceof Error ? err.message : err)
       return NextResponse.json({ error: 'Could not build the PDF right now. Try again in a minute.' }, { status: 500 })
     } finally {
-      activeBuilds -= 1
+      release()
     }
 
     // What was taken and for which days; never the figures.
