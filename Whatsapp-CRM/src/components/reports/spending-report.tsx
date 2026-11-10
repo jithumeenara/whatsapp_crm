@@ -15,6 +15,7 @@ import { apiFetch, errorText } from "@/lib/api-fetch"
 import { formatAmount, formatCost } from "@/lib/format/money"
 import { channelLabel, dayAmount, type Money, type SpendingReport } from "@/lib/reports/spending-assemble"
 import { SpendingPdfButton } from "./spending-pdf-button"
+import { SpendingExcelButton } from "./spending-excel-button"
 import { useCountUp } from "@/hooks/use-count-up"
 
 type Kind = "today" | "week" | "month" | "custom"
@@ -264,6 +265,7 @@ export function SpendingReportView() {
               </button>
             ))}
           </div>
+          <SpendingExcelButton period={kind} from={from} to={to} disabled={loading || (kind === "custom" && (!from || !to))} />
           <SpendingPdfButton period={kind} from={from} to={to} disabled={loading || (kind === "custom" && (!from || !to))} />
           <button type="button" onClick={() => void load()} aria-label="Refresh spending report" disabled={loading}
             className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-50">

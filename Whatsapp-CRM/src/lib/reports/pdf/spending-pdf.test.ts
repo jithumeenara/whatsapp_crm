@@ -116,7 +116,9 @@ describe('buildSpendingPdf', () => {
       const [first] = await pagesOf(pdf)
       expect(first, l.code).toContain('Lead Magnet CRM')
     }
-  })
+    // Eight documents in one test: with the whole suite running at once on a busy
+    // machine this took 5.7 s and tripped the default 5 s limit.
+  }, 40_000)
 
   it('falls back to English for a language it does not know', async () => {
     const [first] = await pagesOf(await build({ language: 'xx' }))
