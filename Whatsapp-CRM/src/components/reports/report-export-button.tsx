@@ -1,7 +1,7 @@
 "use client"
 
 /**
- * "Download Excel" for the owner report. Self-contained: give it the same
+ * "Download Excel" / "Download PDF" for the owner report (format). Self-contained: give it the same
  * period the screen shows. Supervisors and above only — the server refuses
  * anyone else, so render it only for them.
  *
@@ -11,7 +11,7 @@
  */
 
 import { useState } from "react"
-import { FileSpreadsheet, Loader2 } from "lucide-react"
+import { FileSpreadsheet, FileText, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 
@@ -20,16 +20,24 @@ interface Props {
   from?: string
   to?: string
   disabled?: boolean
+  /** Excel by default; "pdf" for the printable report in the business's language. */
+  format?: "excel" | "pdf"
 }
+
+const FORMAT = {
+  excel: { path: "/api/reports/export", label: "Download Excel", busy: "Preparing Excel file…", fallback: "report.xlsx", Icon: FileSpreadsheet },
+  pdf: { path: "/api/reports/pdf", label: "Download PDF", busy: "Preparing PDF…", fallback: "report.pdf", Icon: FileText },
+} as const
 
 /** The name the server gave, else a plain one. */
-function fileName(header: string | null): string {
+function fileName(header: string | null, fallback: string): string {
   const m = header?.match(/filename="([^"]+)"/)
-  return m?.[1] ?? "report.xlsx"
+  return m?.[1] ?? fallback
 }
 
-export function ReportExportButton({ period, from, to, disabled }: Props) {
+export function ReportExportButton({ period, from, to, disabled, format = "excel" }: Props) {
   const [busy, setBusy] = useState(false)
+  const f = FORMAT[format]
 
   async function download() {
     if (busy) return
@@ -40,12 +48,12 @@ export function ReportExportButton({ period, from, to, disabled }: Props) {
         qs.set("from", from ?? "")
         qs.set("to", to ?? "")
       }
-      const res = await apiFetch(`/api/reports/export?${qs.toString()}`, { cache: "no-store" })
+      const res = await apiFetch(`${f.path}?${qs.toString()}`, { cache: "no-store" })
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = fileName(res.headers.get("content-disposition"))
+      a.download = fileName(res.headers.get("content-disposition"), f.fallback)
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -65,13 +73,13 @@ export function ReportExportButton({ period, from, to, disabled }: Props) {
       onClick={() => void download()}
       disabled={disabled || busy}
       aria-busy={busy}
-      aria-label={busy ? "Preparing Excel file" : "Download Excel"}
+      aria-label={busy ? f.busy : f.label}
       className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[12.5px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
     >
       {busy
         ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />
-        : <FileSpreadsheet className="h-4 w-4" aria-hidden />}
-      <span>{busy ? "Preparing Excel file…" : "Download Excel"}</span>
+        : <f.Icon className="h-4 w-4" aria-hidden />}
+      <span>{busy ? f.busy : f.label}</span>
     </button>
   )
 }

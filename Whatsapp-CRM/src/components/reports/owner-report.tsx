@@ -326,6 +326,7 @@ export function OwnerReport() {
             ))}
           </div>
           {team && <ReportExportButton period={kind} from={from} to={to} disabled={loading || (kind === "custom" && (!from || !to))} />}
+          {team && <ReportExportButton format="pdf" period={kind} from={from} to={to} disabled={loading || (kind === "custom" && (!from || !to))} />}
           <button type="button" onClick={() => void load()} aria-label="Refresh report" disabled={loading}
             className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin motion-reduce:animate-none" : ""}`} />
