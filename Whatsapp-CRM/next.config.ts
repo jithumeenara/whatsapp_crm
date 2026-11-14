@@ -146,7 +146,7 @@ const nextConfig: NextConfig = {
   turbopack: { root: APP_ROOT },
 
   // pdfkit reads its own font and data files from disk, which breaks once it is bundled.
-  serverExternalPackages: ["exceljs", "pdfkit", "fontkit"],
+  serverExternalPackages: ["exceljs", "pdfkit", "fontkit", "pptxgenjs"],
 
   /**
    * The image optimizer, switched off because nothing uses it.

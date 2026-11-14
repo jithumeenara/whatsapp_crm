@@ -7,7 +7,9 @@ import { Prisma } from '@prisma/client'
 import {
   FUNNEL_TEMPLATES,
   parseFunnel,
+  parsePresentationSettings,
   parseReportSettings,
+  validatePresentationSettings,
   validateFunnel,
   validateReportSettings,
 } from '@/lib/reports/settings'
@@ -31,6 +33,7 @@ async function load(accountId: string) {
   return {
     funnel_stages: parseFunnel(row?.funnel_stages),
     report_settings: parseReportSettings(row?.report_settings),
+    presentation: parsePresentationSettings(row?.report_settings),
     // What "needs doing" falls back to when no own threshold is set.
     sla_warn_hours: row?.sla_warn_hours ?? 24,
   }
@@ -69,7 +72,10 @@ export async function PUT(req: NextRequest) {
       }
       const v = validateReportSettings(body.report_settings)
       if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 })
-      data.report_settings = v.settings as unknown as Prisma.InputJsonValue
+      // The slides' brand colour and category name live in the same JSON.
+      const p = validatePresentationSettings(body.report_settings)
+      if (!p.ok) return NextResponse.json({ error: p.error }, { status: 400 })
+      data.report_settings = { ...v.settings, ...p.settings } as unknown as Prisma.InputJsonValue
     }
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: 'Nothing to save.' }, { status: 400 })

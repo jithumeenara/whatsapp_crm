@@ -124,3 +124,31 @@ export function validateReportSettings(raw: unknown): { ok: true; settings: Repo
   if (settings.manualSpend.length !== rows.length) return { ok: false, error: 'Each spend row needs a month, a source, an amount of 0 or more and a currency.' }
   return { ok: true, settings }
 }
+
+// ── Presentation (slides) settings, kept in the same report_settings JSON ──
+
+export interface PresentationSettings {
+  /** The business's colour for its slides: six hex digits, no "#". Null: the app's own. */
+  brandColor: string | null
+  /** What the business calls a lead's category — "Speciality", "Course", "Product". Null: "Category". */
+  categoryLabel: string | null
+}
+
+const HEX6 = /^[0-9a-f]{6}$/i
+
+export function parsePresentationSettings(raw: unknown): PresentationSettings {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const hex = clean(o.brandColor, 7).replace(/^#/, '')
+  return {
+    brandColor: HEX6.test(hex) ? hex.toLowerCase() : null,
+    categoryLabel: clean(o.categoryLabel, MAX_LABEL) || null,
+  }
+}
+
+export function validatePresentationSettings(raw: unknown): { ok: true; settings: PresentationSettings } | { ok: false; error: string } {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const hex = typeof o.brandColor === 'string' ? o.brandColor.trim().replace(/^#/, '') : ''
+  if (hex && !HEX6.test(hex)) return { ok: false, error: 'The brand colour must be six hex digits, like #7a1f5c.' }
+  if (typeof o.categoryLabel === 'string' && o.categoryLabel.trim().length > MAX_LABEL) return { ok: false, error: `Keep the category name under ${MAX_LABEL} characters.` }
+  return { ok: true, settings: parsePresentationSettings(o) }
+}

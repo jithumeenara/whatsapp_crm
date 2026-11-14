@@ -11,7 +11,7 @@
  */
 
 import { useState } from "react"
-import { FileSpreadsheet, FileText, Loader2 } from "lucide-react"
+import { FileSpreadsheet, FileText, Loader2, Presentation } from "lucide-react"
 import { toast } from "sonner"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 
@@ -21,12 +21,13 @@ interface Props {
   to?: string
   disabled?: boolean
   /** Excel by default; "pdf" for the printable report in the business's language. */
-  format?: "excel" | "pdf"
+  format?: "excel" | "pdf" | "pptx"
 }
 
 const FORMAT = {
   excel: { path: "/api/reports/export", label: "Download Excel", busy: "Preparing Excel file…", fallback: "report.xlsx", Icon: FileSpreadsheet },
   pdf: { path: "/api/reports/pdf", label: "Download PDF", busy: "Preparing PDF…", fallback: "report.pdf", Icon: FileText },
+  pptx: { path: "/api/reports/presentation", label: "Download slides", busy: "Preparing slides…", fallback: "report.pptx", Icon: Presentation },
 } as const
 
 /** The name the server gave, else a plain one. */
