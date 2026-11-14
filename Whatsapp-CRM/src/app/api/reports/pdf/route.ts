@@ -9,7 +9,8 @@ import { imageProblem } from '@/lib/files/image-size'
 import { resolvePeriod, type PeriodInput } from '@/lib/reports/period'
 import { buildSummary } from '@/lib/reports/summary'
 import { replySpeed } from '@/lib/reports/reply-speed'
-import { buildLeadsPdf } from '@/lib/reports/pdf/leads-pdf'
+import { loadPresentation } from '@/lib/reports/presentation'
+import { buildReportPdf } from '@/lib/reports/pdf/report-pdf'
 import { tryAcquirePdfSlot } from '@/lib/reports/pdf/build-slots'
 import type { PdfBusiness } from '@/lib/reports/pdf/spending-pdf'
 import { isValidReportLanguage } from '@/lib/countries'
@@ -21,7 +22,9 @@ const MAX_LOGO_BYTES = 2 * 1024 * 1024
 /**
  * GET /api/reports/pdf?period=today|week|month|custom&from=&to=
  *
- * The Leads report as a PDF in the business's report language. Same door as
+ * The owner's report as a detailed landscape PDF with vector charts
+ * (src/lib/reports/pdf/report-pdf.ts), in the business's report language
+ * and colour. Same door as
  * the Excel download: supervisors and above with the Reports page, never an
  * agent. The business, logo and language come from the signed-in session's
  * own account, never from the request. Counts only for anything about
@@ -46,8 +49,10 @@ export async function GET(req: NextRequest) {
     const period = resolvePeriod(input, now, tz)
     if (!period) return NextResponse.json({ error: 'Choose a start and end date in order, up to one year apart.' }, { status: 400 })
 
-    const [summary, speed, account, company, extra] = await Promise.all([
-      buildSummary({ accountId: ctx.accountId, userId: null, period, now, tz }),
+    // The team summary, then everything the detailed report adds to it.
+    const summary = await buildSummary({ accountId: ctx.accountId, userId: null, period, now, tz })
+    const [data, speed, account, company, extra] = await Promise.all([
+      loadPresentation({ accountId: ctx.accountId, period, tz, now, summary }),
       replySpeed({ accountId: ctx.accountId, userId: null, from: period.from, to: period.to }).catch(() => null),
       prisma.account.findUnique({ where: { id: ctx.accountId }, select: { name: true } }),
       prisma.companyProfile.findUnique({ where: { account_id: ctx.accountId } }),
@@ -78,15 +83,7 @@ export async function GET(req: NextRequest) {
     }
     let pdf: Buffer
     try {
-      pdf = await buildLeadsPdf({
-        summary,
-        speed,
-        period: { firstDay: period.firstDay, lastDay: period.lastDay, timeZone: tz },
-        business,
-        language,
-        generatedAt: now,
-        timeZone: tz,
-      })
+      pdf = await buildReportPdf({ data, speed, business, language, generatedAt: now })
     } catch (err) {
       console.error('[leads-pdf] build failed:', err instanceof Error ? err.message : err)
       return NextResponse.json({ error: 'Could not build the PDF right now. Try again in a minute.' }, { status: 500 })

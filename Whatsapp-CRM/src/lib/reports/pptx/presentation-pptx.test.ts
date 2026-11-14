@@ -96,6 +96,20 @@ describe('buildDeck', () => {
     expect(slides.join('\n')).toContain('Set up your stages')
   })
 
+  it('hostile text in names and labels is escaped, never raw XML', async () => {
+    const evil = 'A & B <script>"x"</script> ]]>'
+    const d = data({
+      categoryLabel: evil,
+      categories: { rows: [{ label: evil, byDay: [1, 1, 1], total: 3, share: 100 }], dayTotals: [1, 1, 1], total: 3, previousTotal: 0 },
+      team: [{ userId: 'u1', name: evil, calls: 3, connected: 2, notConnected: 1, stages: [1, 1, 1], won: 1 }],
+    })
+    const { zip, slides } = await slidesText(await buildDeck({ data: d, business: { ...business, name: evil }, language: 'en', generatedAt: new Date() }))
+    const charts = await Promise.all(Object.keys(zip.files).filter((n) => /^ppt\/charts\/chart\d+\.xml$/.test(n)).map((n) => zip.file(n)!.async('string')))
+    const all = [...slides, ...charts].join('\n')
+    expect(all).not.toContain('<script>')
+    expect(all).toContain('&lt;script&gt;')
+  })
+
   it('builds in every report language', async () => {
     for (const l of REPORT_LANGUAGES) {
       const { slides } = await slidesText(await buildDeck({ data: data(), business, language: l.code, generatedAt: new Date() }))

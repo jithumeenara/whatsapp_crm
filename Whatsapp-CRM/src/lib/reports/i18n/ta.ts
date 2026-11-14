@@ -121,6 +121,7 @@ export const ta: Dict = {
   pWon: 'வென்றவை',
   pTeamTotal: 'குழு மொத்தம்',
   pConversion: 'மாற்று விகிதங்கள்',
+  pFindings: 'முக்கிய கண்டறிதல்கள்',
   pPrevWas: 'முந்தைய காலம்: {p}',
   pAttendRate: 'அழைப்பு எடுத்த விகிதம்',
   pTodoTitle: 'இப்போது செய்ய வேண்டியவை',

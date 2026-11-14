@@ -121,6 +121,7 @@ export const bn: Dict = {
   pWon: 'জেতা',
   pTeamTotal: 'দল মোট',
   pConversion: 'রূপান্তরের হার',
+  pFindings: 'মূল তথ্য',
   pPrevWas: 'আগের সময়: {p}',
   pAttendRate: 'কল ধরার হার',
   pTodoTitle: 'এখন যা করতে হবে',

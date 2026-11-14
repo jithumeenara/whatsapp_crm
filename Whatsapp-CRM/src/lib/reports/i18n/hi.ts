@@ -121,6 +121,7 @@ export const hi: Dict = {
   pWon: 'जीते',
   pTeamTotal: 'टीम कुल',
   pConversion: 'रूपांतरण दर',
+  pFindings: 'मुख्य निष्कर्ष',
   pPrevWas: 'पिछली अवधि: {p}',
   pAttendRate: 'कॉल उठाने की दर',
   pTodoTitle: 'अभी क्या करना है',

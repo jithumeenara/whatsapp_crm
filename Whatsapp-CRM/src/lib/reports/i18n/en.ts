@@ -123,6 +123,7 @@ export const en = {
   pWon: 'Won',
   pTeamTotal: 'Team total',
   pConversion: 'Conversion rates',
+  pFindings: 'Key findings',
   pPrevWas: 'last period: {p}',
   pAttendRate: 'Call attend rate',
   pTodoTitle: 'What needs doing now',

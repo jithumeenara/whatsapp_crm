@@ -168,7 +168,11 @@ function funnelFor(stages: FunnelStage[], m: Awaited<ReturnType<typeof funnelMar
   return countFunnel(stages, [...ids].map((id) => ({ id, won: wonIds.has(id) })), marks.map((x) => ({ leadId: x.lead_id, stageKey: x.stage_key })))
 }
 
-export async function loadPresentation(a: { accountId: string; period: ReportPeriod; tz: string; now: Date; db?: Db }): Promise<PresentationData> {
+export async function loadPresentation(a: {
+  accountId: string; period: ReportPeriod; tz: string; now: Date; db?: Db
+  /** The team summary, when the caller already built it (not rebuilt here). */
+  summary?: ReportSummary
+}): Promise<PresentationData> {
   const db = a.db ?? prisma
   const { period: p, accountId, tz, now } = a
   const days = daysBetween(p.firstDay, p.lastDay)
@@ -178,7 +182,7 @@ export async function loadPresentation(a: { accountId: string; period: ReportPer
 
   const [settings, summary, speed, insights, previous, raw] = await Promise.all([
     db.leadSettings.findUnique({ where: { account_id: accountId }, select: { funnel_stages: true, report_settings: true } }),
-    buildSummary({ accountId, userId: null, period: p, now, tz, db }),
+    a.summary ?? buildSummary({ accountId, userId: null, period: p, now, tz, db }),
     replySpeed({ accountId, userId: null, from: p.from, to: p.to, db }).catch(() => null),
     accountInsights(accountId, p.firstDay, p.lastDay),
     accountInsights(accountId, prevFirst, prevLast),

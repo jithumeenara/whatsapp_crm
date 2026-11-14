@@ -43,8 +43,12 @@ vi.mock('@/lib/reports/summary', () => ({
   buildSummary: (a: { accountId: string; userId: string | null }) => { h.summaries.push({ accountId: a.accountId, userId: a.userId }); return Promise.resolve({ scope: 'team' }) },
 }))
 vi.mock('@/lib/reports/reply-speed', () => ({ replySpeed: () => Promise.resolve(null) }))
-vi.mock('@/lib/reports/pdf/leads-pdf', () => ({
-  buildLeadsPdf: (input: Record<string, any>) => {
+// The route now builds the detailed report: its extra figures, then the landscape PDF.
+vi.mock('@/lib/reports/presentation', () => ({
+  loadPresentation: (a: { summary: unknown }) => Promise.resolve({ summary: a.summary }),
+}))
+vi.mock('@/lib/reports/pdf/report-pdf', () => ({
+  buildReportPdf: (input: Record<string, any>) => {
     h.built.push(input)
     if (h.buildFails) return Promise.reject(new Error('pdfkit exploded at /srv/app/node_modules/x.js:1'))
     return Promise.resolve(Buffer.from('%PDF-1.7 fake'))

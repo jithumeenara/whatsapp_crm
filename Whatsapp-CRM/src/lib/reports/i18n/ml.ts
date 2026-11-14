@@ -121,6 +121,7 @@ export const ml: Dict = {
   pWon: 'നേടിയത്',
   pTeamTotal: 'ടീം ആകെ',
   pConversion: 'കൺവേർഷൻ നിരക്ക്',
+  pFindings: 'പ്രധാന കണ്ടെത്തലുകൾ',
   pPrevWas: 'കഴിഞ്ഞ കാലയളവ്: {p}',
   pAttendRate: 'കോൾ എടുത്ത നിരക്ക്',
   pTodoTitle: 'ഇപ്പോൾ ചെയ്യേണ്ടത്',

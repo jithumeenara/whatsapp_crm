@@ -121,6 +121,7 @@ export const ar: Dict = {
   pWon: 'تم كسبها',
   pTeamTotal: 'إجمالي الفريق',
   pConversion: 'معدلات التحويل',
+  pFindings: 'أهم النتائج',
   pPrevWas: 'الفترة السابقة: {p}',
   pAttendRate: 'معدل الرد على المكالمات',
   pTodoTitle: 'ما يجب فعله الآن',

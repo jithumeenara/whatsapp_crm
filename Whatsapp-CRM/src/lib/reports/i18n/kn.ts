@@ -121,6 +121,7 @@ export const kn: Dict = {
   pWon: 'ಗೆದ್ದವು',
   pTeamTotal: 'ತಂಡದ ಒಟ್ಟು',
   pConversion: 'ಪರಿವರ್ತನೆ ದರಗಳು',
+  pFindings: 'ಪ್ರಮುಖ ಅಂಶಗಳು',
   pPrevWas: 'ಹಿಂದಿನ ಅವಧಿ: {p}',
   pAttendRate: 'ಕರೆ ಸ್ವೀಕರಿಸಿದ ದರ',
   pTodoTitle: 'ಈಗ ಮಾಡಬೇಕಾದವು',

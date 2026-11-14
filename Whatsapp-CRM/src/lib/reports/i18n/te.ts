@@ -121,6 +121,7 @@ export const te: Dict = {
   pWon: 'గెలిచినవి',
   pTeamTotal: 'బృందం మొత్తం',
   pConversion: 'మార్పిడి రేట్లు',
+  pFindings: 'ముఖ్య విషయాలు',
   pPrevWas: 'గత కాలం: {p}',
   pAttendRate: 'కాల్ ఎత్తిన రేటు',
   pTodoTitle: 'ఇప్పుడు చేయాల్సినవి',
