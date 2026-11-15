@@ -10,6 +10,7 @@ vi.mock('next/server', () => {
 describe('the scheduled-report sweep stays loadable from server.ts', () => {
   it('neither the sweep nor what it loads at send time imports next/server', async () => {
     await expect(import('./sweep')).resolves.toBeTruthy()
+    await expect(import('../alerts/sweep')).resolves.toBeTruthy()
     await expect(import('@/lib/admin-chat/brief-sweep')).resolves.toBeTruthy()
     await expect(import('@/lib/messaging/channels/email')).resolves.toBeTruthy()
     await expect(import('../doc/pdf')).resolves.toBeTruthy()

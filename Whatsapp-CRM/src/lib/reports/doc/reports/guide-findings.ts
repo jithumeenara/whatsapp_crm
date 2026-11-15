@@ -52,6 +52,7 @@ export function guideFindings(f: GuideFacts): Finding[] {
       const worst = [...f.sources].sort((a, b) => (a.now - a.before) - (b.now - b.before))[0]
       const share = worst && worst.now < worst.before ? Math.round(((worst.now - worst.before) / delta) * 100) : null
       out.push({
+        code: 'leads_fell',
         severity: ch <= -30 ? 'high' : 'medium',
         title: `Leads fell ${Math.abs(ch)}%`,
         evidence: `${f.leads.now} now against ${f.leads.before} before.${worst && share != null && share > 0 ? ` ${Math.min(share, 100)}% of the drop is from ${worst.label} (${worst.before} → ${worst.now}).` : ''}`,
@@ -60,13 +61,14 @@ export function guideFindings(f: GuideFacts): Finding[] {
         action: worst && share != null && share > 0 ? { label: 'Compare sources', href: `${f.links.leads}&tab=compare&cmp=source&items=${encodeURIComponent(worst.key)}` } : undefined,
       })
     } else if (ch >= 15) {
-      out.push({ severity: 'good', title: `Leads rose ${ch}%`, evidence: `${f.leads.now} now against ${f.leads.before} before.`, suggestion: 'Make sure the team keeps up: answer the extra leads quickly.', href: f.links.leads })
+      out.push({ code: 'leads_rose', severity: 'good', title: `Leads rose ${ch}%`, evidence: `${f.leads.now} now against ${f.leads.before} before.`, suggestion: 'Make sure the team keeps up: answer the extra leads quickly.', href: f.links.leads })
     }
   }
 
   // Won share falling.
   if (f.wonPct.now != null && f.wonPct.before != null && f.wonPct.base >= 20 && f.wonPct.prevBase >= 20 && f.wonPct.before - f.wonPct.now >= 5) {
     out.push({
+      code: 'won_fell',
       severity: f.wonPct.before - f.wonPct.now >= 10 ? 'high' : 'medium',
       title: `Won % fell to ${f.wonPct.now}%`,
       evidence: `It was ${f.wonPct.before}% before.`,
@@ -81,6 +83,7 @@ export function guideFindings(f: GuideFacts): Finding[] {
     .sort((a, b) => (b.previousRate! - b.rate!) - (a.previousRate! - a.rate!))[0]
   if (leak) {
     out.push({
+      code: `stage_drop:${leak.from}`,
       severity: leak.previousRate! - leak.rate! >= 20 ? 'high' : 'medium',
       title: `${leak.from} → ${leak.to} dropped to ${leak.rate}%`,
       evidence: `It was ${leak.previousRate}% before (${leak.base} leads reached ${leak.from}).`,
@@ -92,6 +95,7 @@ export function guideFindings(f: GuideFacts): Finding[] {
   // First reply speed, overall and the slowest time slot.
   if (f.reply.median != null && f.reply.answered >= MIN_BASE && f.reply.median > 60) {
     out.push({
+      code: 'slow_reply',
       severity: f.reply.median > 240 ? 'high' : 'medium',
       title: `New leads wait ${waitText(f.reply.median)} for a first reply`,
       evidence: `The middle wait across ${f.reply.answered} answered leads.`,
@@ -102,6 +106,7 @@ export function guideFindings(f: GuideFacts): Finding[] {
   const slow = [...f.reply.slots].filter((s) => s.leads >= MIN_SLOT).sort((a, b) => b.median - a.median)[0]
   if (slow && f.reply.median != null && slow.median > 60 && slow.median >= 2 * Math.max(f.reply.median, 1)) {
     out.push({
+      code: `slow_slot:${slow.label}`,
       severity: slow.median > 480 ? 'high' : 'medium',
       title: `Leads on ${slow.label} wait ${waitText(slow.median)} for a reply`,
       evidence: `${slow.leads} leads came in then; the usual wait is ${waitText(f.reply.median)}.`,
@@ -122,6 +127,7 @@ export function guideFindings(f: GuideFacts): Finding[] {
         .sort((x, y) => x.rate - y.rate)
         .slice(0, 3)) {
         out.push({
+          code: `agent_low:${a.userId}`,
           severity: 'medium',
           title: `${a.name}: ${a.rate}% of calls answered`,
           evidence: `The team average is ${avg}% (${a.calls} calls).`,
@@ -136,6 +142,7 @@ export function guideFindings(f: GuideFacts): Finding[] {
   // Follow-ups.
   if (f.followUps.lateBefore != null && f.followUps.lateNow >= 5 && f.followUps.lateNow >= f.followUps.lateBefore * 1.5) {
     out.push({
+      code: 'late_followups',
       severity: f.followUps.lateNow >= 15 ? 'high' : 'medium',
       title: `Late follow-ups rose from ${f.followUps.lateBefore} to ${f.followUps.lateNow}`,
       evidence: 'Follow-ups done late or still not done after their time.',
@@ -144,6 +151,7 @@ export function guideFindings(f: GuideFacts): Finding[] {
     })
   } else if (f.followUps.overdueOpen >= 10) {
     out.push({
+      code: 'overdue_followups',
       severity: 'high',
       title: `${f.followUps.overdueOpen} follow-ups are overdue`,
       evidence: 'Promised call-backs whose time has passed.',
@@ -154,6 +162,7 @@ export function guideFindings(f: GuideFacts): Finding[] {
 
   if (f.neverContacted > 0) {
     out.push({
+      code: 'never_contacted',
       severity: f.neverContacted >= 10 ? 'high' : f.neverContacted >= 3 ? 'medium' : 'low',
       title: `${f.neverContacted} lead${f.neverContacted === 1 ? ' was' : 's were'} never contacted`,
       evidence: `Older than ${f.leakHours} hours with no call, reply or stage change.`,
@@ -164,6 +173,7 @@ export function guideFindings(f: GuideFacts): Finding[] {
 
   if (f.idle >= 3) {
     out.push({
+      code: 'idle',
       severity: f.idle >= 20 ? 'medium' : 'low',
       title: `${f.idle} open leads not touched for 3 days or more`,
       evidence: 'No call, note, stage change or customer message since.',
@@ -175,7 +185,7 @@ export function guideFindings(f: GuideFacts): Finding[] {
   out.push(...adCards(f), ...broadcastCards(f))
 
   if (!out.length) {
-    out.push({ severity: 'good', title: 'Nothing has dropped', evidence: 'No fall in leads, stages, reply speed or follow-ups that the numbers can show.', suggestion: 'Keep the same rhythm.' })
+    out.push({ code: 'nothing', severity: 'good', title: 'Nothing has dropped', evidence: 'No fall in leads, stages, reply speed or follow-ups that the numbers can show.', suggestion: 'Keep the same rhythm.' })
   }
   return out.sort((a, b) => ORDER[a.severity] - ORDER[b.severity])
 }
@@ -194,6 +204,8 @@ function adCards(f: GuideFacts): Finding[] {
   const out: Finding[] = []
   for (const ad of f.ads.noLeads.filter((x) => x.spend > 0).slice(0, 3)) {
     out.push({
+      code: `ad_no_leads:${ad.name}`,
+      money: true,
       severity: 'high',
       title: `"${ad.name}" spent money and brought no leads`,
       evidence: `${moneyText(ad.spend, f.ads.currency)} spent in this period, no lead from it.`,
@@ -204,6 +216,8 @@ function adCards(f: GuideFacts): Finding[] {
   const { now, before } = f.ads.costPerLead
   if (now != null && before != null && before > 0 && now >= before * 1.33) {
     out.push({
+      code: 'cpl_rose',
+      money: true,
       severity: 'medium',
       title: `Cost per lead rose ${Math.round(((now - before) / before) * 100)}%`,
       evidence: `${moneyText(now, f.ads.currency)} per lead now against ${moneyText(before, f.ads.currency)} before.`,
@@ -220,6 +234,7 @@ function broadcastCards(f: GuideFacts): Finding[] {
   const w = f.broadcasts.worstFailed
   if (w && w.sent + w.failed >= 50 && w.failed / (w.sent + w.failed) >= 0.1) {
     out.push({
+      code: `broadcast_failed:${w.name}`,
       severity: 'high',
       title: `Broadcast "${w.name}": ${w.failed} messages failed`,
       evidence: `${Math.round((w.failed / (w.sent + w.failed)) * 100)}% of its sends did not go out.`,
@@ -231,6 +246,7 @@ function broadcastCards(f: GuideFacts): Finding[] {
   const o = f.broadcasts.optOuts
   if (o.before != null && o.now >= 10 && o.now >= o.before * 2) {
     out.push({
+      code: 'optouts',
       severity: 'high',
       title: `Opt-outs rose from ${o.before} to ${o.now}`,
       evidence: 'People asking not to get messages any more.',

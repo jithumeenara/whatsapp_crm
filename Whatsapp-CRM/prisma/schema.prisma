@@ -233,6 +233,7 @@ model Account {
   ai_handovers                  AiHandover[]
   scheduled_reports             ScheduledReport[]
   report_goals                  ReportGoal[]
+  report_alert_log              ReportAlertLog[]
   company_profile               CompanyProfile?
   sms_config                    SmsConfig?
   email_config                  EmailConfig?
@@ -3784,6 +3785,24 @@ model ReportGoal {
 
   @@index([account_id], map: "report_goals_account_idx")
   @@map("report_goals")
+}
+
+/// One red alert per issue per business per day (migration 166). Inserted
+/// before sending; a duplicate insert means it was already announced today.
+model ReportAlertLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  account_id String   @db.Uuid
+  /// The Performance-guide card's stable code, never customer data.
+  code       String
+  /// business-time day
+  sent_on    DateTime @db.Date
+  recipients Int      @default(0)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@unique([account_id, code, sent_on], map: "report_alert_log_once_a_day")
+  @@map("report_alert_log")
 }
 
 /// What the assistant decided about a conversation it could not answer,

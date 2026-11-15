@@ -12,6 +12,7 @@ import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { sweepStaffWaits } from "./src/lib/ai/staff-wait-sweep";
 import { sweepAdminChatBriefs } from "./src/lib/admin-chat/brief-sweep";
 import { sweepScheduledReports } from "./src/lib/reports/schedule/sweep";
+import { sweepReportAlerts } from "./src/lib/reports/alerts/sweep";
 import { sweepAutoTags } from "./src/lib/ai/auto-tag";
 import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
 import { sweepTwoWaySheets } from "./src/lib/google/sheet-two-way";
@@ -290,6 +291,14 @@ app.prepare().then(() => {
       console.error("[scheduled-reports] sweep failed:", err);
     });
   }, 5 * 60_000);
+
+  // Red alerts from the Performance guide to owners and supervisors on
+  // Admin Chat, once per issue per day (src/lib/reports/alerts/sweep.ts).
+  every(() => {
+    sweepReportAlerts().catch((err) => {
+      console.error("[report-alerts] sweep failed:", err);
+    });
+  }, 30 * 60_000);
 
   // AI tagging: tags added (or suggested) by meaning, a minute after the
   // customer's latest message (src/lib/ai/auto-tag.ts).

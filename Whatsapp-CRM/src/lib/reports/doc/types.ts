@@ -131,6 +131,10 @@ export interface Finding {
   byAi?: boolean
   /** Something to do about it right away (an app page). */
   action?: { label: string; href: string }
+  /** Stable per issue (numbers in the title change): "once per issue per day" alerts. */
+  code?: string
+  /** About ad money: only for those who may see money (owners, admins). */
+  money?: boolean
 }
 
 export interface FindingsBlock {
