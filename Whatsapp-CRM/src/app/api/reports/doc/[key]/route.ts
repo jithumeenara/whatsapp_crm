@@ -11,6 +11,7 @@ import { docToPdf } from '@/lib/reports/doc/pdf'
 import { docToXlsx } from '@/lib/reports/doc/xlsx'
 import { docToPptx } from '@/lib/reports/doc/pptx'
 import { findMember } from '@/lib/reports/doc/member'
+import { compareDoc } from '@/lib/reports/doc/compare'
 
 /** Viewing switches periods often; an export builds a file. */
 const VIEW_LIMIT = { limit: 40, windowMs: 60_000 }
@@ -77,10 +78,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ key:
     if (card instanceof NextResponse) return card
     const { userId, subject } = card
 
-    const doc = await def.build(
-      { accountId: ctx.accountId, userId, role: ctx.role, tz, now, q: resolved, subject },
-      { canSeeMoney: access.canSeeMoney },
-    )
+    const rc = { accountId: ctx.accountId, userId, role: ctx.role, tz, now, q: resolved, subject }
+    // The Compare tab: same scope as the report, only where the report has it.
+    const comparing = q.get('tab') === 'compare' && def.tabs.includes('compare')
+    const doc = comparing
+      ? await compareDoc(rc, { reportKey: def.key, title: def.title, dim: q.get('cmp'), items: q.get('items') })
+      : await def.build(rc, { canSeeMoney: access.canSeeMoney })
     if (format === 'json') return NextResponse.json({ doc })
 
     const { business, language } = await loadDocBusiness(ctx.accountId)
@@ -101,7 +104,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ key:
     await audit(auditCtx(req, ctx), {
       action: 'export.downloaded',
       target: { type: 'report', label: def.title },
-      meta: { format, report: key, kind: resolved.kind, compare: resolved.compare, period: `${resolved.period.firstDay} to ${resolved.period.lastDay}`, language },
+      meta: { format, report: key, view: comparing ? 'compare' : 'report', kind: resolved.kind, compare: resolved.compare, period: `${resolved.period.firstDay} to ${resolved.period.lastDay}`, language },
     })
 
     // Dates come from resolveQuery (YYYY-MM-DD) and the key from the registry: safe in a header.
@@ -109,7 +112,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ key:
     return new NextResponse(new Uint8Array(file), {
       headers: {
         'Content-Type': FILE[format].type,
-        'Content-Disposition': `attachment; filename="${def.key}-report-${days}.${FILE[format].ext}"`,
+        'Content-Disposition': `attachment; filename="${def.key}-${comparing ? 'compare' : 'report'}-${days}.${FILE[format].ext}"`,
         'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff',
       },

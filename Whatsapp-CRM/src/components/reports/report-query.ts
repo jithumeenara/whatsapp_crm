@@ -28,7 +28,15 @@ export interface ReportQuery {
    *  and tab changes and on exports; links to other reports drop it. The
    *  server decides whether it may be used. */
   member?: string
+  /** Compare tab: what is compared ("period", "agent", "source"…) and
+   *  which items, comma-separated. The server keeps only known ones. */
+  cmp?: string
+  items?: string
 }
+
+const CMP = /^[a-z]{1,16}$/
+/** Item keys are ids, source names or "current"/"previous": printable, short. */
+const ITEMS = /^[^\u0000-\u001f]{1,600}$/
 
 const MEMBER = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -58,7 +66,13 @@ export function readQuery(sp: ParamsLike | null): ReportQuery {
   const tab: TabKey = sp?.get("tab") === "compare" ? "compare" : "report"
   const rawMember = sp?.get("member") ?? ""
   const member = MEMBER.test(rawMember) ? rawMember : ""
-  return { period, from: period === "custom" ? from : "", to: period === "custom" ? to : "", compare, tab, member }
+  const rawCmp = sp?.get("cmp") ?? ""
+  const rawItems = sp?.get("items") ?? ""
+  return {
+    period, from: period === "custom" ? from : "", to: period === "custom" ? to : "", compare, tab, member,
+    cmp: CMP.test(rawCmp) ? rawCmp : "",
+    items: ITEMS.test(rawItems) ? rawItems : "",
+  }
 }
 
 /** The query string for links between reports (no leading "?"). Defaults
@@ -92,6 +106,8 @@ export function apiQuery(q: ReportQuery, format: "json" | "pdf" | "xlsx" | "pptx
   p.set("compare", q.compare)
   if (q.tab !== "report") p.set("tab", q.tab)
   if (q.member) p.set("member", q.member)
+  if (q.tab === "compare" && q.cmp) p.set("cmp", q.cmp)
+  if (q.tab === "compare" && q.items) p.set("items", q.items)
   p.set("format", format)
   return p.toString()
 }

@@ -21,6 +21,7 @@ import { agentReport } from './reports/agents'
 import { salesReport } from './reports/sales'
 import { spendingReport } from './reports/spending'
 import { adReport } from './reports/ads'
+import { guideReport } from './reports/guide'
 
 export type ReportGroup = 'overview' | 'topic' | 'analysis'
 export type ExportFormat = 'pdf' | 'xlsx' | 'pptx'
@@ -53,6 +54,7 @@ export const REPORTS: ReportDef[] = [
   { key: 'ads', title: 'Ad report', group: 'topic', path: '/reports/ads', minRole: 'admin', selfAllowed: false, money: true, tabs: ['report', 'compare'], build: (c) => adReport(c) },
   { key: 'sales', title: 'Sales & Pipeline', group: 'topic', path: '/reports/sales', minRole: 'viewer', selfAllowed: true, money: false, tabs: ['report', 'compare'], build: (c) => salesReport(c) },
   { key: 'spending', title: 'Spending & ROI', group: 'topic', path: '/reports/spending', minRole: 'supervisor', selfAllowed: false, money: false, tabs: ['report', 'compare'], build: (c) => spendingReport(c) },
+  { key: 'guide', title: 'Performance guide', group: 'analysis', path: '/reports/guide', minRole: 'viewer', selfAllowed: true, money: false, tabs: ['report'], build: (c) => guideReport(c) },
 ]
 
 export function findReport(key: string): ReportDef | undefined {

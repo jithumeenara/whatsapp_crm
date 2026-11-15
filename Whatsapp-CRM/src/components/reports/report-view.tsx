@@ -365,6 +365,7 @@ function FindingsView({ block, q }: { block: FindingsBlock; q: ReportQuery }) {
         {items.map((f, i) => {
           const sev = SEVERITY[f.severity] ?? SEVERITY.low
           const href = linkFor(f.href, q)
+          const actionHref = linkFor(f.action?.href, q)
           return (
             <li key={`${f.title}-${i}`} className={cn("min-w-0 rounded-2xl border border-l-4 border-slate-200 bg-white p-4 shadow-card", sev.edge)}>
               <div className="flex flex-wrap items-center gap-1.5">
@@ -382,10 +383,19 @@ function FindingsView({ block, q }: { block: FindingsBlock; q: ReportQuery }) {
               <h3 className="mt-2 break-words text-[14px] font-semibold text-slate-800">{f.title}</h3>
               {f.evidence && <p className="mt-1 break-words text-[12.5px] text-slate-600"><span className="font-semibold text-slate-700">Evidence:</span> {f.evidence}</p>}
               {f.suggestion && <p className="mt-1 break-words text-[12.5px] text-slate-600"><span className="font-semibold text-slate-700">Suggestion:</span> {f.suggestion}</p>}
-              {href && (
-                <Link href={href} className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold text-primary hover:underline">
-                  Open report<ArrowRight className="h-3.5 w-3.5" aria-hidden />
-                </Link>
+              {(href || actionHref) && (
+                <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+                  {actionHref && (
+                    <Link href={actionHref} className="inline-flex h-8 items-center gap-1 rounded-lg bg-primary/10 px-2.5 text-[12.5px] font-semibold text-primary transition-colors hover:bg-primary/15">
+                      {f.action?.label || "Open"}<ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                    </Link>
+                  )}
+                  {href && (
+                    <Link href={href} className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-primary hover:underline">
+                      Open report<ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                    </Link>
+                  )}
+                </div>
               )}
             </li>
           )

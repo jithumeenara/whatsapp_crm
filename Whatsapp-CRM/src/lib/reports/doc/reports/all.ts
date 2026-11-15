@@ -9,6 +9,7 @@ import { loadPresentation } from '../../presentation'
 import { replySpeed } from '../../reply-speed'
 import type { Block, Finding, ReportDoc } from '../types'
 import { previousAsMain } from '../period-query'
+import { loadGuide } from './guide'
 import { carryQuery, COUNT, dayLabel, kpi, mainCurrency, moneyFmt, moneyIn, num, pct, PERCENT, periodInfo, type ReportContext } from './common'
 
 export async function allReport(c: ReportContext, canSeeMoney: boolean): Promise<ReportDoc> {
@@ -57,18 +58,16 @@ export async function allReport(c: ReportContext, canSeeMoney: boolean): Promise
   ].filter((x): x is string => Boolean(x))
   blocks.push({ kind: 'text', id: 'todo', title: 'Needs doing now', style: todo.length ? 'warning' : 'note', lines: todo.length ? todo : ['Nothing is waiting.'] })
 
-  // Findings written by code from the numbers above (the Performance guide goes deeper).
-  const findings: Finding[] = []
-  if (prev && prev.cohort.total >= 10) {
-    const ch = Math.round(((s.cohort.total - prev.cohort.total) / prev.cohort.total) * 100)
-    if (ch <= -15) findings.push({ severity: 'high', title: `Leads fell ${Math.abs(ch)}%`, evidence: `${num(s.cohort.total)} now against ${num(prev.cohort.total)} before.`, suggestion: 'Open the Lead report to see which source dropped.', href: link('/reports/leads') })
-    if (ch >= 15) findings.push({ severity: 'good', title: `Leads rose ${ch}%`, evidence: `${num(s.cohort.total)} now against ${num(prev.cohort.total)} before.`, suggestion: 'Make sure the team keeps up with the extra calls.', href: link('/reports/agents') })
+  // The Performance guide's three most serious cards (the full list is its own report).
+  const guide = await loadGuide(c, { s, prev, data }).catch((err) => {
+    console.error('[reports] guide for the All report failed:', err instanceof Error ? err.message : err)
+    return null
+  })
+  if (guide) {
+    const top: Finding[] = guide.findings.slice(0, 3)
+    blocks.push({ kind: 'findings', id: 'findings', title: 'Top 3 from the Performance guide', items: top })
+    blocks.push({ kind: 'kpis', id: 'guide-link', items: [kpi('Open the Performance guide', guide.findings.filter((f) => f.severity !== 'good').length, null, { sub: 'things to work on', href: link('/reports/guide') })] })
   }
-  const worst = data.funnel.conversions.filter((cv) => cv.rate != null && cv.previousRate != null && cv.previousRate - (cv.rate ?? 0) >= 10).sort((a, b) => (b.previousRate! - b.rate!) - (a.previousRate! - a.rate!))[0]
-  if (worst) findings.push({ severity: 'medium', title: `${worst.from} → ${worst.to} dropped to ${worst.rate}%`, evidence: `It was ${worst.previousRate}% before.`, suggestion: 'Check what changed at this step.', href: link('/reports/leads') })
-  if (s.leaks.neverContacted.count >= 5) findings.push({ severity: 'high', title: `${num(s.leaks.neverContacted.count)} leads were never contacted`, evidence: `Older than ${s.leakHours} hours with no call or reply.`, suggestion: 'Assign them and call today.', href: '/leads' })
-  if (data.speedFinding) findings.push({ severity: 'low', title: 'Speed wins', evidence: data.speedFinding, suggestion: 'Answer new leads within 5 minutes where you can.' })
-  if (findings.length) blocks.push({ kind: 'findings', id: 'findings', title: 'Main findings', items: findings.slice(0, 4) })
 
   return {
     key: 'all', title: c.userId ? 'My report' : 'All report',

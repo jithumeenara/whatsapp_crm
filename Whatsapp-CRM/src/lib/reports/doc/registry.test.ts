@@ -23,7 +23,7 @@ describe('report access', () => {
     expect(accessFor(findReport('ads')!, agent).allowed).toBe(false)
     expect(accessFor(findReport('spending')!, agent).allowed).toBe(false)
     const menu = menuFor(agent)
-    expect(menu.map((m) => m.key)).toEqual(['all', 'leads', 'agents', 'sales'])
+    expect(menu.map((m) => m.key)).toEqual(['all', 'leads', 'agents', 'sales', 'guide'])
     expect(menu.every((m) => m.exports.length === 0)).toBe(true)
     expect(menu[0].title).toBe('My report')
   })
@@ -40,7 +40,7 @@ describe('report access', () => {
 
   it('an admin sees everything, money included, with all three exports', () => {
     const menu = menuFor(admin)
-    expect(menu.map((m) => m.key)).toEqual(['all', 'leads', 'agents', 'ads', 'sales', 'spending'])
+    expect(menu.map((m) => m.key)).toEqual(['all', 'leads', 'agents', 'ads', 'sales', 'spending', 'guide'])
     expect(menu.every((m) => m.exports.join(',') === 'pdf,xlsx,pptx')).toBe(true)
     expect(accessFor(findReport('ads')!, admin)).toMatchObject({ allowed: true, userId: null, canSeeMoney: true })
   })

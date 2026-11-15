@@ -129,6 +129,8 @@ export interface Finding {
   href?: string
   /** Written by AI (label it); otherwise written by code from the numbers. */
   byAi?: boolean
+  /** Something to do about it right away (an app page). */
+  action?: { label: string; href: string }
 }
 
 export interface FindingsBlock {
@@ -165,6 +167,18 @@ export interface ReportDoc {
   /** "Data since…", "too few to judge…", "ad account not connected…". */
   notes?: string[]
   generatedAt: string
+  /** On the Compare tab: what can be compared and what is shown. */
+  compare?: CompareSpec
+}
+
+export interface CompareSpec {
+  /** The comparisons this report offers (periods always first). */
+  dims: Array<{ key: string; label: string }>
+  dim: string
+  /** What can be picked for `dim`, busiest first. */
+  options: Array<{ key: string; label: string }>
+  selected: string[]
+  max: number
 }
 
 /** Business details for the header of an exported file. */

@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PeriodBar } from "./period-bar"
+import { CompareControls } from "./compare-controls"
 import { ReportView } from "./report-view"
 import { useReportsMenu } from "./reports-nav"
 import { apiQuery, readQuery, withQuery, type TabKey } from "./report-query"
@@ -139,12 +140,10 @@ export function ReportPage({ reportKey }: { reportKey: string }) {
             <TabsTrigger value="report" className="px-3 text-[13px]">Report</TabsTrigger>
             <TabsTrigger value="compare" className="px-3 text-[13px]">Compare</TabsTrigger>
           </TabsList>
-          {/* The same doc in both tabs for now: the Compare pickers come later. */}
+          {/* The server builds the comparison when tab=compare (with cmp and items). */}
           <TabsContent value="report" className="mt-2 min-w-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-4">{body}</TabsContent>
           <TabsContent value="compare" className="mt-2 min-w-0 space-y-4 rounded-xl focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-4">
-            <p className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-[12.5px] text-indigo-700">
-              Choosing what to compare (people, channels or periods side by side) is coming soon. For now this tab shows the same report.
-            </p>
+            {state.status === "ready" && state.doc.compare && <CompareControls spec={state.doc.compare} />}
             {body}
           </TabsContent>
         </Tabs>
