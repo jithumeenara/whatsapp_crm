@@ -30,6 +30,8 @@ export type UsageFeature =
   | 'message_polish'
   /// Sheet routing: a rule drafted from a sentence (Data Store → Sheet routing).
   | 'sheet_rule'
+  /// Reports → Performance guide: AI suggestions from the guide's own facts (opt-in).
+  | 'report_guide'
   | 'validation'
   /// The one call made when the assistant cannot answer: is this a
   /// lead, what is it about, can we help, how urgent, did they name a

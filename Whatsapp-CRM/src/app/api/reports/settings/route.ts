@@ -7,8 +7,10 @@ import { Prisma } from '@prisma/client'
 import {
   FUNNEL_TEMPLATES,
   parseFunnel,
+  parseGuideSettings,
   parsePresentationSettings,
   parseReportSettings,
+  validateGuideSettings,
   validatePresentationSettings,
   validateFunnel,
   validateReportSettings,
@@ -34,6 +36,7 @@ async function load(accountId: string) {
     funnel_stages: parseFunnel(row?.funnel_stages),
     report_settings: parseReportSettings(row?.report_settings),
     presentation: parsePresentationSettings(row?.report_settings),
+    guide: parseGuideSettings(row?.report_settings),
     // What "needs doing" falls back to when no own threshold is set.
     sla_warn_hours: row?.sla_warn_hours ?? 24,
   }
@@ -76,6 +79,27 @@ export async function PUT(req: NextRequest) {
       const p = validatePresentationSettings(body.report_settings)
       if (!p.ok) return NextResponse.json({ error: p.error }, { status: 400 })
       data.report_settings = { ...v.settings, ...p.settings } as unknown as Prisma.InputJsonValue
+    }
+    // The AI suggestions switch lives in the same JSON. Sent on its own, it
+    // keeps the other settings; left out, the saved choice is kept (saving
+    // the other settings never switches it off by accident).
+    if (body.guide !== undefined || data.report_settings !== undefined) {
+      let aiGuide: boolean
+      if (body.guide !== undefined) {
+        const g = validateGuideSettings(body.guide)
+        if (!g.ok) return NextResponse.json({ error: g.error }, { status: 400 })
+        aiGuide = g.settings.aiGuide
+      } else {
+        const row = await prisma.leadSettings.findUnique({ where: { account_id: ctx.accountId }, select: { report_settings: true } })
+        aiGuide = parseGuideSettings(row?.report_settings).aiGuide
+      }
+      let base = data.report_settings as Record<string, unknown> | undefined
+      if (!base) {
+        const row = await prisma.leadSettings.findUnique({ where: { account_id: ctx.accountId }, select: { report_settings: true } })
+        const saved = row?.report_settings
+        base = saved && typeof saved === 'object' && !Array.isArray(saved) ? { ...(saved as Record<string, unknown>) } : {}
+      }
+      data.report_settings = { ...base, aiGuide } as unknown as Prisma.InputJsonValue
     }
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: 'Nothing to save.' }, { status: 400 })

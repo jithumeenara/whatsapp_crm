@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useConfirm } from "@/hooks/use-confirm"
 import { useAuth } from "@/hooks/use-auth"
 import { apiFetch, errorText } from "@/lib/api-fetch"
+import { AiGuideSetting } from "./ai-guide-setting"
 
 type Outcome = "open" | "won" | "lost"
 interface StageRow { id: number; key?: string; label: string; outcome: Outcome }
@@ -323,6 +324,9 @@ export function ReportsSettings() {
           </p>
         </div>
       </section>
+
+      {/* ── AI suggestions (Performance guide, off by default) ───────── */}
+      <AiGuideSetting />
 
       {/* ── Manual ad spend ───────────────────────────────────────────── */}
       <section aria-labelledby={`${uid}-spend`} className="rounded-2xl border border-slate-200 bg-white shadow-card">

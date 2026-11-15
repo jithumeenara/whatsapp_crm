@@ -136,6 +136,20 @@ export interface PresentationSettings {
 
 const HEX6 = /^[0-9a-f]{6}$/i
 
+/** The Performance guide's AI suggestions: off unless turned on (plan §8). */
+export interface GuideSettings { aiGuide: boolean }
+
+export function parseGuideSettings(raw: unknown): GuideSettings {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  return { aiGuide: o.aiGuide === true }
+}
+
+export function validateGuideSettings(raw: unknown): { ok: true; settings: GuideSettings } | { ok: false; error: string } {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+  if (!o || typeof o.aiGuide !== 'boolean') return { ok: false, error: 'Choose on or off for AI suggestions.' }
+  return { ok: true, settings: { aiGuide: o.aiGuide } }
+}
+
 export function parsePresentationSettings(raw: unknown): PresentationSettings {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const hex = clean(o.brandColor, 7).replace(/^#/, '')

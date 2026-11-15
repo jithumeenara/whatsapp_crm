@@ -16,6 +16,7 @@ import { previousAsMain } from '../period-query'
 import { loadActivity, median } from '../activity'
 import type { Block, Finding, ReportDoc } from '../types'
 import { guideFindings, slotLabel, type GuideFacts } from './guide-findings'
+import { parseGuideSettings } from '../../settings'
 import { adPerformance } from '@/lib/ads/performance'
 import { loadCampaigns } from '../campaign-data'
 import { carryQuery, kpi, MINUTES, num, pct, PERCENT, periodInfo, words, type ReportContext } from './common'
@@ -111,11 +112,18 @@ export async function guideReport(c: ReportContext, canSeeMoney = false): Promis
       ],
     },
     { kind: 'findings', id: 'guide', title: 'What to work on', items: findings },
-    {
-      kind: 'text', id: 'coming', style: 'note',
-      lines: [canSeeMoney ? 'AI checks join this guide when the AI report is built.' : 'AI checks join this guide when the AI report is built. Ad spend checks are shown to owners and admins.'],
-    },
   ]
+
+  // AI suggestions (opt-in, team guide only): the cards' own facts, every
+  // number checked, labelled AI; without a key or on failure, nothing extra.
+  if (!c.userId) {
+    const ai = await aiBlock(c.accountId, findings).catch((err) => {
+      console.error('[reports] AI guide block failed:', err instanceof Error ? err.message : err)
+      return null
+    })
+    if (ai) blocks.push(ai)
+  }
+  if (!canSeeMoney) blocks.push({ kind: 'text', id: 'money-note', style: 'note', lines: ['Ad spend checks are shown to owners and admins.'] })
   const serious = findings.filter((f) => f.severity === 'high' || f.severity === 'medium').length
   const minor = findings.filter((f) => f.severity === 'low').length
   return {
@@ -170,4 +178,16 @@ async function moneyAndBroadcastFacts(c: ReportContext, q: string, canSeeMoney: 
     }
   }
   return out
+}
+
+const LANGUAGE_NAME: Record<string, string> = { en: 'English', ml: 'Malayalam', hi: 'Hindi', ta: 'Tamil', te: 'Telugu', kn: 'Kannada', bn: 'Bengali', ar: 'Arabic' }
+
+/** The AI suggestions block, only when the business turned it on. */
+async function aiBlock(accountId: string, findings: Finding[]): Promise<Block | null> {
+  const row = await prisma.leadSettings.findUnique({ where: { account_id: accountId }, select: { report_settings: true } })
+  if (!parseGuideSettings(row?.report_settings).aiGuide) return null
+  const [{ aiGuideFindings }, { loadDocBusiness }] = await Promise.all([import('../../guide-ai/generate'), import('../business')])
+  const { language } = await loadDocBusiness(accountId)
+  const items = await aiGuideFindings({ accountId, findings, language: LANGUAGE_NAME[language] ?? 'English' })
+  return items.length ? { kind: 'findings', id: 'ai-guide', title: 'AI suggestions', items } : null
 }
