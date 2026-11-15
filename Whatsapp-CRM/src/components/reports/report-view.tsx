@@ -20,7 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { compareText, formatRange, safeInternalHref } from "./report-format"
 import { readQuery, withQuery, type ReportQuery } from "./report-query"
-import { reportIcon } from "./report-icons"
+import { ReportIcon } from "./report-icons"
 
 const ReportChart = dynamic(() => import("./report-chart").then((m) => m.ReportChart), {
   ssr: false,
@@ -42,7 +42,6 @@ export function ReportView({ doc }: { doc: ReportDoc }) {
   const notes = Array.isArray(doc?.notes) ? doc.notes.filter(Boolean) : []
   const period = doc?.period
   const range = period ? formatRange(period.firstDay, period.lastDay) : ""
-  const Icon = reportIcon(doc?.key)
   const prev = period?.previous ? formatRange(period.previous.firstDay, period.previous.lastDay) : ""
 
   return (
@@ -50,7 +49,7 @@ export function ReportView({ doc }: { doc: ReportDoc }) {
       <header className="min-w-0">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15" aria-hidden>
-            <Icon className="h-5 w-5" />
+            <ReportIcon reportKey={doc?.key} className="h-5 w-5" />
           </span>
           <h1 className="min-w-0 text-balance break-words text-[21px] font-bold leading-tight tracking-tight text-slate-900 sm:text-[23px]">{doc?.title || "Report"}</h1>
         </div>

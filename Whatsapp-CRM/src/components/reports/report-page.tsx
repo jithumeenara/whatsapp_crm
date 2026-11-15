@@ -70,7 +70,6 @@ export function ReportPage({ reportKey }: { reportKey: string }) {
 
   useEffect(() => {
     let alive = true
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- marks the fetch below as running; load() guards with loadSeq
     setRefreshing(true)
     void load().finally(() => { if (alive) setRefreshing(false) })
     return () => { alive = false }
