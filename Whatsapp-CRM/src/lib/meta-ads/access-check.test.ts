@@ -105,9 +105,13 @@ describe('checking a connection', () => {
   })
 
   it('says it could not reach Meta, without a raw error, when the network fails', async () => {
+    // The failure here is made up by this test; keep it out of the run's log.
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('getaddrinfo ENOTFOUND graph.facebook.com'))))
     const r = await checkMetaAdsAccess({ accessToken: 't', adAccountId: 'act_3406716452946977', wabaId: null })
     expect(r.ok).toBe(false)
     expect(r.blocking).not.toContain('ENOTFOUND')
+    expect(quiet).toHaveBeenCalled()
+    quiet.mockRestore()
   })
 })
