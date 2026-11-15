@@ -11,6 +11,7 @@ import { sweepWebsiteKnowledge } from "./src/lib/ai/knowledge-sweep";
 import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { sweepStaffWaits } from "./src/lib/ai/staff-wait-sweep";
 import { sweepAdminChatBriefs } from "./src/lib/admin-chat/brief-sweep";
+import { sweepScheduledReports } from "./src/lib/reports/schedule/sweep";
 import { sweepAutoTags } from "./src/lib/ai/auto-tag";
 import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
 import { sweepTwoWaySheets } from "./src/lib/google/sheet-two-way";
@@ -278,6 +279,15 @@ app.prepare().then(() => {
   every(() => {
     sweepAdminChatBriefs().catch((err) => {
       console.error("[admin-chat] brief sweep failed:", err);
+    });
+  }, 5 * 60_000);
+
+  // Reports sent on a schedule to team members, by Admin Chat and email
+  // (src/lib/reports/schedule/sweep.ts; claimed once, so two processes
+  // never both send).
+  every(() => {
+    sweepScheduledReports().catch((err) => {
+      console.error("[scheduled-reports] sweep failed:", err);
     });
   }, 5 * 60_000);
 

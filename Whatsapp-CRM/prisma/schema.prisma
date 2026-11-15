@@ -231,6 +231,7 @@ model Account {
   ai_eval_runs                  AiEvalRun[]
   conversation_feedback         ConversationFeedback[]
   ai_handovers                  AiHandover[]
+  scheduled_reports             ScheduledReport[]
   company_profile               CompanyProfile?
   sms_config                    SmsConfig?
   email_config                  EmailConfig?
@@ -3728,6 +3729,37 @@ model AiHandover {
   @@index([account_id, created_at], map: "ai_handovers_account_created_idx")
   @@index([conversation_id], map: "ai_handovers_conversation_idx")
   @@map("ai_handovers")
+}
+
+/// A report sent on a schedule to team members (migration 164). Recipients
+/// are user ids of this account, checked again at send time; last_sent_key
+/// is claimed with a conditional update so two processes never both send.
+model ScheduledReport {
+  id            String    @id @default(uuid()) @db.Uuid
+  account_id    String    @db.Uuid
+  report_key    String
+  /// daily | weekly | monthly
+  frequency     String
+  /// weekly 1 (Mon) – 7 (Sun); monthly 1 – 28
+  day           Int       @default(1)
+  /// business time zone, 0 – 23
+  send_hour     Int       @default(9)
+  recipient_ids String[]  @default([]) @db.Uuid
+  by_chat       Boolean   @default(true)
+  by_email      Boolean   @default(false)
+  enabled       Boolean   @default(true)
+  last_sent_key String?
+  last_sent_at  DateTime? @db.Timestamptz(6)
+  last_result   String?
+  /// users.id, ON DELETE RESTRICT in the database (no Prisma relation).
+  created_by    String    @db.Uuid
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([account_id], map: "scheduled_reports_account_idx")
+  @@map("scheduled_reports")
 }
 
 /// What the assistant decided about a conversation it could not answer,

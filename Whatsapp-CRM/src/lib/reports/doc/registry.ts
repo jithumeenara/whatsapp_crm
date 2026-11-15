@@ -95,3 +95,10 @@ export function menuFor(who: { userId: string; role: AccountRole }) {
     return [{ key: def.key, title: a.userId && def.key === 'all' ? 'My report' : def.title, group: def.group, path: def.path, exports: a.canExport ? EXPORT_FORMATS : [], tabs: def.tabs }]
   })
 }
+
+/** The Scheduled page's menu link (not a report): owners and admins manage sends. */
+export function scheduledLinkFor(who: { role: AccountRole }) {
+  return hasMinRole(who.role, 'admin')
+    ? [{ key: 'scheduled', title: 'Scheduled', group: 'analysis' as ReportGroup, path: '/reports/scheduled', exports: [] as ExportFormat[], tabs: ['report' as const] }]
+    : []
+}
