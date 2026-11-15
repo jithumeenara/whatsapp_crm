@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
-import { testMetaAdsConnection, createOrGetDataset } from '@/lib/meta-ads/api'
+import { createOrGetDataset } from '@/lib/meta-ads/api'
+import { checkMetaAdsAccess, cleanAdAccountId, cleanWabaId } from '@/lib/meta-ads/access-check'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { adsReadGate } from '@/lib/meta-ads/access'
@@ -54,8 +55,8 @@ export async function GET() {
       connected_at: config.connected_at,
     }
 
-    const test = await testMetaAdsConnection({ wabaId: config.waba_id, accessToken })
-    return NextResponse.json({ connected: test.ok, config: safeConfig, message: test.message })
+    const test = await checkMetaAdsAccess({ accessToken, adAccountId: cleanAdAccountId(config.ad_account_id), wabaId: cleanWabaId(config.waba_id) })
+    return NextResponse.json({ connected: test.ok, config: safeConfig, message: test.blocking ?? test.message })
   } catch (error) {
     // requireRole() throws UnauthorizedError(401)/ForbiddenError(403) —
     // both carry their own `.status`; anything else is a real 500.
@@ -82,20 +83,39 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { waba_id, ad_account_id, business_id, access_token, automatic_events_enabled } = body
 
-    if (!waba_id || !access_token) {
-      return NextResponse.json({ error: 'WhatsApp Business Account ID and Access Token are required.' }, { status: 400 })
+    if (typeof access_token !== 'string' || !access_token.trim() || access_token.length > 1000) {
+      return NextResponse.json({ error: 'Access token is required.' }, { status: 400 })
+    }
+    const token = access_token.trim()
+
+    // Each id is checked on its own: a wrong one is named, never silently dropped.
+    const adAccount = cleanAdAccountId(ad_account_id)
+    if (ad_account_id && !adAccount) {
+      return NextResponse.json({ error: 'The ad account ID should be digits only, like 3406716452946977 (or act_ and the digits).' }, { status: 400 })
+    }
+    const waba = cleanWabaId(waba_id)
+    if (waba_id && !waba) {
+      return NextResponse.json({ error: 'The WhatsApp Business Account ID should be digits only.' }, { status: 400 })
+    }
+    const business = cleanWabaId(business_id)
+    if (business_id && !business) {
+      return NextResponse.json({ error: 'The Business ID should be digits only.' }, { status: 400 })
     }
 
-    const test = await testMetaAdsConnection({ wabaId: waba_id, accessToken: access_token })
+    const test = await checkMetaAdsAccess({ accessToken: token, adAccountId: adAccount, wabaId: waba })
     if (!test.ok) {
-      return NextResponse.json({ error: `Meta rejected these credentials: ${test.message}` }, { status: 400 })
+      return NextResponse.json({ error: test.blocking ?? 'Meta did not accept these details.' }, { status: 400 })
     }
+    // Only a WhatsApp account Meta let us read is saved or used for the dataset.
+    const wabaOk = !!waba && test.waba?.ok === true
 
     let datasetId: string | null = null
     let datasetError: string | null = null
     try {
-      const result = await createOrGetDataset({ wabaId: waba_id, accessToken: access_token })
-      datasetId = result.datasetId
+      if (wabaOk && waba) {
+        const result = await createOrGetDataset({ wabaId: waba, accessToken: token })
+        datasetId = result.datasetId
+      }
     } catch (err) {
       // Non-fatal — the connection itself is valid (test passed above);
       // the dataset can be retried later via the Test button. Most likely
@@ -108,12 +128,13 @@ export async function POST(request: Request) {
     const existing = await prisma.metaAdsConfig.findUnique({ where: { account_id: accountId } })
 
     const data = {
-      waba_id,
-      ad_account_id: ad_account_id || null,
-      business_id: business_id || null,
-      access_token: encrypt(access_token),
+      // The column cannot be empty; '' means "no WhatsApp account saved".
+      waba_id: wabaOk && waba ? waba : '',
+      ad_account_id: adAccount,
+      business_id: business,
+      access_token: encrypt(token),
       dataset_id: datasetId ?? existing?.dataset_id ?? null,
-      automatic_events_enabled: automatic_events_enabled ?? true,
+      automatic_events_enabled: automatic_events_enabled === false ? false : true,
       status: 'connected',
       last_tested_at: new Date(),
       test_error: datasetError,
@@ -136,7 +157,7 @@ export async function POST(request: Request) {
       success: true,
       saved: true,
       message: datasetError
-        ? `Connected, but the ads dataset couldn't be created yet: ${datasetError}`
+        ? `${test.message} The ads dataset could not be created yet: ${datasetError}`
         : test.message,
     })
   } catch (error) {

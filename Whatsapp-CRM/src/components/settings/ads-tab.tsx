@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { apiFetch, errorText } from '@/lib/api-fetch';
 import {
   Megaphone, MousePointerClick, FileSpreadsheet, Sparkles, LineChart,
   Clock, Eye, EyeOff, CheckCircle2, AlertTriangle, Loader2, RotateCcw,
@@ -132,6 +133,8 @@ function MetaAdsOverview() {
   const [businessId, setBusinessId] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [automaticEvents, setAutomaticEvents] = useState(true);
+  // The server's plain-words reason, kept on screen next to the form (not only in a toast that disappears).
+  const [saveError, setSaveError] = useState('');
 
   async function fetchConfig() {
     setLoading(true);
@@ -175,13 +178,15 @@ function MetaAdsOverview() {
   }
 
   async function handleSave() {
-    if (!wabaId.trim()) { toast.error('WhatsApp Business Account ID is required'); return; }
+    if (saving) return;
+    setSaveError('');
+    if (!adAccountId.trim() && !wabaId.trim()) { setSaveError('Add your Ad Account ID. It is in Ads Manager, next to the account name.'); return; }
     if (!config && !accessToken.trim()) { toast.error('Access Token is required'); return; }
     if (config && !tokenEdited) { toast.error('Re-enter the Access Token to save changes'); return; }
 
     setSaving(true);
     try {
-      const res = await fetch('/api/meta-ads/config', {
+      const res = await apiFetch('/api/meta-ads/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -193,12 +198,14 @@ function MetaAdsOverview() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) { toast.error(data.error || 'Failed to save'); return; }
       toast.success(data.message || 'Meta Ads connected');
       setEditing(false);
       await fetchConfig();
-    } catch {
-      toast.error('Failed to save configuration');
+    } catch (err) {
+      console.error('[ads] save failed', err);
+      const text = errorText(err, 'Could not save. Try again.');
+      setSaveError(text);
+      toast.error(text);
     } finally {
       setSaving(false);
     }
@@ -363,7 +370,7 @@ function MetaAdsOverview() {
         {!showForm ? (
           <div className="divide-y divide-slate-100">
             <InfoRow icon={Hash} label="WhatsApp Business Account ID">
-              <span className="font-mono">{config?.waba_id}</span>
+              {config?.waba_id ? <span className="font-mono">{config.waba_id}</span> : <span className="text-slate-400 font-normal">Not set</span>}
             </InfoRow>
             <InfoRow icon={Building2} label="Ad Account ID">
               {config?.ad_account_id ? <span className="font-mono">{config.ad_account_id}</span> : <span className="text-slate-400 font-normal">Not set</span>}
@@ -387,7 +394,7 @@ function MetaAdsOverview() {
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5 text-[13px] font-medium text-slate-700">
                   <Hash className="h-3.5 w-3.5 text-slate-400" />
-                  WhatsApp Business Account ID
+                  WhatsApp Business Account ID <span className="text-slate-400 font-normal">(optional)</span>
                 </Label>
                 <Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} placeholder="e.g. 100234567890456"
                   className="h-9 text-[13px] border-slate-200 font-mono" />
@@ -395,7 +402,7 @@ function MetaAdsOverview() {
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5 text-[13px] font-medium text-slate-700">
                   <Building2 className="h-3.5 w-3.5 text-slate-400" />
-                  Ad Account ID <span className="text-slate-400 font-normal">(optional)</span>
+                  Ad Account ID
                 </Label>
                 <Input value={adAccountId} onChange={(e) => setAdAccountId(e.target.value)} placeholder="e.g. act_1234567890"
                   className="h-9 text-[13px] border-slate-200 font-mono" />
@@ -423,9 +430,19 @@ function MetaAdsOverview() {
               </div>
               {config && !tokenEdited && <p className="text-[11px] text-slate-400">Token hidden for security. Click to re-enter.</p>}
               <p className="text-[11px] text-slate-400">
-                Needs <code className="font-mono">ads_management</code>, <code className="font-mono">whatsapp_business_manage_events</code>, and <code className="font-mono">leads_retrieval</code> — see Meta App Review requirements.
+                Use a System User token with <code className="font-mono">ads_read</code> and <code className="font-mono">ads_management</code> for ad reports. Add <code className="font-mono">whatsapp_business_management</code> and <code className="font-mono">leads_retrieval</code> for WhatsApp ad attribution and Lead Ads.
+              </p>
+              <p className="text-[11px] text-slate-400">
+                In Business Settings → Users → System users, use Add assets to give that user the ad account first, then generate the token.
               </p>
             </div>
+
+            {saveError && (
+              <p role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[12.5px] text-red-700">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                <span className="min-w-0 break-words">{saveError}</span>
+              </p>
+            )}
 
             <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
               <div>
