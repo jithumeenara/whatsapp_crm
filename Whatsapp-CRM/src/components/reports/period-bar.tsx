@@ -13,6 +13,7 @@ import { Check, ChevronDown } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { isDay, readQuery, type CompareKey, type PeriodKey, type ReportQuery } from "./report-query"
+import { useReportsMenu } from "./reports-nav"
 
 const MAIN: Array<{ key: PeriodKey; label: string }> = [
   { key: "today", label: "Today" },
@@ -47,6 +48,7 @@ export function PeriodBar() {
   const sp = useSearchParams()
   const q = readQuery(sp)
   const ids = useId()
+  const { targetPath } = useReportsMenu()
 
   // The date pickers open on "Dates", filled with the dates on screen.
   const [showDates, setDatesOpen] = useState(false)
@@ -69,7 +71,9 @@ export function PeriodBar() {
     }
     p.set("compare", merged.compare)
     p.delete("list")
-    router.replace(`${pathname}?${p.toString()}`, { scroll: false })
+    // Not `pathname`: while another report is still opening, this bar
+    // belongs to the old one, and its path would cancel the new report.
+    router.replace(`${targetPath(pathname)}?${p.toString()}`, { scroll: false })
   }
 
   function pick(period: PeriodKey) {

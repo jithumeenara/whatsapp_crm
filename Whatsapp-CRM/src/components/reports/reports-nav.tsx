@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils"
 import { readQuery, withQuery, type ReportMenuItem, type ReportQuery } from "./report-query"
 import { EXPORT_ROWS, ExportRow, useReportExport } from "./report-export"
 import { reportIcon } from "./report-icons"
+import { pendingPathFromClick, replaceTarget } from "./report-nav-target"
 
 const OVERVIEW_PATH = "/reports"
 const SCHEDULED_PATH = "/reports/scheduled"
@@ -34,9 +35,14 @@ interface MenuState {
   /** The menu entry for the page that is open, when the menu has one. */
   active: ReportMenuItem | null
   reload: () => void
+  /** The report a period / compare / tab change should go to: the one
+   *  still opening after a menu click, else the one on screen. */
+  targetPath: (pathname: string | null) => string
 }
 
-const MenuCtx = createContext<MenuState>({ reports: null, error: null, active: null, reload: () => {} })
+const MenuCtx = createContext<MenuState>({
+  reports: null, error: null, active: null, reload: () => {}, targetPath: (p) => replaceTarget(null, p),
+})
 
 /** The Reports menu as the side menu loaded it (tabs, exports, titles). */
 export function useReportsMenu() {
@@ -77,6 +83,29 @@ export function ReportsNav({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     paneRef.current?.scrollTo({ top: 0 })
   }, [pathname])
+
+  // The report being opened by a link click, until it is on screen. A
+  // period click in that gap must not send the address back to the old
+  // report (report-nav-target.ts explains the jump it caused).
+  const pendingPath = useRef<string | null>(null)
+  useEffect(() => {
+    pendingPath.current = null
+  }, [pathname])
+
+  const onLinkClickCapture = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null
+    if (!a) return
+    const next = pendingPathFromClick(
+      {
+        button: e.button, metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey,
+        defaultPrevented: e.defaultPrevented, target: a.getAttribute("target") ?? "", href: a.href,
+      },
+      window.location.origin,
+    )
+    if (next && next !== pathname) pendingPath.current = next
+  }, [pathname])
+
+  const targetPath = useCallback((p: string | null) => replaceTarget(pendingPath.current, p), [])
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current
@@ -133,14 +162,17 @@ export function ReportsNav({ children }: { children: React.ReactNode }) {
     return `${overviewPath}?${p.toString()}`
   })()
 
-  const ctx = useMemo<MenuState>(() => ({ reports, error, active, reload: () => void load() }), [reports, error, active, load])
+  const ctx = useMemo<MenuState>(
+    () => ({ reports, error, active, reload: () => void load(), targetPath }),
+    [reports, error, active, load, targetPath],
+  )
 
   return (
     <MenuCtx.Provider value={ctx}>
       {/* relative: every scroll area here is a positioning context, so an
           absolutely placed child (sr-only labels) scrolls inside it instead
           of stretching the page into blank space below. */}
-      <div className="relative flex min-h-full flex-col bg-background md:h-full md:min-h-0 md:flex-row">
+      <div onClickCapture={onLinkClickCapture} className="relative flex min-h-full flex-col bg-background md:h-full md:min-h-0 md:flex-row">
         {/* ── Side menu (desktop) ── */}
         <aside aria-label="Reports menu" className="relative hidden min-h-0 shrink-0 flex-col border-r border-slate-200/80 bg-white md:flex md:w-[248px]">
           <div className="px-4 pb-3 pt-5">

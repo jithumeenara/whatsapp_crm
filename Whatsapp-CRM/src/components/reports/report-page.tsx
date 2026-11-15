@@ -33,7 +33,7 @@ export function ReportPage({ reportKey }: { reportKey: string }) {
   const router = useRouter()
   const pathname = usePathname()
   const q = readQuery(sp)
-  const { reports } = useReportsMenu()
+  const { reports, targetPath } = useReportsMenu()
   const item = reports?.find((r) => r.key === reportKey) ?? null
   const hasCompare = !!item?.tabs?.includes("compare")
   const tab: TabKey = hasCompare ? q.tab : "report"
@@ -85,7 +85,9 @@ export function ReportPage({ reportKey }: { reportKey: string }) {
     else p.set("tab", next)
     p.delete("list")
     const qs = p.toString()
-    router.replace(qs ? `${pathname}?${qs}` : (pathname ?? "/reports"), { scroll: false })
+    // targetPath, not pathname: see report-nav-target.ts.
+    const path = targetPath(pathname)
+    router.replace(qs ? `${path}?${qs}` : path, { scroll: false })
   }
 
   const body = (() => {
