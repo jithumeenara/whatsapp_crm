@@ -102,3 +102,10 @@ export function scheduledLinkFor(who: { role: AccountRole }) {
     ? [{ key: 'scheduled', title: 'Scheduled', group: 'analysis' as ReportGroup, path: '/reports/scheduled', exports: [] as ExportFormat[], tabs: ['report' as const] }]
     : []
 }
+
+/** The Goals page's menu link (not a report): owners and admins set goals (plan §8). */
+export function goalsLinkFor(who: { role: AccountRole }) {
+  return hasMinRole(who.role, 'admin')
+    ? [{ key: 'goals', title: 'Goals', group: 'analysis' as ReportGroup, path: '/reports/goals', exports: [] as ExportFormat[], tabs: ['report' as const] }]
+    : []
+}

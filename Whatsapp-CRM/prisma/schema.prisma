@@ -232,6 +232,7 @@ model Account {
   conversation_feedback         ConversationFeedback[]
   ai_handovers                  AiHandover[]
   scheduled_reports             ScheduledReport[]
+  report_goals                  ReportGoal[]
   company_profile               CompanyProfile?
   sms_config                    SmsConfig?
   email_config                  EmailConfig?
@@ -3760,6 +3761,29 @@ model ScheduledReport {
 
   @@index([account_id], map: "scheduled_reports_account_idx")
   @@map("scheduled_reports")
+}
+
+/// A goal shown in the Reports (migration 165): one metric, for the running
+/// week or month, for the team (user_id null) or one member. Set by owners
+/// and admins; progress is worked out at report time.
+model ReportGoal {
+  id         String   @id @default(uuid()) @db.Uuid
+  account_id String   @db.Uuid
+  /// leads | won | calls | attended_pct | first_reply_min | revenue
+  metric     String
+  /// week | month
+  period     String
+  target     Decimal  @db.Decimal(14, 2)
+  /// users.id or null for the team (ON DELETE RESTRICT in the database).
+  user_id    String?  @db.Uuid
+  created_by String   @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([account_id], map: "report_goals_account_idx")
+  @@map("report_goals")
 }
 
 /// What the assistant decided about a conversation it could not answer,

@@ -5,7 +5,7 @@
 
 import { createElement } from "react"
 import {
-  BarChart3, Bot, CalendarClock, HandCoins, Headset, LayoutDashboard, Lightbulb, Megaphone, MessagesSquare, Send, UserPlus, Wallet,
+  BarChart3, Bot, CalendarClock, HandCoins, Headset, LayoutDashboard, Lightbulb, Megaphone, MessagesSquare, Send, Target, UserPlus, Wallet,
   type LucideIcon,
 } from "lucide-react"
 
@@ -21,6 +21,7 @@ const ICONS: Record<string, LucideIcon> = {
   spending: Wallet,
   guide: Lightbulb,
   scheduled: CalendarClock,
+  goals: Target,
 }
 
 export function reportIcon(key: string | null | undefined): LucideIcon {

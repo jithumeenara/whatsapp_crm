@@ -19,6 +19,7 @@ import type { Block, ReportDoc, TableCell } from '../types'
 import { previousAsMain } from '../period-query'
 import { loadActivity, median, onTimePct, talkText, WAIT_BUCKETS, IDLE_BUCKETS, type Activity, type WaitBucket, type IdleBucket } from '../activity'
 import { cardFindings } from './card-findings'
+import { goalsBlock } from '../../goals/load'
 import { carryQuery, cell, changeCell, COUNT, dayLabel, kpi, MINUTES, num, pct, PERCENT, periodInfo, pctText, type ReportContext } from './common'
 
 const WAIT_LABEL: Record<WaitBucket, string> = {
@@ -186,6 +187,10 @@ async function reportCard(c: ReportContext, userId: string): Promise<ReportDoc> 
       kpi('Idle leads', act.idle.total, null, { higherIsBetter: false, sub: '3+ days untouched', tone: act.idle.total ? 'bad' : 'good' }),
     ],
   }]
+
+  // This person's goals (set by owners and admins). Never money on a card.
+  const goals = await goalsBlock({ accountId: c.accountId, userId, tz: c.tz, now: c.now, canSeeMoney: false }).catch(() => null)
+  if (goals) blocks.push(goals)
 
   blocks.push({
     kind: 'findings', id: 'work-on', title: 'What to work on',

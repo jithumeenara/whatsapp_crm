@@ -10,6 +10,7 @@ import { replySpeed } from '../../reply-speed'
 import type { Block, Finding, ReportDoc } from '../types'
 import { previousAsMain } from '../period-query'
 import { loadGuide } from './guide'
+import { goalsBlock } from '../../goals/load'
 import { carryQuery, COUNT, dayLabel, kpi, mainCurrency, moneyFmt, moneyIn, num, pct, PERCENT, periodInfo, type ReportContext } from './common'
 
 export async function allReport(c: ReportContext, canSeeMoney: boolean): Promise<ReportDoc> {
@@ -43,6 +44,13 @@ export async function allReport(c: ReportContext, canSeeMoney: boolean): Promise
     )
   }
   const blocks: Block[] = [{ kind: 'kpis', id: 'figures', items }]
+
+  // Goals for the running week / month (Reports → Goals), right after the figures.
+  const goals = await goalsBlock({ accountId: c.accountId, userId: c.userId, tz: c.tz, now: c.now, canSeeMoney }).catch((err) => {
+    console.error('[reports] goals failed:', err instanceof Error ? err.message : err)
+    return null
+  })
+  if (goals) blocks.push(goals)
 
   blocks.push({
     kind: 'chart', id: 'leads-by-day', title: 'Leads by day', chart: 'bar',
