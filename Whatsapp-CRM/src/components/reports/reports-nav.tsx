@@ -21,7 +21,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { readQuery, withQuery, type ReportMenuItem, type ReportQuery } from "./report-query"
-import { EXPORT_ROWS, ExportRow, useReportExport } from "./report-export"
+import { EXPORT_ROWS, ExportMenu, ExportRow, useReportExport } from "./report-export"
 import { reportIcon } from "./report-icons"
 import { pendingPathFromClick, replaceTarget } from "./report-nav-target"
 
@@ -225,22 +225,9 @@ export function ReportsNav({ children }: { children: React.ReactNode }) {
             />
           </nav>
 
-          {(exportRows.length > 0 || scheduled) && (
+          {scheduled && (
             <div className="space-y-0.5 border-t border-slate-100 px-3 py-3">
-              {exportRows.length > 0 && (
-                <div role="group" aria-labelledby="reports-export-heading">
-                  <p id="reports-export-heading" className="mb-1 flex items-center gap-1.5 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-                    <Download className="h-3 w-3" aria-hidden />
-                    Export
-                  </p>
-                  {exportRows.map((r) => (
-                    <ExportRow key={r.format} format={r.format} label={r.label} busy={busy} onRun={(f) => void run(f)} />
-                  ))}
-                  <p className="sr-only" role="status" aria-live="polite">{busy ? "Preparing the file…" : ""}</p>
-                </div>
-              )}
-              {scheduled && (
-                <Link
+              <Link
                   href={withQuery(scheduled.path, query)}
                   aria-current={pathname === SCHEDULED_PATH ? "page" : undefined}
                   className={cn(
@@ -256,7 +243,6 @@ export function ReportsNav({ children }: { children: React.ReactNode }) {
                   </span>
                   <span className="min-w-0 flex-1 truncate">{scheduled.title || "Scheduled"}</span>
                 </Link>
-              )}
             </div>
           )}
         </aside>
@@ -330,6 +316,15 @@ export function ReportsNav({ children }: { children: React.ReactNode }) {
           </div>
 
           <div ref={paneRef} className="relative min-h-0 flex-1 px-4 pb-10 pt-5 md:overflow-y-auto md:px-6 md:pb-12 md:pt-6 lg:px-8 lg:pt-8">
+            {/* Export sits top right, level with the period bar on wide screens
+                and on its own right-aligned row above it on tablets. Phones use
+                the download button in the bar above instead. */}
+            <ExportMenu
+              formats={exportsAllowed}
+              busy={busy}
+              onRun={(f) => void run(f)}
+              className="hidden md:flex md:justify-end max-lg:mb-3 lg:absolute lg:right-8 lg:top-8 lg:z-10"
+            />
             {children}
           </div>
         </div>

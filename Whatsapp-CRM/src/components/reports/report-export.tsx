@@ -11,9 +11,10 @@
  */
 
 import { useRef, useState } from "react"
-import { Loader2 } from "lucide-react"
+import { ChevronDown, Download, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { apiFetch, errorText } from "@/lib/api-fetch"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { apiQuery, type ReportQuery } from "./report-query"
 
 export type ExportFormat = "pdf" | "xlsx" | "pptx"
@@ -120,5 +121,57 @@ export function ExportRow({
       </span>
       <span className="min-w-0 flex-1 truncate">{mine ? "Preparing…" : label}</span>
     </button>
+  )
+}
+
+/**
+ * One "Export" button for the top right of the open report. It opens a menu
+ * of the formats this report offers, each with its own file-type icon.
+ * While a file is being made the button shows a spinner and the rows are
+ * locked, so a double tap makes one file (rule 6).
+ */
+export function ExportMenu({
+  formats, busy, onRun, className,
+}: {
+  formats: ExportFormat[]
+  busy: ExportFormat | null
+  onRun: (f: ExportFormat) => void
+  className?: string
+}) {
+  const rows = EXPORT_ROWS.filter((r) => formats.includes(r.format))
+  if (rows.length === 0) return null
+  const working = busy !== null
+  return (
+    <div className={className}>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          disabled={working}
+          aria-busy={working}
+          aria-label={working ? "Preparing the file" : "Export this report"}
+          className="flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-primary/30 disabled:opacity-60 data-[popup-open]:bg-slate-50"
+        >
+          {working
+            ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />
+            : <Download className="h-4 w-4" aria-hidden />}
+          <span>{working ? "Preparing…" : "Export"}</span>
+          <ChevronDown className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          {rows.map((r) => (
+            <DropdownMenuItem
+              key={r.format}
+              disabled={working}
+              onClick={() => onRun(r.format)}
+              className="gap-3 px-2.5 py-2 text-[13.5px] font-medium text-slate-700"
+            >
+              <FileTypeIcon format={r.format} className="size-[22px] shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{r.label}</span>
+              <span className="text-[11px] font-normal text-slate-400">.{r.format}</span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <p className="sr-only" role="status" aria-live="polite">{working ? "Preparing the file…" : ""}</p>
+    </div>
   )
 }
