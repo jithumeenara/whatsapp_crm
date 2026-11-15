@@ -157,6 +157,8 @@ export const ml: Dict = {
   lRevenue: 'നേടിയ വരുമാനം',
   lPipeline: 'തുറന്ന പൈപ്പ്‌ലൈൻ',
   lBefore: 'മുമ്പ്: {n}',
+  dTooFew: 'വിലയിരുത്താൻ എണ്ണം കുറവ്',
+  dTimesBefore: 'മുമ്പത്തേതിന്റെ {n}×',
   lDeals: 'ഡീലുകൾ: {n}',
   lSecTodo: 'ഇപ്പോൾ ചെയ്യേണ്ടത്',
   lTodoNever: 'ആരും ബന്ധപ്പെടാത്ത ലീഡുകൾ: {n}',

@@ -5,6 +5,7 @@
 
 import { formatAmount } from '@/lib/format/money'
 import type { Compared, Fmt, KpiItem, ReportPeriodInfo, TableCell, Tone } from '../types'
+import { changeLabel, judgeChange } from '../change'
 import type { ResolvedQuery } from '../period-query'
 
 export interface ReportContext {
@@ -67,13 +68,14 @@ export function cell(text: string, value?: number | string | null, tone?: Tone, 
   return { text, value: value ?? null, tone, href }
 }
 
-/** "+35%" / "-5%" between two numbers; null without a before. */
-export function changeCell(now: number | null, before: number | null, higherIsBetter = true): TableCell {
-  if (now == null || before == null || before === 0) return cell('—')
-  const c = Math.round(((now - before) / before) * 100)
-  if (c === 0) return cell('0%', 0)
-  const good = higherIsBetter ? c > 0 : c < 0
-  return cell(`${c > 0 ? '+' : '-'}${Math.abs(c)}%`, c / 100, good ? 'good' : 'bad')
+/** A table's change cell, by the shared rule (change.ts): "+35%", "+4 pts"
+ *  for a percentage, "11.6× before", or "Too few" from a small count. */
+export function changeCell(now: number | null, before: number | null, higherIsBetter = true, fmt: Fmt = COUNT): TableCell {
+  const ch = judgeChange({ now, before, higherIsBetter, fmt })
+  if (ch.kind === 'none') return cell('—')
+  if (ch.kind === 'small') return cell('Too few')
+  const text = changeLabel(ch, (v) => show(v, fmt)) ?? '—'
+  return cell(text, ch.kind === 'pct' || ch.kind === 'same' ? ch.value : null, ch.tone ?? undefined)
 }
 
 export function periodInfo(c: ReportContext): ReportPeriodInfo {

@@ -5,6 +5,7 @@
  */
 
 import type { Compared, Fmt } from "@/lib/reports/doc/types"
+import { changeLabel, judgeChange } from "@/lib/reports/doc/change"
 
 const LOCALE = "en-IN"
 
@@ -76,28 +77,16 @@ export interface CompareText {
 }
 
 /** "Before: 105 · +35%": the sign is always written, so colour is never
- *  the only signal. Percentages change in points, not in percent of a percent. */
+ *  the only signal. The rule itself (too few, points, "N× before") is
+ *  shared with the PDF, slides and workbook: src/lib/reports/doc/change.ts. */
 export function compareText(c: Compared & { fmt: Fmt }): CompareText {
   const before = formatValue(c.before, c.fmt)
-  if (c.small) return { before, change: "Too few to judge", state: "small" }
-  if (c.now === null || c.before === null || !Number.isFinite(c.now) || !Number.isFinite(c.before)) {
-    return { before, change: null, state: "none" }
-  }
-  const diff = c.now - c.before
-  const sign = diff > 0 ? "+" : diff < 0 ? "−" : "±"
-  let change: string
-  if (c.fmt.kind === "percent") {
-    change = `${sign}${nf(1).format(Math.abs(diff))} pts`
-  } else if (c.before === 0) {
-    // No base to divide by: say how much it moved instead.
-    change = `${sign}${formatValue(Math.abs(diff), c.fmt)}`
-  } else {
-    const pct = (Math.abs(diff) / Math.abs(c.before)) * 100
-    change = `${sign}${nf(pct < 10 && pct > 0 ? 1 : 0).format(pct)}%`
-  }
-  if (diff === 0) return { before, change, state: "same" }
-  const up = diff > 0
-  return { before, change, state: up === c.higherIsBetter ? "good" : "bad" }
+  const ch = judgeChange(c)
+  const change = changeLabel(ch, (v) => formatValue(v, c.fmt))
+  if (ch.kind === "none") return { before, change: null, state: "none" }
+  if (ch.kind === "small") return { before, change, state: "small" }
+  if (ch.kind === "same") return { before, change, state: "same" }
+  return { before, change, state: ch.tone === "good" ? "good" : "bad" }
 }
 
 /** A calendar day ("2026-11-03") as "3 Nov 2026"; anything else as given. */

@@ -19,7 +19,9 @@ import PptxGenJS from 'pptxgenjs'
 import { imageProblem } from '@/lib/files/image-size'
 import { isRtlLanguage, t, type Key } from '../i18n'
 import { withoutFolderEntries } from '../pptx/presentation-pptx'
-import { changeText, fmtValue } from './pdf'
+import { fmtValue } from './pdf'
+import { changeWords } from './change-words'
+import { changeLabel, judgeChange } from './change'
 import type { ChartBlock, Compared, DocBusiness, Finding, FindingsBlock, KpiBlock, KpiItem, ReportDoc, Series, TableBlock, TableCell, TextBlock, Tone } from './types'
 
 export interface DocPptxInput {
@@ -172,9 +174,12 @@ export async function docToPptx(input: DocPptxInput): Promise<Buffer> {
     text(slide, clean(it.label, 60), { x: x + 0.15, y: y + 0.72, w: w - 0.3, h: 0.32, fontSize: 12.5, bold: true, color: filled ? 'FFFFFF' : dark, valign: 'top', fit: 'shrink' })
     const c = it.compare
     if (c && c.before != null) {
-      const ch = changeText(c.now, c.before)
-      const col = filled ? 'FFFFFF' : c.small ? 'a3a3a3' : compareColor(c) ?? MUTED
-      text(slide, `${tr('lBefore', { n: fmtValue(c.before, c.fmt, language) })}${ch ? ` · ${ch}` : ''}`, { x: x + 0.15, y: y + 1.04, w: w - 0.3, h: 0.3, fontSize: 10.5, bold: !c.small && Boolean(compareColor(c)), color: col, valign: 'top', fit: 'shrink' })
+      // The shared rule (change.ts): too few, points, "N× before".
+      const chg = judgeChange(c)
+      const ch = changeLabel(chg, (v) => fmtValue(v, c.fmt, language), changeWords(language))
+      const tone = chg.tone === 'good' ? GOOD : chg.tone === 'bad' ? BAD : null
+      const col = filled ? 'FFFFFF' : chg.kind === 'small' ? 'a3a3a3' : tone ?? MUTED
+      text(slide, `${tr('lBefore', { n: fmtValue(c.before, c.fmt, language) })}${ch ? ` · ${ch}` : ''}`, { x: x + 0.15, y: y + 1.04, w: w - 0.3, h: 0.3, fontSize: 10.5, bold: Boolean(tone), color: col, valign: 'top', fit: 'shrink' })
     } else if (it.sub) {
       text(slide, clean(it.sub, 80), { x: x + 0.15, y: y + 1.04, w: w - 0.3, h: 0.3, fontSize: 10.5, color: filled ? 'FFFFFF' : MUTED, valign: 'top', fit: 'shrink' })
     }

@@ -22,6 +22,8 @@ import { formatAmount } from '@/lib/format/money'
 import { imageProblem } from '@/lib/files/image-size'
 import { isRtlLanguage, t, type Key } from '../i18n'
 import { line, paragraph } from '../pdf/text'
+import { changeLabel, judgeChange } from './change'
+import { changeWords } from './change-words'
 import { pdfkitProblem } from '../pdf/logo-check'
 import type { Block, ChartBlock, Compared, DocBusiness, FindingsBlock, Fmt, KpiBlock, KpiItem, ReportDoc, Series, TableBlock, TableCell, TextBlock, Tone } from './types'
 
@@ -97,6 +99,7 @@ export function axisMax(values: number[], fmt: Fmt | undefined): number {
   if (fmt?.kind === 'percent' && top > 50 && top <= 100) return 100
   return niceMax(top)
 }
+
 
 /** "+35%" / "-5%" / "0%"; null without a before. Plain signs: the fonts lack ▲ ▼. */
 export function changeText(now: number | null, before: number | null): string | null {
@@ -305,10 +308,13 @@ export async function docToPdf(input: DocExportInput): Promise<Buffer> {
       line(pdf, clean(it.label, 80), x + 10, cy + 33, { size: 9, bold: true, color: filled ? '#ffffff' : DARK, width: w - 20, align: start, shrinkTo: 6.5 })
       const c = it.compare
       if (c && c.before != null) {
-        const ch = changeText(c.now, c.before)
+        // The shared rule (change.ts): too few, points, "N× before".
+        const chg = judgeChange(c)
+        const ch = changeLabel(chg, (v) => fmtValue(v, c.fmt, language), changeWords(language))?.replace(/−/g, '-')
         const txt = `${tr('lBefore', { n: fmtValue(c.before, c.fmt, language) })}${ch ? ` · ${ch}` : ''}`
-        const col = filled ? '#ffffff' : c.small ? FAINT : compareColor(c) ?? MUTED
-        line(pdf, clean(txt, 80), x + 10, cy + 48, { size: 7.8, bold: Boolean(!c.small && compareColor(c)), color: col, width: w - 20, align: start, shrinkTo: 5.5 })
+        const tone = chg.tone === 'good' ? GOOD : chg.tone === 'bad' ? BAD : null
+        const col = filled ? '#ffffff' : chg.kind === 'small' ? FAINT : tone ?? MUTED
+        line(pdf, clean(txt, 80), x + 10, cy + 48, { size: 7.8, bold: Boolean(tone), color: col, width: w - 20, align: start, shrinkTo: 5.5 })
       } else if (it.sub) {
         line(pdf, clean(it.sub, 80), x + 10, cy + 48, { size: 7.8, color: filled ? '#ffffff' : MUTED, width: w - 20, align: start, shrinkTo: 5.5 })
       }

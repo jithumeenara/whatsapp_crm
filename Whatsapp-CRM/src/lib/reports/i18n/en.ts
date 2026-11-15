@@ -159,6 +159,8 @@ export const en = {
   lRevenue: 'Revenue won',
   lPipeline: 'Open pipeline',
   lBefore: 'Before: {n}',
+  dTooFew: 'Too few to judge',
+  dTimesBefore: '{n}× before',
   lDeals: 'Deals: {n}',
   lSecTodo: 'Needs doing now',
   lTodoNever: 'Leads nobody has contacted: {n}',

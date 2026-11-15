@@ -157,6 +157,8 @@ export const ta: Dict = {
   lRevenue: 'வென்ற வருவாய்',
   lPipeline: 'திறந்த பைப்லைன்',
   lBefore: 'முன்பு: {n}',
+  dTooFew: 'மதிப்பிட மிகக் குறைவு',
+  dTimesBefore: 'முன்பை விட {n}×',
   lDeals: 'டீல்கள்: {n}',
   lSecTodo: 'இப்போது செய்ய வேண்டியவை',
   lTodoNever: 'யாரும் தொடர்பு கொள்ளாத லீட்கள்: {n}',

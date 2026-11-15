@@ -157,6 +157,8 @@ export const ar: Dict = {
   lRevenue: 'الإيراد المكتسب',
   lPipeline: 'خط المبيعات المفتوح',
   lBefore: 'سابقًا: {n}',
+  dTooFew: 'العدد قليل جدًا للحكم',
+  dTimesBefore: '{n}× ما سبق',
   lDeals: 'الصفقات: {n}',
   lSecTodo: 'ما يجب فعله الآن',
   lTodoNever: 'عملاء محتملون لم يتواصل معهم أحد: {n}',

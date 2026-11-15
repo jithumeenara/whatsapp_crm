@@ -157,6 +157,8 @@ export const te: Dict = {
   lRevenue: 'గెలిచిన ఆదాయం',
   lPipeline: 'తెరిచి ఉన్న పైప్‌లైన్',
   lBefore: 'ఇంతకుముందు: {n}',
+  dTooFew: 'అంచనా వేయడానికి చాలా తక్కువ',
+  dTimesBefore: 'ఇంతకుముందు కంటే {n}×',
   lDeals: 'డీల్‌లు: {n}',
   lSecTodo: 'ఇప్పుడు చేయాల్సినవి',
   lTodoNever: 'ఎవరూ సంప్రదించని లీడ్‌లు: {n}',

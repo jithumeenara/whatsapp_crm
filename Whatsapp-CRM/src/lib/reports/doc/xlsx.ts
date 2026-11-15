@@ -16,6 +16,8 @@ import ExcelJS from 'exceljs'
 import { safeText } from '@/lib/files/spreadsheet-safe'
 import { zonedStamp } from '../excel'
 import { t, type Key } from '../i18n'
+import { changeLabel, judgeChange } from './change'
+import { changeWords } from './change-words'
 import type { ChartBlock, Fmt, KpiItem, ReportDoc, TableBlock, TableCell, DocBusiness } from './types'
 
 export interface DocXlsxInput {
@@ -138,12 +140,20 @@ export async function docToXlsx(input: DocXlsxInput): Promise<Buffer> {
       const c = item.compare
       const numeric = c && c.fmt.kind !== 'text' && finite(c.now)
       const before = c && finite(c.before) ? c.before : null
-      const change = numeric && before != null && before > 0 ? ((c.now as number) - before) / before : null
-      const row = summary.addRow([text(item.label, 200), numeric ? c.now : text(item.value, 100), before, change])
+      // The shared rule (change.ts). A percent stays a number Excel can sort;
+      // "too few" and "N× before" are words.
+      const chg = numeric ? judgeChange(c) : null
       const f = c ? numFmtFor(c.fmt) : undefined
+      let change: number | string | null = null
+      let changeFmt: string | undefined
+      if (chg?.kind === 'pct' || chg?.kind === 'same') { change = chg.value; changeFmt = '+0%;-0%;0%' }
+      else if (chg?.kind === 'pts') { change = chg.value; changeFmt = '+0.0" pts";-0.0" pts";0" pts"' }
+      else if (chg?.kind === 'abs') { change = chg.value; changeFmt = f }
+      else if (chg && chg.kind !== 'none') change = text(changeLabel(chg, String, changeWords(language)) ?? '', 60)
+      const row = summary.addRow([text(item.label, 200), numeric ? c.now : text(item.value, 100), before, change])
       if (f && numeric) row.getCell(2).numFmt = f
       if (f && before != null) row.getCell(3).numFmt = f
-      if (change != null) row.getCell(4).numFmt = '+0%;-0%;0%'
+      if (changeFmt && typeof change === 'number') row.getCell(4).numFmt = changeFmt
       if (item.sub) row.getCell(5).value = text(item.sub, 200)
     }
   }

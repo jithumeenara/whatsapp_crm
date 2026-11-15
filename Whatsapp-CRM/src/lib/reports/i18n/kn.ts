@@ -157,6 +157,8 @@ export const kn: Dict = {
   lRevenue: 'ಗೆದ್ದ ಆದಾಯ',
   lPipeline: 'ತೆರೆದ ಪೈಪ್‌ಲೈನ್',
   lBefore: 'ಹಿಂದೆ: {n}',
+  dTooFew: 'ಅಂದಾಜಿಸಲು ತುಂಬಾ ಕಡಿಮೆ',
+  dTimesBefore: 'ಹಿಂದಿನದರ {n}×',
   lDeals: 'ಡೀಲ್‌ಗಳು: {n}',
   lSecTodo: 'ಈಗ ಮಾಡಬೇಕಾದವು',
   lTodoNever: 'ಯಾರೂ ಸಂಪರ್ಕಿಸದ ಲೀಡ್‌ಗಳು: {n}',

@@ -11,6 +11,7 @@ import type { Block, ReportDoc } from '../types'
 import { previousAsMain } from '../period-query'
 import { cell, changeCell, COUNT, dayLabel, kpi, num, pct, PERCENT, periodInfo, pctText, words, type ReportContext } from './common'
 import { loadActivity } from '../activity'
+import { changeLabel, judgeChange } from '../change'
 import { pushFirstCall, pushIdle } from './agents'
 import { cleanPersonName } from '@/lib/auth/person-name'
 
@@ -72,7 +73,7 @@ export async function leadReport(c: ReportContext): Promise<ReportDoc> {
         cell(`${cv.from} → ${cv.to}`),
         cell(pctText(cv.rate), cv.rate),
         cell(comparing ? pctText(cv.previousRate) : '—', cv.previousRate),
-        changeCell(cv.rate, comparing ? cv.previousRate : null),
+        changeCell(cv.rate, comparing ? cv.previousRate : null, true, PERCENT),
       ]),
     })
   } else {
@@ -145,8 +146,11 @@ export async function leadReport(c: ReportContext): Promise<ReportDoc> {
   ].filter((x): x is string => Boolean(x))
   blocks.push({ kind: 'text', id: 'todo', title: 'Needs doing now', style: leaks.length ? 'warning' : 'note', lines: leaks.length ? leaks : ['Nothing is waiting.'] })
 
-  const ch = comparing && s.previousCohort.total > 0 ? Math.round(((s.cohort.total - s.previousCohort.total) / s.previousCohort.total) * 100) : null
-  const headline = `${num(s.cohort.total)} leads${ch == null ? '' : ` (${ch >= 0 ? '+' : ''}${ch}% on before)`}, ${num(s.wonInPeriod)} won${s.leaks.neverContacted.count ? `; ${num(s.leaks.neverContacted.count)} not contacted yet` : ''}.`
+  // The shared rule (change.ts): nothing said from a small base.
+  const lc = comparing ? judgeChange({ now: s.cohort.total, before: s.previousCohort.total, higherIsBetter: true, fmt: COUNT }) : null
+  const lcText = lc && lc.kind !== 'none' && lc.kind !== 'small' ? changeLabel(lc, String) : null
+  const vsBefore = lcText ? ` (${lc?.kind === 'times' ? lcText : `${lcText} on before`})` : ''
+  const headline = `${num(s.cohort.total)} leads${vsBefore}, ${num(s.wonInPeriod)} won${s.leaks.neverContacted.count ? `; ${num(s.leaks.neverContacted.count)} not contacted yet` : ''}.`
 
   return {
     key: 'leads', title: 'Lead report', headline, period: periodInfo(c), scope: c.userId ? 'self' : 'team',

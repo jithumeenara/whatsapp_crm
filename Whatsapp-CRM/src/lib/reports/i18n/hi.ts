@@ -157,6 +157,8 @@ export const hi: Dict = {
   lRevenue: 'जीता गया राजस्व',
   lPipeline: 'खुली पाइपलाइन',
   lBefore: 'पहले: {n}',
+  dTooFew: 'आंकने के लिए बहुत कम',
+  dTimesBefore: 'पहले का {n}×',
   lDeals: 'डील: {n}',
   lSecTodo: 'अभी करना है',
   lTodoNever: 'जिन लीड से किसी ने संपर्क नहीं किया: {n}',

@@ -157,6 +157,8 @@ export const bn: Dict = {
   lRevenue: 'জেতা আয়',
   lPipeline: 'খোলা পাইপলাইন',
   lBefore: 'আগে: {n}',
+  dTooFew: 'বিচার করার জন্য খুব কম',
+  dTimesBefore: 'আগের {n}×',
   lDeals: 'ডিল: {n}',
   lSecTodo: 'এখন যা করতে হবে',
   lTodoNever: 'যে লিডে কেউ যোগাযোগ করেনি: {n}',
