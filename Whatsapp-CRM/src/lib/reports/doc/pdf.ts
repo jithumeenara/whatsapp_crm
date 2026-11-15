@@ -90,6 +90,14 @@ export function niceMax(v: number): number {
   return Math.max(4, 40 * p)
 }
 
+/** The axis top for these values: a share that never passes 100% stops
+ *  at 100% (niceMax alone would draw 100% on a 200% axis). Pure. */
+export function axisMax(values: number[], fmt: Fmt | undefined): number {
+  const top = Math.max(0, ...values.filter((v) => Number.isFinite(v)))
+  if (fmt?.kind === 'percent' && top > 50 && top <= 100) return 100
+  return niceMax(top)
+}
+
 /** "+35%" / "-5%" / "0%"; null without a before. Plain signs: the fonts lack ▲ ▼. */
 export function changeText(now: number | null, before: number | null): string | null {
   if (now == null || before == null || !(before > 0) || !Number.isFinite(now)) return null
@@ -346,10 +354,10 @@ export async function docToPdf(input: DocExportInput): Promise<Buffer> {
     const left = series.filter((s) => !onRight(s))
     const right = series.filter(onRight)
     const vals = (list: Series[]) => list.flatMap((s) => [...s.values, ...(s.previous ?? [])]).filter((v) => Number.isFinite(v))
-    const lMax = niceMax(Math.max(0, ...vals(left)))
-    const rMax = niceMax(Math.max(0, ...vals(right)))
     const lFmt = left[0]?.fmt
     const rFmt = right[0]?.fmt
+    const lMax = axisMax(vals(left), lFmt)
+    const rMax = axisMax(vals(right), rFmt)
     const axisW = 52
     const plotX = M + axisW
     const plotW = CW - axisW * (hasRight ? 2 : 1)

@@ -24,6 +24,8 @@ import { adReport } from './reports/ads'
 
 export type ReportGroup = 'overview' | 'topic' | 'analysis'
 export type ExportFormat = 'pdf' | 'xlsx' | 'pptx'
+/** A team member id in the address (?member=), checked before any lookup. */
+export const MEMBER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export const EXPORT_FORMATS: ExportFormat[] = ['pdf', 'xlsx', 'pptx']
 
 export interface ReportDef {
@@ -38,13 +40,16 @@ export interface ReportDef {
   /** Owners and admins only (team money). */
   money: boolean
   tabs: Array<'report' | 'compare'>
+  /** Opens as one person's report card: their own below supervisor, or
+   *  ?member=<id> (a member of the same business) for supervisors. */
+  memberCard?: boolean
   build: (c: ReportContext, o: { canSeeMoney: boolean }) => Promise<ReportDoc>
 }
 
 export const REPORTS: ReportDef[] = [
   { key: 'all', title: 'All report', group: 'overview', path: '/reports', minRole: 'viewer', selfAllowed: true, money: false, tabs: ['report'], build: (c, o) => allReport(c, o.canSeeMoney) },
   { key: 'leads', title: 'Lead report', group: 'topic', path: '/reports/leads', minRole: 'viewer', selfAllowed: true, money: false, tabs: ['report', 'compare'], build: (c) => leadReport(c) },
-  { key: 'agents', title: 'Agent report', group: 'topic', path: '/reports/agents', minRole: 'viewer', selfAllowed: true, money: false, tabs: ['report', 'compare'], build: (c) => agentReport(c) },
+  { key: 'agents', title: 'Agent report', group: 'topic', path: '/reports/agents', minRole: 'viewer', selfAllowed: true, money: false, tabs: ['report', 'compare'], memberCard: true, build: (c) => agentReport(c) },
   { key: 'ads', title: 'Ad report', group: 'topic', path: '/reports/ads', minRole: 'admin', selfAllowed: false, money: true, tabs: ['report', 'compare'], build: (c) => adReport(c) },
   { key: 'sales', title: 'Sales & Pipeline', group: 'topic', path: '/reports/sales', minRole: 'viewer', selfAllowed: true, money: false, tabs: ['report', 'compare'], build: (c) => salesReport(c) },
   { key: 'spending', title: 'Spending & ROI', group: 'topic', path: '/reports/spending', minRole: 'supervisor', selfAllowed: false, money: false, tabs: ['report', 'compare'], build: (c) => spendingReport(c) },

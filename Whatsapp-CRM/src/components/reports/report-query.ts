@@ -24,7 +24,13 @@ export interface ReportQuery {
   to: string
   compare: CompareKey
   tab: TabKey
+  /** One team member's Agent report card (supervisors). Kept on period
+   *  and tab changes and on exports; links to other reports drop it. The
+   *  server decides whether it may be used. */
+  member?: string
 }
+
+const MEMBER = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export const DEFAULT_PERIOD: PeriodKey = "week"
 export const DEFAULT_COMPARE: CompareKey = "previous"
@@ -50,7 +56,9 @@ export function readQuery(sp: ParamsLike | null): ReportQuery {
   const to = sp?.get("to") ?? ""
   if (period === "custom" && !(isDay(from) && isDay(to) && from <= to)) period = DEFAULT_PERIOD
   const tab: TabKey = sp?.get("tab") === "compare" ? "compare" : "report"
-  return { period, from: period === "custom" ? from : "", to: period === "custom" ? to : "", compare, tab }
+  const rawMember = sp?.get("member") ?? ""
+  const member = MEMBER.test(rawMember) ? rawMember : ""
+  return { period, from: period === "custom" ? from : "", to: period === "custom" ? to : "", compare, tab, member }
 }
 
 /** The query string for links between reports (no leading "?"). Defaults
@@ -83,6 +91,7 @@ export function apiQuery(q: ReportQuery, format: "json" | "pdf" | "xlsx" | "pptx
   }
   p.set("compare", q.compare)
   if (q.tab !== "report") p.set("tab", q.tab)
+  if (q.member) p.set("member", q.member)
   p.set("format", format)
   return p.toString()
 }

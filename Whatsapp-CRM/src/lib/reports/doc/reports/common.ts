@@ -15,6 +15,9 @@ export interface ReportContext {
   tz: string
   now: Date
   q: ResolvedQuery
+  /** One person's Agent report card: whose (userId above is the same id),
+   *  and whether they are looking at their own. Null/absent = no card. */
+  subject?: { userId: string; name: string | null; self: boolean } | null
 }
 
 export const COUNT: Fmt = { kind: 'count' }

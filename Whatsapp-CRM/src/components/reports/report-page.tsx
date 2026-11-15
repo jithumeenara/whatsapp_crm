@@ -11,7 +11,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { Lock, RefreshCw } from "lucide-react"
+import Link from "next/link"
+import { ChevronLeft, Lock, RefreshCw } from "lucide-react"
 import type { ReportDoc } from "@/lib/reports/doc/types"
 import { ApiError, apiFetch, errorText } from "@/lib/api-fetch"
 import { Button } from "@/components/ui/button"
@@ -20,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PeriodBar } from "./period-bar"
 import { ReportView } from "./report-view"
 import { useReportsMenu } from "./reports-nav"
-import { apiQuery, readQuery, type TabKey } from "./report-query"
+import { apiQuery, readQuery, withQuery, type TabKey } from "./report-query"
 
 type State =
   | { status: "loading" }
@@ -121,6 +122,15 @@ export function ReportPage({ reportKey }: { reportKey: string }) {
 
   return (
     <div className="mx-auto w-full max-w-6xl min-w-0 space-y-4">
+      {q.member && reportKey === "agents" && (
+        <Link
+          href={withQuery(pathname ?? "/reports/agents", q)}
+          className="inline-flex h-8 items-center gap-1 rounded-lg pr-2 text-[13px] font-semibold text-primary hover:underline"
+        >
+          <ChevronLeft className="h-4 w-4" aria-hidden />
+          Whole team
+        </Link>
+      )}
       <PeriodBar />
 
       {hasCompare ? (

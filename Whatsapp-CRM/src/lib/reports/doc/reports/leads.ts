@@ -10,6 +10,9 @@ import { loadPresentation } from '../../presentation'
 import type { Block, ReportDoc } from '../types'
 import { previousAsMain } from '../period-query'
 import { cell, changeCell, COUNT, dayLabel, kpi, num, pct, PERCENT, periodInfo, pctText, words, type ReportContext } from './common'
+import { loadActivity } from '../activity'
+import { pushFirstCall, pushIdle } from './agents'
+import { cleanPersonName } from '@/lib/auth/person-name'
 
 const SPEED_LABEL: Record<SpeedBucket, string> = {
   min5: 'Within 5 minutes', hour1: '5 to 60 minutes', day1: '1 to 24 hours', later: 'After a day', none: 'Not answered yet',
@@ -18,11 +21,15 @@ const SPEED_LABEL: Record<SpeedBucket, string> = {
 export async function leadReport(c: ReportContext): Promise<ReportDoc> {
   const p = c.q.period
   const comparing = c.q.compare !== 'none'
-  const [s, prev, data, speed] = await Promise.all([
+  const [s, prev, data, speed, act] = await Promise.all([
     buildSummary({ accountId: c.accountId, userId: c.userId, period: p, now: c.now, tz: c.tz }),
     comparing ? buildSummary({ accountId: c.accountId, userId: c.userId, period: previousAsMain(p), now: c.now, tz: c.tz }) : null,
     loadPresentation({ accountId: c.accountId, period: p, tz: c.tz, now: c.now, userId: c.userId, skipMeta: true }),
     replySpeed({ accountId: c.accountId, userId: c.userId, from: p.from, to: p.to }).catch(() => null),
+    loadActivity({ accountId: c.accountId, userId: c.userId, period: p, tz: c.tz, now: c.now }).catch((err) => {
+      console.error('[reports] lead activity failed:', err instanceof Error ? err.message : err)
+      return null
+    }),
   ])
   const before = (v: number) => (comparing ? v : null)
   const conv = pct(s.wonInPeriod, s.cohort.total)
@@ -124,6 +131,12 @@ export async function leadReport(c: ReportContext): Promise<ReportDoc> {
     })
   }
 
+  if (act) {
+    pushFirstCall(blocks, act)
+    const owners = new Map(s.agents.map((a) => [a.userId, cleanPersonName(a.name) || 'Former member']))
+    pushIdle(blocks, act, s.scope === 'team', owners)
+  }
+
   const leaks = [
     s.leaks.neverContacted.count ? `${num(s.leaks.neverContacted.count)} leads nobody has contacted` : null,
     s.leaks.waitingChats.count ? `${num(s.leaks.waitingChats.count)} customers waiting for a reply` : null,
@@ -138,7 +151,10 @@ export async function leadReport(c: ReportContext): Promise<ReportDoc> {
   return {
     key: 'leads', title: 'Lead report', headline, period: periodInfo(c), scope: c.userId ? 'self' : 'team',
     blocks,
-    notes: speed?.countedSince ? [`First-answer times are counted from ${speed.countedSince.slice(0, 10)}.`] : [],
+    notes: [
+      speed?.countedSince ? `First-answer times are counted from ${speed.countedSince.slice(0, 10)}.` : null,
+      act?.firstCall.countedSince ? `Time to first call is counted for leads since calls were first logged (${act.firstCall.countedSince}).` : null,
+    ].filter((x): x is string => Boolean(x)),
     generatedAt: c.now.toISOString(),
   }
 }

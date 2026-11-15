@@ -158,8 +158,9 @@ export interface ReportDoc {
   /** One sentence written by code: the answer first. */
   headline?: string
   period: ReportPeriodInfo
-  /** "team" or "self" — who the numbers cover. */
-  scope: 'team' | 'self'
+  /** Who the numbers cover: the team, the reader's own work, or one team
+   *  member a supervisor opened (their name is in the title). */
+  scope: 'team' | 'self' | 'member'
   blocks: Block[]
   /** "Data since…", "too few to judge…", "ad account not connected…". */
   notes?: string[]

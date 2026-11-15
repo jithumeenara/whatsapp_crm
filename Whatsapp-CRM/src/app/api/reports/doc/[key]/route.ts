@@ -5,11 +5,12 @@ import { businessTimezone } from '@/lib/ai/human-date'
 import { audit, auditCtx } from '@/lib/audit'
 import { tryAcquirePdfSlot } from '@/lib/reports/pdf/build-slots'
 import { resolveQuery } from '@/lib/reports/doc/period-query'
-import { accessFor, findReport, type ExportFormat } from '@/lib/reports/doc/registry'
+import { accessFor, findReport, MEMBER_ID, type ExportFormat, type ReportDef } from '@/lib/reports/doc/registry'
 import { loadDocBusiness } from '@/lib/reports/doc/business'
 import { docToPdf } from '@/lib/reports/doc/pdf'
 import { docToXlsx } from '@/lib/reports/doc/xlsx'
 import { docToPptx } from '@/lib/reports/doc/pptx'
+import { findMember } from '@/lib/reports/doc/member'
 
 /** Viewing switches periods often; an export builds a file. */
 const VIEW_LIMIT = { limit: 40, windowMs: 60_000 }
@@ -19,6 +20,25 @@ const FILE: Record<ExportFormat, { type: string; ext: string }> = {
   pdf: { type: 'application/pdf', ext: 'pdf' },
   xlsx: { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: 'xlsx' },
   pptx: { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', ext: 'pptx' },
+}
+
+type Subject = { userId: string; name: string | null; self: boolean }
+
+/**
+ * Whose numbers, for one person's report card. Below supervisor it is
+ * always their own (a member in the address is ignored); a supervisor
+ * may open anyone's in this business, and only this business.
+ */
+async function cardFor(
+  def: ReportDef, ownId: string | null, member: string | null, accountId: string,
+): Promise<{ userId: string | null; subject: Subject | null } | NextResponse> {
+  if (!def.memberCard) return { userId: ownId, subject: null }
+  if (ownId) return { userId: ownId, subject: { userId: ownId, name: null, self: true } }
+  if (!member) return { userId: null, subject: null }
+  if (!MEMBER_ID.test(member)) return NextResponse.json({ error: 'That team member link is not valid.' }, { status: 400 })
+  const found = await findMember(accountId, member)
+  if (!found) return NextResponse.json({ error: "That person isn't on this team." }, { status: 404 })
+  return { userId: found.userId, subject: { userId: found.userId, name: found.name, self: false } }
 }
 
 /**
@@ -53,8 +73,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ key:
     const resolved = resolveQuery({ period: q.get('period'), from: q.get('from'), to: q.get('to'), compare: q.get('compare') }, now, tz)
     if (!resolved) return NextResponse.json({ error: 'Choose a start and end date in order, up to one year apart, not in the future.' }, { status: 400 })
 
+    const card = await cardFor(def, access.userId, q.get('member'), ctx.accountId)
+    if (card instanceof NextResponse) return card
+    const { userId, subject } = card
+
     const doc = await def.build(
-      { accountId: ctx.accountId, userId: access.userId, role: ctx.role, tz, now, q: resolved },
+      { accountId: ctx.accountId, userId, role: ctx.role, tz, now, q: resolved, subject },
       { canSeeMoney: access.canSeeMoney },
     )
     if (format === 'json') return NextResponse.json({ doc })
