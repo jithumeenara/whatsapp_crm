@@ -441,7 +441,9 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
   // starting a second one on top would save two half-records.
   const waitingFor =
     args.channel === 'whatsapp'
-      ? await import('./registration-draft').then((m) => m.activeDraftWaitingFor(args.accountId, args.conversationId)).catch(() => null)
+      // The light module: the full registration-draft (AI SDK, record
+      // events, alerts) took 4.5 s to load on a cold start for this check.
+      ? await import('./registration-draft-state').then((m) => m.activeDraftWaitingFor(args.accountId, args.conversationId)).catch(() => null)
       : null
 
   const startedAt = Date.now()
