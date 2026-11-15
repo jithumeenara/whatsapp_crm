@@ -113,6 +113,10 @@ export interface SendBusinessMessagingEventArgs {
    *  that started the conversation. */
   ctwaClid?: string | null
   customData?: { currency?: string; value?: number }
+  /** Stable id for this outcome (same record, same kind → same id), so a
+   *  repeat report — a double press, a retry, reopened and closed again —
+   *  is counted once by Meta instead of twice. */
+  eventId?: string
 }
 
 /**
@@ -123,7 +127,7 @@ export interface SendBusinessMessagingEventArgs {
  * sites check for a stored ctwa_clid before calling this at all.
  */
 export async function sendBusinessMessagingEvent(args: SendBusinessMessagingEventArgs): Promise<void> {
-  const { datasetId, accessToken, eventName, eventTime, wabaId, pageId, ctwaClid, customData } = args
+  const { datasetId, accessToken, eventName, eventTime, wabaId, pageId, ctwaClid, customData, eventId } = args
   const channel = args.channel ?? 'whatsapp'
   const res = await fetch(`${META_API_BASE}/${datasetId}/events`, {
     method: 'POST',
@@ -132,6 +136,7 @@ export async function sendBusinessMessagingEvent(args: SendBusinessMessagingEven
       data: [{
         event_name: eventName,
         event_time: eventTime,
+        ...(eventId ? { event_id: eventId } : {}),
         action_source: 'business_messaging',
         messaging_channel: channel,
         user_data: {

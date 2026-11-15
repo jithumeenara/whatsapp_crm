@@ -59,7 +59,7 @@ export async function allReport(c: ReportContext, canSeeMoney: boolean): Promise
   blocks.push({ kind: 'text', id: 'todo', title: 'Needs doing now', style: todo.length ? 'warning' : 'note', lines: todo.length ? todo : ['Nothing is waiting.'] })
 
   // The Performance guide's three most serious cards (the full list is its own report).
-  const guide = await loadGuide(c, { s, prev, data }).catch((err) => {
+  const guide = await loadGuide(c, { s, prev, data }, canSeeMoney).catch((err) => {
     console.error('[reports] guide for the All report failed:', err instanceof Error ? err.message : err)
     return null
   })

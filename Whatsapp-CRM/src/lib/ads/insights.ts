@@ -34,7 +34,12 @@ export interface InsightTotals {
 }
 
 export type AccountInsights =
-  | { status: 'ok'; totals: InsightTotals; byDay: Array<{ day: string; spend: number; clicks: number }> }
+  | {
+      status: 'ok'; totals: InsightTotals; byDay: Array<{ day: string; spend: number; clicks: number }>
+      /** Meta's own "messaging conversations started" for the run (7-day
+       *  window). Null when Meta gave none. Not the CRM's own count. */
+      conversationsStarted?: number | null
+    }
   | { status: 'not_connected' | 'no_ad_account' | 'error'; message: string }
 
 const cache = new Map<string, { at: number; value: AccountInsights }>()
@@ -56,6 +61,18 @@ export function totalsFromRow(row: Record<string, unknown> | undefined): Insight
     frequency: row?.frequency != null && Number.isFinite(Number(row.frequency)) ? Math.round(Number(row.frequency) * 100) / 100 : null,
     currency,
   }
+}
+
+const STARTED = 'onsite_conversion.messaging_conversation_started_7d'
+
+/** Meta's count of messaging conversations its ads started. Pure. */
+export function conversationsStarted(row: Record<string, unknown> | undefined): number | null {
+  const actions = row?.actions
+  if (!Array.isArray(actions)) return null
+  const hit = actions.find((a) => a && typeof a === 'object' && (a as { action_type?: unknown }).action_type === STARTED) as { value?: unknown } | undefined
+  if (!hit) return null
+  const n = Number(hit.value)
+  return Number.isFinite(n) ? n : null
 }
 
 async function graph(url: string, token: string): Promise<Array<Record<string, unknown>> | null> {
@@ -93,13 +110,14 @@ async function read(accountId: string, since: string, until: string): Promise<Ac
     const act = account.startsWith('act_') ? account : `act_${account}`
     const range = `time_range=${encodeURIComponent(JSON.stringify({ since, until }))}`
     const [whole, days] = await Promise.all([
-      graph(`${GRAPH}/${act}/insights?fields=spend,reach,impressions,clicks,frequency,account_currency&${range}`, token),
+      graph(`${GRAPH}/${act}/insights?fields=spend,reach,impressions,clicks,frequency,account_currency,actions&${range}`, token),
       graph(`${GRAPH}/${act}/insights?fields=spend,clicks&time_increment=1&limit=400&${range}`, token),
     ])
     if (!whole || !days) return { status: 'error', message: 'Could not read ad figures from Meta. Check the ad account and its access in Settings → Ads.' }
     return {
       status: 'ok',
       totals: totalsFromRow(whole[0]),
+      conversationsStarted: conversationsStarted(whole[0]),
       byDay: days
         .filter((r) => typeof r.date_start === 'string' && DAY.test(r.date_start))
         .map((r) => ({ day: r.date_start as string, spend: num(r.spend), clicks: num(r.clicks) }))

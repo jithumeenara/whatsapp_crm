@@ -8,6 +8,8 @@ import { formatAmount, formatCost } from '@/lib/format/money'
 import { loadSpending } from '../../spending'
 import { channelLabel, dayAmount, type Money } from '../../spending-assemble'
 import { buildSummary } from '../../summary'
+import { adPerformance, type AdPerformance } from '@/lib/ads/performance'
+import { loadCampaigns } from '../campaign-data'
 import type { Block, ReportDoc } from '../types'
 import { previousAsMain } from '../period-query'
 import { cell, dayLabel, kpi, moneyFmt, moneyIn, num, periodInfo, type ReportContext } from './common'
@@ -20,12 +22,20 @@ const moneyText = (m: Money) => {
 export async function spendingReport(c: ReportContext): Promise<ReportDoc> {
   const p = c.q.period
   const comparing = c.q.compare !== 'none'
-  const [r, prev, s] = await Promise.all([
+  const [r, prev, s, ads] = await Promise.all([
     loadSpending({ accountId: c.accountId, period: p, tz: c.tz }),
     comparing ? loadSpending({ accountId: c.accountId, period: previousAsMain(p), tz: c.tz }) : null,
     buildSummary({ accountId: c.accountId, userId: null, period: p, now: c.now, tz: c.tz }),
+    adPerformance({ accountId: c.accountId, from: p.from, to: p.to, firstDay: p.firstDay, lastDay: p.lastDay }).catch((err) => {
+      console.error('[reports] ad return for spending failed:', err instanceof Error ? err.message : err)
+      return null
+    }),
   ])
   const cur = r.businessCurrency
+  const camp = await loadCampaigns({ accountId: c.accountId, period: p, tz: c.tz, now: c.now, currency: cur }).catch((err) => {
+    console.error('[reports] broadcast return for spending failed:', err instanceof Error ? err.message : err)
+    return null
+  })
   const total = r.totals.combined
   const revenue = moneyIn(s.revenue, cur)
   const roi = total > 0 ? Math.round(((revenue - total) / total) * 100) : null
@@ -83,10 +93,45 @@ export async function spendingReport(c: ReportContext): Promise<ReportDoc> {
   const notes = [...r.totals.excluded, ...r.warnings]
   if (r.ads.error) notes.push(r.ads.error)
   notes.push('AI cost is an estimate from the provider’s own token counts. Amounts in different currencies are never added together.')
+  blocks.push(...returnBlocks(ads, camp, cur))
 
   return {
     key: 'spending', title: 'Spending & ROI report',
     headline: `${formatAmount(total, cur)} spent; ${formatAmount(revenue, cur)} won${roi == null ? '' : ` (return ${roi >= 0 ? '+' : ''}${roi}%)`}.`,
     period: periodInfo(c), scope: 'team', blocks, notes, generatedAt: c.now.toISOString(),
   }
+}
+
+/** Return by ad campaign and what broadcasts cost against their result. */
+function returnBlocks(ads: AdPerformance | null, camp: Awaited<ReturnType<typeof loadCampaigns>> | null, cur: string): Block[] {
+  const out: Block[] = []
+  if (ads && ads.campaigns.length) {
+    const ac = ads.currency ?? cur
+    const revOf = (list: Array<{ currency: string; amount: number }>) => list.filter((m) => m.currency === ac).reduce((x, m) => x + m.amount, 0)
+    out.push({
+      kind: 'table', id: 'return-campaign', title: 'Return by ad campaign',
+      columns: [{ label: 'Campaign', align: 'left', width: 2 }, { label: 'Spent', align: 'right' }, { label: 'Leads', align: 'right' }, { label: 'Won', align: 'right' }, { label: 'Revenue', align: 'right' }, { label: 'Return', align: 'right' }],
+      rows: ads.campaigns.map((x) => {
+        const rev = revOf(x.revenue)
+        return [
+          cell(x.campaignName ?? 'Campaign not named yet'), cell(x.spend == null ? '—' : formatAmount(x.spend, ac), x.spend),
+          cell(num(x.leads), x.leads), cell(num(x.won), x.won), cell(formatAmount(rev, ac), rev),
+          cell(x.roas == null ? '—' : `${x.roas.toFixed(1)}×`, x.roas, x.roas == null ? undefined : x.roas >= 1 ? 'good' : 'bad'),
+        ]
+      }),
+      note: 'Return = revenue won from the campaign\'s leads ÷ what Meta charged for it. 1× means it paid for itself.',
+    })
+  }
+  if (camp && camp.broadcasts.length) {
+    out.push({
+      kind: 'table', id: 'return-broadcast', title: 'Broadcasts: cost and result',
+      columns: [{ label: 'Broadcast', align: 'left', width: 2 }, { label: 'Cost', align: 'right' }, { label: 'Replies', align: 'right' }, { label: 'Per reply', align: 'right' }, { label: 'Leads', align: 'right' }, { label: 'Won', align: 'right' }],
+      rows: camp.broadcasts.slice(0, 20).map((b) => [
+        cell(b.name || 'Broadcast'), cell(b.cost == null ? '—' : formatAmount(b.cost, cur), b.cost), cell(num(b.replied), b.replied),
+        cell(b.costPerReply == null ? '—' : formatAmount(b.costPerReply, cur), b.costPerReply), cell(num(b.leads), b.leads), cell(num(b.won), b.won),
+      ]),
+      note: 'Leads: from people who replied, within 7 days of the message. The Campaign report has the full detail.',
+    })
+  }
+  return out
 }

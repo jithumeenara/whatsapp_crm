@@ -420,7 +420,7 @@ export async function PATCH(
     // worth reporting back to Meta, if this contact's conversation came
     // from an ad in the first place (reportMetaAdsOutcome no-ops otherwise).
     if (lead_quality === 'qualified' && existing.lead_quality !== 'qualified') {
-      void reportMetaAdsOutcome({ accountId: ctx.accountId, contactId: lead.contact_id, eventName: 'QualifiedLead' })
+      void reportMetaAdsOutcome({ accountId: ctx.accountId, contactId: lead.contact_id, eventName: 'QualifiedLead', record: { kind: 'lead', id } })
     }
 
     const activities: Array<ReturnType<typeof prisma.leadActivity.create>> = []

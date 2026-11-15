@@ -10,7 +10,7 @@
 import { countFunnel, type FunnelRow } from '../funnel'
 import type { FunnelStage } from '../settings'
 
-export type CompareDim = 'period' | 'agent' | 'source' | 'category' | 'number'
+export type CompareDim = 'period' | 'agent' | 'source' | 'category' | 'number' | 'ad'
 export const MAX_ITEMS = 4
 /** Fewer leads than this on either side: no judgement, just the numbers. */
 export const MIN_LEADS = 10
@@ -19,12 +19,12 @@ const BY_REPORT: Record<string, CompareDim[]> = {
   leads: ['period', 'source', 'category', 'number'],
   agents: ['period', 'agent'],
   sales: ['period', 'category', 'agent'],
-  ads: ['period'],
+  ads: ['period', 'ad'],
   spending: ['period'],
 }
 
 export const DIM_LABEL: Record<CompareDim, string> = {
-  period: 'Periods', agent: 'Team members', source: 'Sources', category: 'Categories', number: 'WhatsApp numbers',
+  period: 'Periods', agent: 'Team members', source: 'Sources', category: 'Categories', number: 'WhatsApp numbers', ad: 'Ads',
 }
 
 /** Someone who sees only their own work compares only their own periods. */

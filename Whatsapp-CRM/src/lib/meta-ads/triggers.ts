@@ -24,11 +24,20 @@ import { sendBusinessMessagingEvent, type BusinessMessagingEventName } from './a
  * a Facebook Page ID instead of a WABA ID, per Meta's own API shape for
  * that channel (see sendBusinessMessagingEvent's channel param).
  */
+/** One id per outcome of one record, e.g. "purchase:deal:<id>": Meta drops
+ *  a second event with the same event_name and event_id. */
+export function outcomeEventId(eventName: BusinessMessagingEventName, kind: 'lead' | 'deal', id: string): string {
+  return `${eventName.toLowerCase()}:${kind}:${id}`
+}
+
 export async function reportMetaAdsOutcome(args: {
   accountId: string
   contactId: string | null | undefined
   eventName: BusinessMessagingEventName
   customData?: { currency?: string; value?: number }
+  /** The lead or deal this outcome is about: gives the event its stable
+   *  event_id (outcomeEventId), so Meta counts a repeat once. */
+  record?: { kind: 'lead' | 'deal'; id: string }
 }): Promise<void> {
   if (!args.contactId) return
   try {
@@ -69,6 +78,7 @@ export async function reportMetaAdsOutcome(args: {
       pageId,
       ctwaClid: conversation.ctwa_clid,
       customData: args.customData,
+      eventId: args.record ? outcomeEventId(args.eventName, args.record.kind, args.record.id) : undefined,
     })
   } catch (err) {
     console.error(`[meta-ads] failed to report ${args.eventName} (non-fatal):`, err)

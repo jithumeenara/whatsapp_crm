@@ -40,7 +40,7 @@ describe('report access', () => {
 
   it('an admin sees everything, money included, with all three exports', () => {
     const menu = menuFor(admin)
-    expect(menu.map((m) => m.key)).toEqual(['all', 'leads', 'agents', 'ads', 'sales', 'spending', 'guide'])
+    expect(menu.map((m) => m.key)).toEqual(['all', 'leads', 'agents', 'ads', 'sales', 'spending', 'campaigns', 'guide'])
     expect(menu.every((m) => m.exports.join(',') === 'pdf,xlsx,pptx')).toBe(true)
     expect(accessFor(findReport('ads')!, admin)).toMatchObject({ allowed: true, userId: null, canSeeMoney: true })
   })

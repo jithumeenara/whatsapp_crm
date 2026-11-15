@@ -16,6 +16,8 @@ import { previousAsMain } from '../period-query'
 import { loadActivity, median } from '../activity'
 import type { Block, Finding, ReportDoc } from '../types'
 import { guideFindings, slotLabel, type GuideFacts } from './guide-findings'
+import { adPerformance } from '@/lib/ads/performance'
+import { loadCampaigns } from '../campaign-data'
 import { carryQuery, kpi, MINUTES, num, pct, PERCENT, periodInfo, words, type ReportContext } from './common'
 
 type Summary = Awaited<ReturnType<typeof buildSummary>>
@@ -50,7 +52,7 @@ async function replySlots(c: ReportContext) {
   }
 }
 
-export async function loadGuide(c: ReportContext, reuse: GuideReuse = {}): Promise<{ findings: Finding[]; facts: GuideFacts }> {
+export async function loadGuide(c: ReportContext, reuse: GuideReuse = {}, canSeeMoney = false): Promise<{ findings: Finding[]; facts: GuideFacts }> {
   const p = c.q.period
   const comparing = c.q.compare !== 'none'
   const [s, prev, data, act, prevAct, reply] = await Promise.all([
@@ -89,12 +91,13 @@ export async function loadGuide(c: ReportContext, reuse: GuideReuse = {}): Promi
     idle: act.idle.total,
     neverContacted: s.leaks.neverContacted.count,
     leakHours: s.leakHours,
+    ...(await moneyAndBroadcastFacts(c, q, canSeeMoney)),
   }
   return { findings: guideFindings(facts), facts }
 }
 
-export async function guideReport(c: ReportContext): Promise<ReportDoc> {
-  const { findings, facts } = await loadGuide(c)
+export async function guideReport(c: ReportContext, canSeeMoney = false): Promise<ReportDoc> {
+  const { findings, facts } = await loadGuide(c, {}, canSeeMoney)
   const late = facts.followUps.lateNow
   const blocks: Block[] = [
     {
@@ -110,7 +113,7 @@ export async function guideReport(c: ReportContext): Promise<ReportDoc> {
     { kind: 'findings', id: 'guide', title: 'What to work on', items: findings },
     {
       kind: 'text', id: 'coming', style: 'note',
-      lines: ['Ad spend and AI checks join this guide when the Ad and AI reports are built.'],
+      lines: [canSeeMoney ? 'AI checks join this guide when the AI report is built.' : 'AI checks join this guide when the AI report is built. Ad spend checks are shown to owners and admins.'],
     },
   ]
   const serious = findings.filter((f) => f.severity === 'high' || f.severity === 'medium').length
@@ -132,4 +135,39 @@ export async function guideReport(c: ReportContext): Promise<ReportDoc> {
     ],
     generatedAt: c.now.toISOString(),
   }
+}
+
+
+/** Ad money (owners, admins) and broadcast checks (team guide). A failure leaves them out. */
+async function moneyAndBroadcastFacts(c: ReportContext, q: string, canSeeMoney: boolean): Promise<Pick<GuideFacts, 'ads' | 'broadcasts'>> {
+  if (c.userId) return {}
+  const p = c.q.period
+  const comparing = c.q.compare !== 'none' && c.q.previousDays
+  const account = await prisma.account.findUnique({ where: { id: c.accountId }, select: { default_currency: true } })
+  const cur = account?.default_currency || 'USD'
+  const [ads, prevAds, camp, prevCamp] = await Promise.all([
+    canSeeMoney ? adPerformance({ accountId: c.accountId, from: p.from, to: p.to, firstDay: p.firstDay, lastDay: p.lastDay }).catch(() => null) : null,
+    canSeeMoney && comparing && c.q.previousDays ? adPerformance({ accountId: c.accountId, from: p.prevFrom, to: p.prevTo, firstDay: c.q.previousDays.firstDay, lastDay: c.q.previousDays.lastDay }).catch(() => null) : null,
+    loadCampaigns({ accountId: c.accountId, period: p, tz: c.tz, now: c.now, currency: cur }).catch(() => null),
+    comparing ? loadCampaigns({ accountId: c.accountId, period: previousAsMain(p), tz: c.tz, now: c.now, currency: cur }).catch(() => null) : null,
+  ])
+  const out: Pick<GuideFacts, 'ads' | 'broadcasts'> = {}
+  if (ads) {
+    out.ads = {
+      link: `/reports/ads?${q}`,
+      currency: ads.currency ?? cur,
+      noLeads: ads.ads.filter((x) => (x.spend ?? 0) > 0 && x.leads === 0).map((x) => ({ name: x.adName ?? x.headline ?? `Ad ${x.adId}`, spend: x.spend ?? 0 })),
+      costPerLead: { now: ads.totals.costPerLead, before: prevAds?.totals.costPerLead ?? null },
+    }
+  }
+  if (camp) {
+    const worst = [...camp.broadcasts].sort((x, y) => y.failed / Math.max(1, y.sent + y.failed) - x.failed / Math.max(1, x.sent + x.failed))[0]
+    const sum = (m: Map<string, number>) => [...m.values()].reduce((x, v) => x + v, 0)
+    out.broadcasts = {
+      link: `/reports/campaigns?${q}`,
+      worstFailed: worst ? { name: worst.name || 'Broadcast', failed: worst.failed, sent: worst.sent } : null,
+      optOuts: { now: sum(camp.optOut), before: prevCamp ? sum(prevCamp.optOut) : null },
+    }
+  }
+  return out
 }

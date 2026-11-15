@@ -21,6 +21,10 @@ export interface GuideFacts {
   idle: number
   neverContacted: number
   leakHours: number
+  /** Only for someone who may see ad money (owners, admins). */
+  ads?: { link: string; currency: string; noLeads: Array<{ name: string; spend: number }>; costPerLead: { now: number | null; before: number | null } }
+  /** Team guide only. */
+  broadcasts?: { link: string; worstFailed: { name: string; failed: number; sent: number } | null; optOuts: { now: number; before: number | null } }
 }
 
 const MIN_BASE = 10
@@ -168,8 +172,71 @@ export function guideFindings(f: GuideFacts): Finding[] {
     })
   }
 
+  out.push(...adCards(f), ...broadcastCards(f))
+
   if (!out.length) {
     out.push({ severity: 'good', title: 'Nothing has dropped', evidence: 'No fall in leads, stages, reply speed or follow-ups that the numbers can show.', suggestion: 'Keep the same rhythm.' })
   }
   return out.sort((a, b) => ORDER[a.severity] - ORDER[b.severity])
+}
+
+function moneyText(v: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(v)
+  } catch {
+    return `${currency} ${Math.round(v)}`
+  }
+}
+
+/** Ad money: only present for someone allowed to see it. */
+function adCards(f: GuideFacts): Finding[] {
+  if (!f.ads) return []
+  const out: Finding[] = []
+  for (const ad of f.ads.noLeads.filter((x) => x.spend > 0).slice(0, 3)) {
+    out.push({
+      severity: 'high',
+      title: `"${ad.name}" spent money and brought no leads`,
+      evidence: `${moneyText(ad.spend, f.ads.currency)} spent in this period, no lead from it.`,
+      suggestion: 'Pause it or change it, and check where the ad sends people.',
+      href: f.ads.link,
+    })
+  }
+  const { now, before } = f.ads.costPerLead
+  if (now != null && before != null && before > 0 && now >= before * 1.33) {
+    out.push({
+      severity: 'medium',
+      title: `Cost per lead rose ${Math.round(((now - before) / before) * 100)}%`,
+      evidence: `${moneyText(now, f.ads.currency)} per lead now against ${moneyText(before, f.ads.currency)} before.`,
+      suggestion: 'Move budget to the ads with the lowest cost per lead in the Ad report.',
+      href: f.ads.link,
+    })
+  }
+  return out
+}
+
+function broadcastCards(f: GuideFacts): Finding[] {
+  if (!f.broadcasts) return []
+  const out: Finding[] = []
+  const w = f.broadcasts.worstFailed
+  if (w && w.sent + w.failed >= 50 && w.failed / (w.sent + w.failed) >= 0.1) {
+    out.push({
+      severity: 'high',
+      title: `Broadcast "${w.name}": ${w.failed} messages failed`,
+      evidence: `${Math.round((w.failed / (w.sent + w.failed)) * 100)}% of its sends did not go out.`,
+      suggestion: 'Check the reasons in the broadcast: numbers not on WhatsApp, a paused template, or Meta\'s marketing limit.',
+      href: f.broadcasts.link,
+      action: { label: 'Open broadcasts', href: '/broadcasts' },
+    })
+  }
+  const o = f.broadcasts.optOuts
+  if (o.before != null && o.now >= 10 && o.now >= o.before * 2) {
+    out.push({
+      severity: 'high',
+      title: `Opt-outs rose from ${o.before} to ${o.now}`,
+      evidence: 'People asking not to get messages any more.',
+      suggestion: 'Send broadcasts less often, and only to people they are relevant to.',
+      href: f.broadcasts.link,
+    })
+  }
+  return out
 }

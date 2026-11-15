@@ -33,6 +33,7 @@ function keyExpr(dim: CompareDim): Prisma.Sql {
     case 'source': return Prisma.sql`COALESCE(NULLIF(l.source, ''), 'Unknown')`
     case 'category': return Prisma.sql`COALESCE(l.service_category_key, '__none')`
     case 'number': return Prisma.sql`COALESCE(l.whatsapp_config_id::text, '__none')`
+    case 'ad': return Prisma.sql`COALESCE(l.ad_id, '__none')`
     default: return Prisma.sql`'all'`
   }
 }
@@ -78,6 +79,12 @@ async function loadOptions(accountId: string, dim: CompareDim, counts: Map<strin
     const label = new Map(nums.map((n, i) => [n.id, n.label?.trim() || (n.is_default ? 'Main number' : `Number ${i + 1}`)]))
     const keys = new Set([...counts.keys(), ...nums.map((n) => n.id)])
     return [...keys].map((k) => ({ key: k, label: k === '__none' ? 'Not from WhatsApp' : label.get(k) ?? 'Removed number' })).sort(byCount)
+  }
+  if (dim === 'ad') {
+    const ids = [...counts.keys()].filter((k) => k !== '__none')
+    const named = ids.length ? await prisma.adCatalog.findMany({ where: { account_id: accountId, ad_id: { in: ids } }, select: { ad_id: true, ad_name: true } }) : []
+    const label = new Map(named.map((n) => [n.ad_id, n.ad_name?.trim() || `Ad ${n.ad_id}`]))
+    return [...counts.keys()].map((k) => ({ key: k, label: k === '__none' ? 'Not from an ad' : label.get(k) ?? `Ad ${k}` })).sort(byCount)
   }
   // source
   return [...counts.keys()].map((k) => ({ key: k, label: k === 'Unknown' ? 'Unknown' : words(k) })).sort(byCount)

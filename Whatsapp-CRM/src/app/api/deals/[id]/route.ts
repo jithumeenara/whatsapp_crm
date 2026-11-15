@@ -117,6 +117,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         contactId: deal.contact_id,
         eventName: 'Purchase',
         customData: { currency: deal.currency ?? undefined, value: Number(deal.value) },
+        record: { kind: 'deal', id },
       })
     }
 
