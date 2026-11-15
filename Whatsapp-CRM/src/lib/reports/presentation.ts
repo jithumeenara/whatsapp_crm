@@ -124,7 +124,9 @@ type RawDb = Pick<Db, '$queryRaw'>
  * against a real database: ad arrivals by business day, leads by category
  * and day, both periods' totals, funnel marks, distinct ads.
  */
-export async function presentationRows(db: RawDb, accountId: string, p: Pick<ReportPeriod, 'from' | 'to' | 'prevFrom' | 'prevTo'>, zone: Prisma.Sql) {
+export async function presentationRows(db: RawDb, accountId: string, p: Pick<ReportPeriod, 'from' | 'to' | 'prevFrom' | 'prevTo'>, zone: Prisma.Sql, userId: string | null = null) {
+  // One person's own leads only, when the report is theirs (decided by role, never the request).
+  const mine = userId ? Prisma.sql`AND l.assigned_to = ${userId}::uuid` : Prisma.empty
   const [touches, prevTouches, cats, prevCats, marks, prevMarks, ads] = await Promise.all([
     db.$queryRaw<Array<{ day: string; n: bigint }>>`
       SELECT (t.touched_at AT TIME ZONE ${zone})::date::text AS day, count(*) AS n
@@ -134,12 +136,12 @@ export async function presentationRows(db: RawDb, accountId: string, p: Pick<Rep
     db.$queryRaw<Array<{ key: string | null; day: string; n: bigint }>>`
       SELECT l.service_category_key AS key, (l.created_at AT TIME ZONE ${zone})::date::text AS day, count(*) AS n
       FROM leads l WHERE l.account_id = ${accountId}::uuid AND l.is_hidden = false AND l.ai_suggested = false
-        AND l.created_at >= ${p.from} AND l.created_at < ${p.to} GROUP BY 1, 2`,
+        AND l.created_at >= ${p.from} AND l.created_at < ${p.to} ${mine} GROUP BY 1, 2`,
     db.$queryRaw<Array<{ n: bigint }>>`
       SELECT count(*) AS n FROM leads l WHERE l.account_id = ${accountId}::uuid AND l.is_hidden = false AND l.ai_suggested = false
-        AND l.created_at >= ${p.prevFrom} AND l.created_at < ${p.prevTo}`,
-    funnelMarks(db, accountId, p.from, p.to),
-    funnelMarks(db, accountId, p.prevFrom, p.prevTo),
+        AND l.created_at >= ${p.prevFrom} AND l.created_at < ${p.prevTo} ${mine}`,
+    funnelMarks(db, accountId, p.from, p.to, mine),
+    funnelMarks(db, accountId, p.prevFrom, p.prevTo, mine),
     db.$queryRaw<Array<{ n: bigint }>>`
       SELECT count(DISTINCT ad_id) AS n FROM ad_touches
       WHERE account_id = ${accountId}::uuid AND ad_id IS NOT NULL AND touched_at >= ${p.from} AND touched_at < ${p.to}`,
@@ -147,8 +149,8 @@ export async function presentationRows(db: RawDb, accountId: string, p: Pick<Rep
   return { touches, prevTouches, cats, prevCats, marks, prevMarks, activeAds: Number(ads[0]?.n ?? 0) }
 }
 
-async function funnelMarks(db: RawDb, accountId: string, from: Date, to: Date) {
-  const cohort = Prisma.sql`l.account_id = ${accountId}::uuid AND l.is_hidden = false AND l.ai_suggested = false AND l.created_at >= ${from} AND l.created_at < ${to}`
+async function funnelMarks(db: RawDb, accountId: string, from: Date, to: Date, mine: Prisma.Sql = Prisma.empty) {
+  const cohort = Prisma.sql`l.account_id = ${accountId}::uuid AND l.is_hidden = false AND l.ai_suggested = false AND l.created_at >= ${from} AND l.created_at < ${to} ${mine}`
   const [marks, won] = await Promise.all([
     db.$queryRaw<Array<{ lead_id: string; stage_key: string | null; assigned_to: string | null }>>`
       SELECT DISTINCT a.lead_id, a.metadata->>'stage_key' AS stage_key, l.assigned_to
@@ -172,21 +174,27 @@ export async function loadPresentation(a: {
   accountId: string; period: ReportPeriod; tz: string; now: Date; db?: Db
   /** The team summary, when the caller already built it (not rebuilt here). */
   summary?: ReportSummary
+  /** One person's own numbers (an agent's report); null for the team. */
+  userId?: string | null
+  /** Leave Meta out (reports that do not show ad spend); no network call. */
+  skipMeta?: boolean
 }): Promise<PresentationData> {
   const db = a.db ?? prisma
   const { period: p, accountId, tz, now } = a
+  const userId = a.userId ?? null
   const days = daysBetween(p.firstDay, p.lastDay)
   const prevFirst = addDays(p.firstDay, -days.length)
   const prevLast = addDays(p.firstDay, -1)
   const zone = await zoneForSql(db, tz, now)
+  const noMeta: AccountInsights = { status: 'not_connected', message: '' }
 
   const [settings, summary, speed, insights, previous, raw] = await Promise.all([
     db.leadSettings.findUnique({ where: { account_id: accountId }, select: { funnel_stages: true, report_settings: true } }),
-    a.summary ?? buildSummary({ accountId, userId: null, period: p, now, tz, db }),
-    replySpeed({ accountId, userId: null, from: p.from, to: p.to, db }).catch(() => null),
-    accountInsights(accountId, p.firstDay, p.lastDay),
-    accountInsights(accountId, prevFirst, prevLast),
-    presentationRows(db, accountId, p, zone),
+    a.summary ?? buildSummary({ accountId, userId, period: p, now, tz, db }),
+    replySpeed({ accountId, userId, from: p.from, to: p.to, db }).catch(() => null),
+    a.skipMeta || userId ? noMeta : accountInsights(accountId, p.firstDay, p.lastDay),
+    a.skipMeta || userId ? noMeta : accountInsights(accountId, prevFirst, prevLast),
+    presentationRows(db, accountId, p, zone, userId),
   ])
   const { touches, prevTouches, cats, prevCats, marks, prevMarks, activeAds } = raw
 

@@ -13,10 +13,12 @@
  * Never throws.
  */
 
+import { MARKETING_API_BASE } from '@/lib/meta/versions'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 
-const GRAPH = 'https://graph.facebook.com/v21.0'
+// Marketing API: v21.0 is retired (src/lib/meta/versions.ts).
+const GRAPH = MARKETING_API_BASE
 const META_ID = /^\d{5,30}$/
 const FRESH_MS = 7 * 24 * 60 * 60_000
 const RETRY_MS = 24 * 60 * 60_000

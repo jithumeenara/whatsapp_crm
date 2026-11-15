@@ -15,11 +15,13 @@
  * Team-wide money: callers allow owners and admins only.
  */
 
+import { MARKETING_API_BASE } from '@/lib/meta/versions'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 
-const GRAPH = 'https://graph.facebook.com/v21.0'
+// Marketing API: v21.0 is retired (src/lib/meta/versions.ts).
+const GRAPH = MARKETING_API_BASE
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 
 export interface MoneyAmount { currency: string; amount: number }

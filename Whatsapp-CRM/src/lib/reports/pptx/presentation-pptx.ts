@@ -198,12 +198,13 @@ export async function buildDeck(input: DeckInput): Promise<Buffer> {
     const cpc = ok && ok.totals.clicks > 0 ? money(ok.totals.spend / ok.totals.clicks) : '—'
     const costPerConv = ok && ads.conversations > 0 ? ok.totals.spend / ads.conversations : null
     const prevCost = prev && ads.previousConversations > 0 ? prev.totals.spend / ads.previousConversations : null
-    const reachChange = ok && prev ? changeText(ok.totals.reach, prev.totals.reach) : null
+    // Reach can be withheld by Meta (null): then no number and no change.
+    const reachChange = ok?.totals.reach != null && prev?.totals.reach != null ? changeText(ok.totals.reach, prev.totals.reach) : null
     const convChange = changeText(ads.conversations, ads.previousConversations)
     const costChange = costPerConv != null && prevCost != null ? changeText(costPerConv, prevCost) : null
     const cards: Array<[string, string, string | null, boolean]> = [
       [tr('pSpent'), money(spend), spend != null ? tr('pPerDayAvg', { v: money(spend / Math.max(1, days)) }) : null, false],
-      [tr('pReach'), ok ? num(ok.totals.reach) : '—', reachChange ? tr('pVsLast', { d: reachChange.text }) : null, false],
+      [tr('pReach'), ok?.totals.reach != null ? num(ok.totals.reach) : '—', reachChange ? tr('pVsLast', { d: reachChange.text }) : null, false],
       [tr('pImpressions'), ok ? num(ok.totals.impressions) : '—', ok?.totals.frequency != null ? tr('pFrequency', { v: ok.totals.frequency }) : null, false],
       [tr('pClicks'), ok ? num(ok.totals.clicks) : '—', ok ? tr('pCtr', { p: ctr, c: cpc }) : null, false],
       [tr('pConversations'), num(ads.conversations), convChange ? tr('pVsLast', { d: convChange.text }) : null, true],

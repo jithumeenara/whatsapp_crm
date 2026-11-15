@@ -11,6 +11,16 @@
  * non-2xx response, with the server's own `error` text when it sent one,
  * so the catch that was already there is the one that runs.
  */
+export class ApiError extends Error {
+  /** The HTTP status, so a screen can tell "no access" (403) from a fault. */
+  readonly status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const res = await fetch(input, init)
   if (!res.ok) {
@@ -22,7 +32,7 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
     } catch {
       // Not JSON — the status line is all there is.
     }
-    throw new Error(message || `Request failed (${res.status})`)
+    throw new ApiError(message || `Request failed (${res.status})`, res.status)
   }
   return res
 }

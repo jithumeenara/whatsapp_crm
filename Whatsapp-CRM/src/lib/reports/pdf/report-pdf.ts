@@ -443,7 +443,8 @@ export async function buildReportPdf(input: ReportPdfInput): Promise<Buffer> {
     const vs = (c: string | null) => (c ? tr('pVsLast', { d: c }) : null)
     y = cards(y, [
       [tr('pSpent'), money(spend), spend != null ? tr('pPerDayAvg', { v: money(spend / Math.max(1, days)) }) : null, false],
-      [tr('pReach'), ok ? num(ok.totals.reach) : '—', ok && prev ? vs(changeText(ok.totals.reach, prev.totals.reach)) : null, false],
+      // Reach can be withheld by Meta (null): then no number and no change.
+      [tr('pReach'), ok?.totals.reach != null ? num(ok.totals.reach) : '—', ok?.totals.reach != null && prev?.totals.reach != null ? vs(changeText(ok.totals.reach, prev.totals.reach)) : null, false],
       [tr('pImpressions'), ok ? num(ok.totals.impressions) : '—', ok?.totals.frequency != null ? tr('pFrequency', { v: ok.totals.frequency }) : null, false],
       [tr('pClicks'), ok ? num(ok.totals.clicks) : '—', ok ? tr('pCtr', { p: ctr, c: cpc }) : null, false],
       [tr('pConversations'), num(ads.conversations), vs(changeText(ads.conversations, ads.previousConversations)), true],

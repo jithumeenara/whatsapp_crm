@@ -52,6 +52,12 @@ describe('conversions', () => {
   })
 })
 
+describe('totalsFromRow: reach Meta withholds', () => {
+  it('a row without reach (Meta held it back) is unknown, never zero', () => {
+    expect(totalsFromRow({ spend: '100', impressions: '900', clicks: '10', account_currency: 'INR' })).toMatchObject({ spend: 100, reach: null, frequency: null })
+  })
+})
+
 describe('totalsFromRow', () => {
   it('reads Meta\'s strings as numbers and refuses a bad currency', () => {
     expect(totalsFromRow({ spend: '8210.5', reach: '80173', impressions: '146592', clicks: '1449', frequency: '1.8284', account_currency: 'INR' }))

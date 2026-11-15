@@ -11,10 +11,12 @@
  *   - Ads Insights API reference
  *   - Custom Audiences hashing convention (SHA-256 over normalized values)
  */
+import { MARKETING_API_VERSION } from '@/lib/meta/versions'
 import { createHash } from 'node:crypto'
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils'
 
-const META_API_VERSION = 'v21.0'
+// Marketing API v21.0 is retired; one shared version (src/lib/meta/versions.ts).
+const META_API_VERSION = MARKETING_API_VERSION
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 
 interface MetaErrorResponse {

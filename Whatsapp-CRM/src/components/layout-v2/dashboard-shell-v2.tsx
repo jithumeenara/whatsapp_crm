@@ -50,7 +50,7 @@ export function useSidebarCollapse() { return useContext(SidebarCollapseCtx); }
  * again on leaving; a manual toggle in between is left alone.
  */
 function isCompactPage(path: string): boolean {
-  return path.startsWith("/settings") || path.startsWith("/inbox");
+  return path.startsWith("/settings") || path.startsWith("/inbox") || path.startsWith("/reports");
 }
 
 // Force all shadcn CSS-var tokens to light values inside the V2 shell,

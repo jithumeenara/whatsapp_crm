@@ -1,18 +1,16 @@
 /**
- * Reports: the owner report (docs/plans/reports-plan.md Phase 1), and for
- * supervisors and above a Spending tab. Supervisors and above see the team;
- * anyone else given the page sees only their own work. The API decides
- * which, from the role.
+ * The "All report": the overview every other report links back to. The
+ * older owner report (ReportsShell) stays in the repo but is no longer
+ * shown here; every report now comes back as one ReportDoc.
  */
 
 import { Suspense } from "react"
-import { ReportsShell } from "@/components/reports/reports-shell"
+import { ReportPage } from "@/components/reports/report-page"
 
 export default function ReportsPage() {
-  // The shell reads the address (?view=), which needs a Suspense boundary.
   return (
     <Suspense fallback={null}>
-      <ReportsShell />
+      <ReportPage reportKey="all" />
     </Suspense>
   )
 }

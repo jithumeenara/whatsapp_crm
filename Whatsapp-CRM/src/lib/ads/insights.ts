@@ -10,16 +10,23 @@
  * The ad account's time zone is Meta's; days are Meta's days.
  */
 
+import { MARKETING_API_BASE } from '@/lib/meta/versions'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 
-const GRAPH = 'https://graph.facebook.com/v21.0'
+// Marketing API: v21.0 is retired (src/lib/meta/versions.ts).
+const GRAPH = MARKETING_API_BASE
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 const CACHE_MS = 5 * 60_000
 
 export interface InsightTotals {
   spend: number
-  reach: number
+  /**
+   * Null when Meta withheld it: since June 2025 reach and frequency are left
+   * out past 13 months of history or after the account's daily reach limit.
+   * Unknown, never zero. (No row at all means no delivery: that is zero.)
+   */
+  reach: number | null
   impressions: number
   clicks: number
   frequency: number | null
@@ -43,7 +50,7 @@ export function totalsFromRow(row: Record<string, unknown> | undefined): Insight
   const currency = typeof row?.account_currency === 'string' && /^[A-Z]{3}$/.test(row.account_currency) ? row.account_currency : null
   return {
     spend: num(row?.spend),
-    reach: num(row?.reach),
+    reach: row == null ? 0 : row.reach == null || !Number.isFinite(Number(row.reach)) ? null : Number(row.reach),
     impressions: num(row?.impressions),
     clicks: num(row?.clicks),
     frequency: row?.frequency != null && Number.isFinite(Number(row.frequency)) ? Math.round(Number(row.frequency) * 100) / 100 : null,
