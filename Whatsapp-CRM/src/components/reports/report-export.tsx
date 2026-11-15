@@ -148,7 +148,7 @@ export function ExportMenu({
           disabled={working}
           aria-busy={working}
           aria-label={working ? "Preparing the file" : "Export this report"}
-          className="flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-primary/30 disabled:opacity-60 data-[popup-open]:bg-slate-50"
+          className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-[13px] font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-primary/30 disabled:opacity-60 data-[popup-open]:bg-slate-50"
         >
           {working
             ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />

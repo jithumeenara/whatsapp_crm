@@ -11,7 +11,7 @@ import { useState } from "react"
 import dynamic from "next/dynamic"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { AlertTriangle, ArrowRight, Inbox, Sparkles } from "lucide-react"
+import { AlertTriangle, ArrowRight, CalendarDays, Inbox, Sparkles } from "lucide-react"
 import type {
   Block, ChartBlock, Finding, FindingsBlock, KpiBlock, KpiItem, ReportDoc, TableBlock, TableCell, TextBlock, Tone,
 } from "@/lib/reports/doc/types"
@@ -48,20 +48,25 @@ export function ReportView({ doc }: { doc: ReportDoc }) {
   return (
     <article className="min-w-0 space-y-5">
       <header className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden>
-            <Icon className="h-4 w-4" />
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15" aria-hidden>
+            <Icon className="h-5 w-5" />
           </span>
-          <h1 className="min-w-0 text-balance break-words text-[19px] font-bold leading-tight text-slate-900 sm:text-[20px]">{doc?.title || "Report"}</h1>
+          <h1 className="min-w-0 text-balance break-words text-[21px] font-bold leading-tight tracking-tight text-slate-900 sm:text-[23px]">{doc?.title || "Report"}</h1>
         </div>
-        {doc?.headline && <p className="mt-1.5 text-pretty text-[15px] leading-snug text-slate-700">{doc.headline}</p>}
-        {(range || prev) && (
-          <p className="mt-1.5 text-[11.5px] text-slate-500">
-            {range}
-            {period?.partial && " (so far)"}
-            {prev && <> · compared with {prev}</>}
-            {doc?.scope === "self" && " · your own work"}
-          </p>
+        {doc?.headline && <p className="mt-2.5 text-pretty text-[15px] leading-snug text-slate-700">{doc.headline}</p>}
+        {(range || prev || doc?.scope === "self") && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-slate-600">
+            {range && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 font-medium">
+                <CalendarDays className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+                {range}
+                {period?.partial && <span className="font-normal text-slate-500">(so far)</span>}
+              </span>
+            )}
+            {prev && <span className="rounded-full bg-slate-100 px-2.5 py-1">compared with {prev}</span>}
+            {doc?.scope === "self" && <span className="rounded-full bg-slate-100 px-2.5 py-1">your own work</span>}
+          </div>
         )}
       </header>
 

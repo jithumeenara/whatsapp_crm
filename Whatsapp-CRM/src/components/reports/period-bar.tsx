@@ -9,7 +9,7 @@
 
 import { useId, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { Check, ChevronDown } from "lucide-react"
+import { Check, ChevronDown, GitCompareArrows } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { isDay, readQuery, type CompareKey, type PeriodKey, type ReportQuery } from "./report-query"
@@ -38,7 +38,7 @@ const COMPARE_LABEL: Record<CompareKey, string> = {
 
 const segBtn = (on: boolean) =>
   cn(
-    "flex h-9 min-w-0 items-center justify-center rounded-lg px-1 text-[12px] font-semibold transition-colors sm:px-3 sm:text-[12.5px]",
+    "flex h-9 min-w-0 items-center justify-center rounded-lg px-1 text-[12px] font-semibold transition-colors sm:px-3.5 sm:text-[12.5px]",
     on ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" : "text-slate-600 hover:bg-white/70 hover:text-slate-900",
   )
 
@@ -126,7 +126,7 @@ export function PeriodBar() {
           <DropdownMenu>
             <DropdownMenuTrigger
               className={cn(
-                "flex h-9 shrink-0 items-center gap-1 rounded-lg border px-2.5 text-[12.5px] font-semibold transition-colors",
+                "flex h-11 shrink-0 items-center gap-1 rounded-xl border px-3 text-[12.5px] font-semibold shadow-sm transition-colors",
                 moreActive ? "border-primary/30 bg-primary/10 text-primary" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
               )}
             >
@@ -144,17 +144,20 @@ export function PeriodBar() {
           </DropdownMenu>
 
           <label htmlFor={`${ids}-compare`} className="sr-only">Compare with</label>
+          <span className="relative flex min-w-0 flex-1 items-center sm:flex-none">
+          <GitCompareArrows className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-400" aria-hidden />
           <select
             id={`${ids}-compare`}
             name="compare"
             value={q.compare}
             onChange={(e) => go({ compare: e.target.value as CompareKey })}
-            className="h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-[12.5px] font-medium text-slate-700 sm:flex-none"
+            className="h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white pl-8 pr-2 text-[12.5px] font-medium text-slate-700 shadow-sm sm:flex-none"
           >
             {(Object.keys(COMPARE_LABEL) as CompareKey[]).map((k) => (
               <option key={k} value={k}>{COMPARE_LABEL[k]}</option>
             ))}
           </select>
+          </span>
         </div>
       </div>
 
