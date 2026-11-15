@@ -230,6 +230,7 @@ model Account {
   ai_eval_cases                 AiEvalCase[]
   ai_eval_runs                  AiEvalRun[]
   conversation_feedback         ConversationFeedback[]
+  ai_handovers                  AiHandover[]
   company_profile               CompanyProfile?
   sms_config                    SmsConfig?
   email_config                  EmailConfig?
@@ -625,6 +626,7 @@ model Conversation {
   flow_runs          FlowRun[]
   scheduled_messages ScheduledMessage[]
   feedback           ConversationFeedback[]
+  ai_handovers       AiHandover[]
 
   // Channel that originated this conversation
   channel String @default("whatsapp") // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website'
@@ -3702,6 +3704,30 @@ model ConversationFeedback {
   @@index([account_id, asked_at])
   @@index([conversation_id, asked_at])
   @@map("conversation_feedback")
+}
+
+/// One row per handover of a conversation to a person, by the assistant
+/// or a chatbot flow (migration 163). Written once, never updated: who
+/// took it over and how fast comes from the first team reply after it.
+model AiHandover {
+  id              String   @id @default(uuid()) @db.Uuid
+  account_id      String   @db.Uuid
+  conversation_id String?  @db.Uuid
+  /// 'ai' | 'flow'
+  source          String
+  /// src/lib/ai/handover-log.ts HANDOVER_REASONS
+  reason          String   @default("other")
+  outside_hours   Boolean  @default(false)
+  /// The customer's last message when the assistant could not answer (≤500).
+  question        String?
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  account      Account       @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversation_id], references: [id], onDelete: SetNull)
+
+  @@index([account_id, created_at], map: "ai_handovers_account_created_idx")
+  @@index([conversation_id], map: "ai_handovers_conversation_idx")
+  @@map("ai_handovers")
 }
 
 /// What the assistant decided about a conversation it could not answer,

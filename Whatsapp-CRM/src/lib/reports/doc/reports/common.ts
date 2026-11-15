@@ -58,7 +58,7 @@ export function show(v: number | null, fmt: Fmt): string {
   switch (fmt.kind) {
     case 'percent': return `${v.toFixed(fmt.digits ?? 1).replace(/\.0$/, '')}%`
     case 'money': return money(v, fmt.currency)
-    case 'minutes': return v < 60 ? `${Math.round(v)} min` : `${Math.round((v / 60) * 10) / 10} h`
+    case 'minutes': return v > 0 && v < 1 ? '<1 min' : v < 60 ? `${Math.round(v)} min` : `${Math.round((v / 60) * 10) / 10} h`
     case 'text': return String(v)
     default: return num(v)
   }

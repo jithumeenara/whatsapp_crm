@@ -242,6 +242,7 @@ async function toTeam(ctx: Ctx, d: Draft, reason: string, customerText: string):
     conversationId: ctx.conversationId,
     note: `${reason}\n\nNothing was saved; please finish this registration with them.`,
     auditAs: { kind: 'registration', conversationId: ctx.conversationId, correlationId: `registration:${ctx.conversationId}` },
+    reason: 'registration',
   })
 }
 

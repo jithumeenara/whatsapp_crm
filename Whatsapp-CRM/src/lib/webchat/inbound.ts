@@ -360,6 +360,7 @@ export async function requestHuman(session: AuthenticatedSession): Promise<{ con
       conversationId: thread.conversationId,
       note: 'The visitor asked to talk to a person, from the website chat window.',
       auditAs: null,
+      reason: 'asked_for_person',
     })
     void sendHandoffAlert({
       accountId: session.account_id,

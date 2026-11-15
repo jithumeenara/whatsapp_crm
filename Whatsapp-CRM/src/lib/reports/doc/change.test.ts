@@ -62,3 +62,11 @@ describe('judgeChange', () => {
     expect(changeLabel(judgeChange(c(32, 2)), String, { tooFew: 'കുറവ്', times: (n) => `${n}×` })).toBe('കുറവ്')
   })
 })
+
+describe('judgeChange: waits under a minute', () => {
+  it('two waits both under a minute are too small to compare (0.5 → 0.2 min is not "−62%")', () => {
+    const minutes = { kind: 'minutes' } as const
+    expect(judgeChange({ now: 0.2, before: 0.5, higherIsBetter: false, fmt: minutes }).kind).toBe('small')
+    expect(judgeChange({ now: 30, before: 0.5, higherIsBetter: false, fmt: minutes }).kind).not.toBe('small')
+  })
+})

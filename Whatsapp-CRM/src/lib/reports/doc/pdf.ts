@@ -114,7 +114,10 @@ export function fmtValue(v: number | null | undefined, fmt: Fmt | undefined, lan
   switch (fmt?.kind) {
     case 'money': return formatAmount(v, fmt.currency)
     case 'percent': return `${Number(v.toFixed(fmt.digits ?? 1))}%`
-    case 'minutes': return t(lang, 'lMinutes', { n: num(v) })
+    // "<1 min" for seconds, hours past an hour ("147.4 h", not "8,843 min").
+    case 'minutes':
+      if (v > 0 && v < 1) return t(lang, 'lMinutes', { n: '<1' })
+      return v < 60 ? t(lang, 'lMinutes', { n: num(v) }) : `${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 }).format(v / 60)} h`
     case 'text': return String(v)
     default: return Number.isInteger(v) ? num(v) : String(Math.round(v * 100) / 100)
   }

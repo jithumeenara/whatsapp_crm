@@ -45,6 +45,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { engineSendText, engineSendVoiceNote } from '@/lib/flows/meta-send'
 import type { RegistrationExtract } from './image-reading'
 import { agentHandover, type AgentAuditInfo } from '@/lib/audit/actors'
+import { logHandover } from './handover-log'
 
 /** How long one exchange lasts without a human touching it. WhatsApp's
  *  own session window: past it, a returning customer is starting a new
@@ -378,6 +379,8 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
           `They last asked: "${text.slice(0, 200)}"`,
         ].join('\n'),
         assignTo: aiConfig.low_confidence_assign_to,
+        reason: 'turn_limit',
+        question: text,
       })
     }
 
@@ -490,6 +493,8 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
         buildHandoffNote({ reason: 'low_confidence', customerMessage: text }) +
         `\n\nThe assistant could not generate a reply: ${err instanceof Error ? err.message : String(err)}`,
       assignTo: aiConfig.low_confidence_assign_to,
+      reason: 'low_confidence',
+      question: text,
     })
     return 'handed_off'
   }
@@ -644,6 +649,8 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
         ],
       }),
       assignTo: aiConfig.low_confidence_assign_to,
+      reason: HANDOFF_REASONS[reason] ?? 'other',
+      question: text,
     })
 
     // And tell a person on the channel they actually watch.
@@ -754,6 +761,8 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
         ],
       }),
       assignTo: aiConfig.low_confidence_assign_to,
+      reason: 'assistant_requested',
+      question: text,
     })
     void sendHandoffAlert({
       accountId: args.accountId,
@@ -932,6 +941,10 @@ export async function handOver(args: {
   /** Who the audit log shows handing over; null when a person (the
    *  website visitor's own button) asked for it, not an agent. */
   auditAs?: AgentAuditInfo | null
+  /** Why, for Reports → AI & Automation (handover-log.ts HANDOVER_REASONS). */
+  reason?: string
+  /** The customer's message the assistant could not answer, if that is why. */
+  question?: string | null
 }): Promise<void> {
   try {
     const conversation = await prisma.conversation.update({
@@ -955,6 +968,9 @@ export async function handOver(args: {
         status: 'sent',
       },
     })
+
+    // One row for the AI & Automation report. Never throws.
+    await logHandover({ accountId: args.accountId, conversationId: args.conversationId, source: 'ai', reason: args.reason ?? 'other', question: args.question })
 
     const { emitToAccount } = await import('@/lib/socket')
     emitToAccount(args.accountId, 'conversation', {

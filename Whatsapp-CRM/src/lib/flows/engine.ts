@@ -941,6 +941,8 @@ async function executeHandoff(
   cfg: HandoffConfigShape,
   nodeKey: string | null,
   endReason: string = "handoff_node",
+  /** The customer's message the assistant could not answer, if that is why. */
+  question: string | null = null,
 ): Promise<void> {
   // Declared out here so the run log below can record what was decided
   // even when nothing was — a handoff that found nobody is exactly the
@@ -984,6 +986,15 @@ async function executeHandoff(
     const { emitToAccount } = await import("@/lib/socket");
     emitToAccount(run.account_id, "conversation", { eventType: "UPDATE", new: updatedConv, old: {} });
     void agentHandover(run.account_id, runAgent(run), run.conversation_id, { assigned: Boolean(resolvedAgentId), reason: endReason });
+    // One row for Reports → AI & Automation (a handoff node is "flow_step"). Never throws.
+    const { flowReason, logHandover } = await import("@/lib/ai/handover-log");
+    await logHandover({
+      accountId: run.account_id,
+      conversationId: run.conversation_id,
+      source: "flow",
+      reason: flowReason(endReason),
+      question,
+    });
 
     if (resolvedAgentId && pick.agent) {
       const agent = pick.agent;
@@ -1918,6 +1929,7 @@ async function advanceFromNodeKey(
             { assign_to: aiConfig.low_confidence_assign_to ?? undefined, note },
             node.node_key,
             reason,
+            lastUserMessage,
           );
         };
 

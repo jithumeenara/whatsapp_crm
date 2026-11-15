@@ -36,6 +36,8 @@ function money(v: number, currency: string, compact = false): string {
 }
 
 function minutes(v: number): string {
+  // Seconds are not "0 min": a reply that came in under a minute says so.
+  if (v > 0 && v < 1) return "<1 min"
   const total = Math.round(v)
   if (Math.abs(total) < 60) return `${nf(0).format(total)} min`
   const h = Math.trunc(total / 60)

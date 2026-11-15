@@ -23,6 +23,8 @@ import { spendingReport } from './reports/spending'
 import { adReport } from './reports/ads'
 import { guideReport } from './reports/guide'
 import { campaignReport } from './reports/campaigns'
+import { conversationReport } from './reports/conversations'
+import { automationReport } from './reports/automation'
 
 export type ReportGroup = 'overview' | 'topic' | 'analysis'
 export type ExportFormat = 'pdf' | 'xlsx' | 'pptx'
@@ -56,6 +58,8 @@ export const REPORTS: ReportDef[] = [
   { key: 'sales', title: 'Sales & Pipeline', group: 'topic', path: '/reports/sales', minRole: 'viewer', selfAllowed: true, money: false, tabs: ['report', 'compare'], build: (c) => salesReport(c) },
   { key: 'spending', title: 'Spending & ROI', group: 'topic', path: '/reports/spending', minRole: 'supervisor', selfAllowed: false, money: false, tabs: ['report', 'compare'], build: (c) => spendingReport(c) },
   { key: 'campaigns', title: 'Campaign report', group: 'topic', path: '/reports/campaigns', minRole: 'supervisor', selfAllowed: false, money: false, tabs: ['report'], build: (c) => campaignReport(c) },
+  { key: 'conversations', title: 'Conversation report', group: 'topic', path: '/reports/conversations', minRole: 'viewer', selfAllowed: true, money: false, tabs: ['report'], build: (c) => conversationReport(c) },
+  { key: 'automation', title: 'AI & Automation', group: 'topic', path: '/reports/automation', minRole: 'supervisor', selfAllowed: false, money: false, tabs: ['report'], build: (c) => automationReport(c) },
   { key: 'guide', title: 'Performance guide', group: 'analysis', path: '/reports/guide', minRole: 'viewer', selfAllowed: true, money: false, tabs: ['report'], build: (c, o) => guideReport(c, o.canSeeMoney) },
 ]
 

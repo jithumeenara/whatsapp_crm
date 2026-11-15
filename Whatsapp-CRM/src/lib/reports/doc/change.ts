@@ -32,6 +32,8 @@ export function judgeChange(c: Compared & { fmt: Fmt }): Change {
   if (!finite(c.now) || !finite(c.before)) return { kind: 'none', value: null, tone: null }
   const diff = c.now - c.before
   if (c.small || (c.fmt.kind === 'count' && Math.abs(c.before) < SMALL_BASE)) return { kind: 'small', value: null, tone: null }
+  // Two waits both under a minute: seconds apart, not a trend.
+  if (c.fmt.kind === 'minutes' && Math.abs(c.before) < 1 && Math.abs(c.now) < 1) return { kind: 'small', value: null, tone: null }
   if (diff === 0) return { kind: 'same', value: 0, tone: null }
   const tone = (diff > 0) === c.higherIsBetter ? 'good' : 'bad'
   if (c.fmt.kind === 'percent') return { kind: 'pts', value: Math.round(diff * 10) / 10, tone }
