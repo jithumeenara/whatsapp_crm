@@ -8,13 +8,14 @@
  */
 
 import { useState } from 'react';
-import { Loader2, Sparkles, CheckCircle2, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Loader2, Sparkles, CheckCircle2, AlertCircle, AlertTriangle, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { apiFetch, errorText } from '@/lib/api-fetch';
 import { checkKitDraft, type KitDraft, type KitPurpose } from '@/lib/whatsapp/template-kit';
 import { ALERT_FIELD_LABEL } from '@/lib/whatsapp/alert-fields';
+import { READY_REPORT_TEMPLATES } from '@/lib/whatsapp/report-templates';
 import { cn } from '@/lib/utils';
 
 const PURPOSE: Record<KitPurpose, { label: string; cls: string }> = {
@@ -22,6 +23,7 @@ const PURPOSE: Record<KitPurpose, { label: string; cls: string }> = {
   new_contact_alert: { label: 'Staff alert · new contact', cls: 'bg-violet-50 text-violet-700' },
   customer_utility: { label: 'Customer · update', cls: 'bg-sky-50 text-sky-700' },
   customer_marketing: { label: 'Customer · offer', cls: 'bg-amber-50 text-amber-800' },
+  report_update: { label: 'Team · reports and alerts', cls: 'bg-emerald-50 text-emerald-700' },
 };
 
 type Row = KitDraft & { selected: boolean; result?: { ok: boolean; message: string } };
@@ -34,6 +36,16 @@ export function TemplateKitDialog({ open, onOpenChange, onSubmitted }: Readonly<
   const [writing, setWriting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  /** The ready-made report template (no AI): added to the list, submitted as usual. */
+  function addReportTemplate() {
+    const ready = READY_REPORT_TEMPLATES.filter((t) => language === 'both' || t.language === language)
+    setError('');
+    setRows((prev) => [
+      ...prev.filter((r) => r.purpose !== 'report_update'),
+      ...ready.map((t) => ({ ...t, ...checkKitDraft(t), selected: true })),
+    ]);
+  }
 
   async function write() {
     if (writing) return;
@@ -136,6 +148,10 @@ export function TemplateKitDialog({ open, onOpenChange, onSubmitted }: Readonly<
           <Button type="button" onClick={() => void write()} disabled={writing || submitting} className="gap-1.5">
             {writing ? <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <Sparkles className="size-4" aria-hidden />}
             {rows.length ? 'Write again' : 'Write templates'}
+          </Button>
+          <Button type="button" variant="outline" onClick={addReportTemplate} disabled={writing || submitting} className="gap-1.5">
+            <FileText className="size-4" aria-hidden />
+            Add the report template
           </Button>
         </div>
 

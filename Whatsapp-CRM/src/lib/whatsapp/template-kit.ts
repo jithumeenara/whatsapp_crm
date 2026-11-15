@@ -15,7 +15,9 @@
 import { validateTemplatePayload } from './template-validators'
 import { ALERT_FIELD_SAMPLE, isAlertField, type AlertField } from './alert-fields'
 
-export type KitPurpose = 'handoff_alert' | 'new_contact_alert' | 'customer_utility' | 'customer_marketing'
+/** 'report_update' is the ready-made report template (report-templates.ts); the AI never drafts it. */
+export type KitPurpose = 'handoff_alert' | 'new_contact_alert' | 'customer_utility' | 'customer_marketing' | 'report_update'
+/** What the AI kit may draft. */
 export const KIT_PURPOSES: readonly KitPurpose[] = ['handoff_alert', 'new_contact_alert', 'customer_utility', 'customer_marketing']
 export type KitLanguage = 'en' | 'ml'
 
