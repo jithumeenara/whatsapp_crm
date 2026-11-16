@@ -28,6 +28,7 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
   const [configured, setConfigured] = useState(false);
   const [appId, setAppId] = useState('');
   const [configId, setConfigId] = useState('');
+  const [socialConfigId, setSocialConfigId] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [secretEdited, setSecretEdited] = useState(false);
 
@@ -40,6 +41,7 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
         setConfigured(true);
         setAppId(data.app_id ?? '');
         setConfigId(data.config_id ?? '');
+        setSocialConfigId(data.social_config_id ?? '');
         setAppSecret(MASKED);
         setSecretEdited(false);
       }
@@ -60,6 +62,7 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
         body: JSON.stringify({
           app_id: appId.trim(),
           config_id: configId.trim(),
+          social_config_id: socialConfigId.trim(),
           app_secret: secretEdited ? appSecret.trim() : MASKED,
         }),
       });
@@ -125,6 +128,17 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
                 <Input value={configId} onChange={(e) => setConfigId(e.target.value)} placeholder="From Facebook Login for Business → Configurations"
                   className="h-9 text-[13px] font-mono border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20" />
                 <p className="text-[11px] text-slate-400">Create this using the &quot;WhatsApp Embedded Signup Configuration With 60 Expiration Token&quot; template.</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="meta-social-config" className="text-[13px] font-medium text-slate-700">Messenger &amp; Instagram configuration ID</Label>
+                <Input id="meta-social-config" name="meta-social-config" autoComplete="off" inputMode="numeric" value={socialConfigId}
+                  onChange={(e) => setSocialConfigId(e.target.value.replace(/\D/g, ''))} placeholder="Optional — for Connect Facebook & Instagram"
+                  className="h-9 text-[13px] font-mono border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20" />
+                <p className="text-[11px] text-slate-500">
+                  Facebook Login for Business → Configurations → a configuration with a <strong>system-user access token</strong> (never expires) and the
+                  Messenger and Instagram permissions. Turns on the one-click Connect Facebook &amp; Instagram button for every workspace.
+                </p>
               </div>
 
               <div className="flex justify-end pt-1">

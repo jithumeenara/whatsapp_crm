@@ -34,6 +34,7 @@ import {
   TelegramIcon,
 } from '@/components/icons/brand-icons';
 import { EmbeddedSignupButton } from '@/components/settings/embedded-signup-button';
+import { MetaConnectReturn, MetaSocialConnectButton, MetaSocialHealth } from '@/components/settings/meta-social-connect';
 
 type ChannelKey =
   | 'whatsapp'
@@ -332,6 +333,11 @@ function ConnectionAction({
   )
     return (
       <div className="flex w-full flex-col gap-2.5 sm:w-auto">
+        {/* Messenger + Instagram: Meta's one-click login (appears once the
+            server owner has set it up); token paste stays below. */}
+        {channel !== 'whatsapp' && (
+          <MetaSocialConnectButton className="h-11 w-full rounded-xl bg-[#5B5CF6] px-5 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(91,92,246,0.22)] hover:bg-[#4949E8] sm:w-auto" />
+        )}
         <EmbeddedSignupButton
           onConnected={onConnected}
           className="h-11 w-full rounded-xl bg-[#5B5CF6] px-5 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(91,92,246,0.22)] hover:bg-[#4949E8] sm:w-auto"
@@ -417,10 +423,13 @@ export function ChannelsTab() {
   function goHome() {
     setView(statusCache[channel] ? 'config' : 'onboarding');
   }
-  if (checkingStatus) return <PanelLoader />;
+  // Back from Meta's login (?meta_connect=…): a message, or the chooser.
+  const connectReturn = <MetaConnectReturn onDone={() => setStatusCache({})} />;
+  if (checkingStatus) return <>{connectReturn}<PanelLoader /></>;
   if (view === 'config')
     return (
       <div className="space-y-4">
+        {connectReturn}
         <ChannelRail channel={channel} onSelect={selectChannel} />
         <PanelHeader
           icon={Settings2}
@@ -438,6 +447,7 @@ export function ChannelsTab() {
             </Button>
           ) : undefined}
         />
+        {(channel === 'instagram' || channel === 'facebook') && <MetaSocialHealth channel={channel} />}
         <Config defaultConnectMethod={preferredConnectMethod} />
         {channel === 'instagram' && <InstagramIceBreakers />}
         {channel === 'instagram' && <InstagramGatedFeatures />}
@@ -446,6 +456,7 @@ export function ChannelsTab() {
   if (view === 'profile' && Profile)
     return (
       <div className="space-y-4">
+        {connectReturn}
         <ChannelRail channel={channel} onSelect={selectChannel} />
         <PanelHeader
           icon={IdCard}
@@ -457,6 +468,7 @@ export function ChannelsTab() {
     );
   return (
     <div className="mx-auto max-w-6xl space-y-5 pb-2">
+      {connectReturn}
       <ChannelRail channel={channel} onSelect={selectChannel} />
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(42,51,86,0.06)]">
         <div className="grid lg:grid-cols-[1.55fr_0.85fr]">

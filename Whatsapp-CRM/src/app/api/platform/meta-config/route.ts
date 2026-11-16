@@ -42,6 +42,7 @@ export async function GET() {
       configured: true,
       app_id: config.app_id,
       config_id: config.config_id,
+      social_config_id: config.social_config_id ?? "",
       app_secret: MASKED,
       updated_at: config.updated_at,
     })
@@ -55,7 +56,12 @@ export async function PATCH(req: NextRequest) {
   try {
     const ctx = await requirePlatformOwner()
     const body = await req.json().catch(() => ({}))
-    const { app_id, app_secret, config_id } = body as { app_id?: string; app_secret?: string; config_id?: string }
+    const { app_id, app_secret, config_id, social_config_id } = body as { app_id?: string; app_secret?: string; config_id?: string; social_config_id?: string }
+    // Messenger + Instagram (Facebook Login for Business) configuration — optional, digits only.
+    const socialConfig = typeof social_config_id === "string" ? social_config_id.trim() : undefined
+    if (socialConfig && !/^\d{5,30}$/.test(socialConfig)) {
+      return NextResponse.json({ error: "The Messenger & Instagram configuration ID is a number from the App Dashboard." }, { status: 400 })
+    }
 
     if (!app_id?.trim() || !config_id?.trim()) {
       return NextResponse.json({ error: "App ID and Configuration ID are required" }, { status: 400 })
@@ -70,14 +76,15 @@ export async function PATCH(req: NextRequest) {
 
     await prisma.metaPlatformConfig.upsert({
       where: { id: "singleton" },
-      create: { id: "singleton", app_id: app_id.trim(), app_secret: secretToSave, config_id: config_id.trim(), updated_by: ctx.userId },
-      update: { app_id: app_id.trim(), app_secret: secretToSave, config_id: config_id.trim(), updated_by: ctx.userId },
+      create: { id: "singleton", app_id: app_id.trim(), app_secret: secretToSave, config_id: config_id.trim(), social_config_id: socialConfig || null, updated_by: ctx.userId },
+      update: { app_id: app_id.trim(), app_secret: secretToSave, config_id: config_id.trim(), ...(socialConfig !== undefined ? { social_config_id: socialConfig || null } : {}), updated_by: ctx.userId },
     })
 
     // Which fields changed — never the App Secret or any value.
     const fields = [
       ...(existing?.app_id !== app_id.trim() ? ["app_id"] : []),
       ...(existing?.config_id !== config_id.trim() ? ["config_id"] : []),
+      ...(socialConfig !== undefined && (existing?.social_config_id ?? "") !== socialConfig ? ["social_config_id"] : []),
       ...(!keepSecret ? ["app_secret"] : []),
     ]
     await auditConfigChange(auditCtx(req, ctx), "config.platform_changed", {
