@@ -3088,6 +3088,7 @@ model LeadSettings {
   call_connected_labels     Json? // string[] — custom labels for connected outcomes
   close_enquiry_reasons     Json? // string[] — reasons shown in close lead dropdown
   lead_sources              Json? // {icon,label}[] — customisable lead source list
+  districts                 Json? // {icon,label}[] — the business's own districts / areas (migration 167)
   webhook_secret            String? // plain-text secret for /api/external/webhook?secret=
 
   /// How long an open lead may sit untouched before the list says so,

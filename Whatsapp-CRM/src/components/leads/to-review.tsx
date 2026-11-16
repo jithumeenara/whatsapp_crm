@@ -43,6 +43,8 @@ import {
   Inbox,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useAuth } from '@/hooks/use-auth'
+import { formatInZone } from '@/lib/format/business-time'
 import {
   Select,
   SelectContent,
@@ -101,6 +103,8 @@ export function ToReview({ onReviewed }: { onReviewed?: () => void }) {
   const [rows, setRows] = useState<Judgement[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
+  const { account } = useAuth()
+  const zone = account?.timezone ?? 'Asia/Kolkata'
   const [busy, setBusy] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -202,7 +206,7 @@ export function ToReview({ onReviewed }: { onReviewed?: () => void }) {
                   {j.customer_name?.trim() || j.customer_phone || 'Unknown contact'}
                 </p>
                 <p className="text-[11px] text-slate-400">
-                  {new Date(j.created_at).toLocaleString()}
+                  {formatInZone(j.created_at, zone)}
                 </p>
               </div>
               <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-slate-500">

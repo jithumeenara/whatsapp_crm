@@ -3,6 +3,7 @@ import { sanitizeQuickLinks } from "@/lib/navigation/sections";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db"
 import { pagesFor } from "@/lib/auth/page-access";
+import { businessTimezone } from "@/lib/ai/human-date";
 
 export async function GET() {
   const session = await auth();
@@ -93,6 +94,9 @@ export async function GET() {
           id: profile.account.id,
           name: profile.account.name,
           default_currency: profile.account.default_currency,
+          // Settings → Company, so screens show business times in the
+          // business's zone rather than the browser's (ten bug rules #10).
+          timezone: await businessTimezone(profile.account.id),
         }
       : null,
   });

@@ -127,7 +127,8 @@ FROM (VALUES
   ('163_ai_handovers',                 to_regclass('ai_handovers') IS NOT NULL),
   ('164_scheduled_reports',            to_regclass('scheduled_reports') IS NOT NULL),
   ('165_report_goals',                 to_regclass('report_goals') IS NOT NULL),
-  ('166_report_alert_log',             to_regclass('report_alert_log') IS NOT NULL)
+  ('166_report_alert_log',             to_regclass('report_alert_log') IS NOT NULL),
+  ('167_lead_districts',               EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'lead_settings' AND column_name = 'districts'))
 ) AS m(migration, present)
 ORDER BY m.migration;
 

@@ -3,8 +3,9 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Bell, X } from "lucide-react"
+import { Bell, Loader2 } from "lucide-react"
 import { ContactPicker, type PickedContact } from "./contact-picker"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 const INPUT =
   "w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
@@ -44,6 +45,7 @@ export function NewFollowUpDialog({
   const [saving, setSaving] = useState(false)
 
   function close() {
+    if (saving) return
     setPicked(null); setWhen(defaultWhen()); setDescription("")
     onClose()
   }
@@ -57,6 +59,8 @@ export function NewFollowUpDialog({
     if (!description.trim()) { toast.error("Add a description"); return }
     const due = new Date(`${when.date}T${when.time}`)
     if (Number.isNaN(due.getTime())) { toast.error("Choose a date and time"); return }
+    if (due.getTime() < Date.now() - 60_000) { toast.error("That time has already passed. Choose a later one."); return }
+    if (saving) return
 
     setSaving(true)
     try {
@@ -81,67 +85,66 @@ export function NewFollowUpDialog({
         action: data.lead_id ? { label: "Open lead", onClick: () => router.push(`/leads/${data.lead_id}`) } : undefined,
       })
       onSaved()
-      close()
-    } catch {
-      toast.error("Could not save the follow-up")
+      setSaving(false)
+      setPicked(null); setWhen(defaultWhen()); setDescription("")
+      onClose()
+    } catch (err) {
+      console.error("[follow-up] save failed:", err)
+      toast.error("Could not save the follow-up. Check the connection and try again.")
     } finally {
       setSaving(false)
     }
   }
 
-  if (!open) return null
   const today = localParts(new Date()).date
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={close} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 px-5 py-4 bg-white rounded-t-2xl">
-          <h2 className="flex items-center gap-2 text-[15px] font-semibold text-slate-900">
-            <Bell className="h-4 w-4 text-orange-500" /> New Follow-up
-          </h2>
-          <button type="button" onClick={close} aria-label="Close"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) close() }}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto overscroll-contain bg-white sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-[15px] font-semibold text-slate-900">
+            <Bell className="h-4 w-4 text-orange-600" aria-hidden="true" /> New follow-up
+          </DialogTitle>
+          <DialogDescription className="text-[12px] text-slate-500">Who to call back, when, and what about.</DialogDescription>
+        </DialogHeader>
 
-        <form onSubmit={save} className="p-5 space-y-4">
+        <form onSubmit={save} className="space-y-4">
           <ContactPicker value={picked} onChange={setPicked} idPrefix="fu" required />
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
             <div>
-              <label htmlFor="fu-date" className="block text-[12px] font-medium text-slate-600 mb-1.5">Schedule date *</label>
+              <label htmlFor="fu-date" className="block text-[12px] font-medium text-slate-600 mb-1.5">Date <span className="text-rose-600" aria-hidden="true">*</span></label>
               <input id="fu-date" type="date" required min={today} className={INPUT}
                 value={when.date} onChange={(e) => setWhen((w) => ({ ...w, date: e.target.value }))} />
             </div>
             <div>
-              <label htmlFor="fu-time" className="block text-[12px] font-medium text-slate-600 mb-1.5">Schedule time *</label>
+              <label htmlFor="fu-time" className="block text-[12px] font-medium text-slate-600 mb-1.5">Time <span className="text-rose-600" aria-hidden="true">*</span></label>
               <input id="fu-time" type="time" required className={INPUT}
                 value={when.time} onChange={(e) => setWhen((w) => ({ ...w, time: e.target.value }))} />
             </div>
           </div>
 
           <div>
-            <label htmlFor="fu-desc" className="block text-[12px] font-medium text-slate-600 mb-1.5">Description *</label>
+            <label htmlFor="fu-desc" className="block text-[12px] font-medium text-slate-600 mb-1.5">Description <span className="text-rose-600" aria-hidden="true">*</span></label>
             <textarea id="fu-desc" rows={3} required maxLength={2000}
               className={INPUT + " resize-none"}
-              placeholder="What the call is about — e.g. wants the next batch dates and fees"
+              placeholder="What the call is about, e.g. wants the next dates and prices"
               value={description} onChange={(e) => setDescription(e.target.value)} />
           </div>
 
           <div className="flex gap-3 pt-1">
-            <button type="button" onClick={close}
-              className="flex-1 rounded-lg border border-slate-200 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+            <button type="button" onClick={close} disabled={saving}
+              className="flex-1 rounded-lg border border-slate-200 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50">
               Cancel
             </button>
             <button type="submit" disabled={saving || !hasContact || !description.trim()}
-              className="flex-1 rounded-lg py-2 text-[13px] font-medium text-white disabled:opacity-50 transition-colors bg-orange-500 hover:bg-orange-600">
-              {saving ? "Saving…" : "Schedule Follow-up"}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-[13px] font-semibold text-white disabled:opacity-50 transition-colors bg-orange-600 hover:bg-orange-700">
+              {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+              {saving ? "Saving…" : "Schedule follow-up"}
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
-import { Zap, BarChart3, PhoneOff, Phone, Plus, X, GripVertical, XCircle, Smile, Globe, Clock } from "lucide-react"
+import { Zap, BarChart3, PhoneOff, Phone, Plus, X, GripVertical, XCircle, Smile, Globe, Clock, MapPin } from "lucide-react"
 import { AiLeadSettings, type AiLeadValues } from "./ai-lead-settings"
 import { ServiceCategoriesPanel } from "./service-categories-panel"
 import { OutOfScopePanel } from "./out-of-scope-panel"
@@ -305,6 +305,8 @@ interface SettingsData {
   call_connected_labels: ListItem[]
   close_enquiry_reasons: ListItem[]
   lead_sources: ListItem[]
+  /** The business's own districts / areas; empty means free text on the lead. */
+  districts: ListItem[]
 }
 
 /** The AI block's own fields, kept beside the rest so one Save writes
@@ -343,6 +345,7 @@ export function LeadsSettingsV2() {
     call_connected_labels: DEF_CONNECTED,
     close_enquiry_reasons: DEF_CLOSE_REASONS,
     lead_sources: DEF_LEAD_SOURCES,
+    districts: [],
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -376,6 +379,7 @@ export function LeadsSettingsV2() {
           call_connected_labels: normalise(d.call_connected_labels, DEF_CONNECTED),
           close_enquiry_reasons: normalise(d.close_enquiry_reasons, DEF_CLOSE_REASONS),
           lead_sources: normalise(d.lead_sources, DEF_LEAD_SOURCES),
+          districts: normalise(d.districts, []),
         })
       )
       .catch(() => {})
@@ -675,6 +679,24 @@ export function LeadsSettingsV2() {
           items={settings.lead_sources}
           addLabel="Add source"
           onChange={(items) => setSettings((s) => ({ ...s, lead_sources: items }))}
+        />
+      </div>
+
+      {/* Districts / areas */}
+      <div className="space-y-3">
+        <div>
+          <p className="text-[14px] font-semibold text-slate-800">Districts / areas</p>
+          <p className="text-[12px] text-slate-500 mt-0.5">
+            The areas agents pick from on a lead, and filter the Leads list by. Leave the list empty to type the area freely.
+          </p>
+        </div>
+        <EditableItemList
+          label="Districts"
+          sectionIcon={<MapPin className="h-4 w-4" />}
+          accent="indigo"
+          items={settings.districts}
+          addLabel="Add district"
+          onChange={(items) => setSettings((s) => ({ ...s, districts: items }))}
         />
       </div>
 

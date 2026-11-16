@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { parseScoreInput } from '@/lib/leads/score-input'
 import { onceSchemaPatch } from "@/lib/db/schema-patch"
 import { withCallablePhones } from '@/lib/contacts/callable'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
@@ -284,7 +285,11 @@ export async function PATCH(
     if (contact_id !== undefined) data.contact_id = contact_id || null
     if (source !== undefined) data.source = source
     if (status !== undefined) data.status = status
-    if (score !== undefined) data.score = score
+    if (score !== undefined) {
+      const sc = parseScoreInput(score)
+      if (!sc.ok) return NextResponse.json({ error: sc.error }, { status: 400 })
+      data.score = sc.score
+    }
     if (notes !== undefined) {
       // The lead's description — what it is for and what they need.
       if (notes !== null && typeof notes !== 'string') {

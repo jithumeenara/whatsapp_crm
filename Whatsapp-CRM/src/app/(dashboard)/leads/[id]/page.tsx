@@ -10,6 +10,9 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { apiFetch, errorText } from "@/lib/api-fetch"
+import { useConfirm } from "@/hooks/use-confirm"
+import { dayKeyInZone, formatInZone } from "@/lib/format/business-time"
+import { shrinkImageForWhatsApp, WHATSAPP_IMAGE_MAX_BYTES } from "@/lib/media/shrink-image"
 import { GenderBadge } from "@/components/contacts/gender-badge"
 import type { Lead, LeadActivity, Message, ContactNote } from "@/types"
 import { outcomeOf, OUTCOME_COLOR, OUTCOME_LABEL } from "@/lib/leads/outcome"
@@ -32,6 +35,7 @@ import { ContactForm } from "@/components/contacts/contact-form"
 import { useRealtime } from "@/hooks/use-realtime"
 import type { MessageTemplate, Contact } from "@/types"
 import dynamic from "next/dynamic"
+import Link from "next/link"
 
 // Admins only (the component checks, the API enforces); loaded on demand.
 const RecordHistoryButton = dynamic(() => import("@/components/audit/record-history").then((m) => m.RecordHistoryButton))
@@ -41,9 +45,9 @@ function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boo
 const STATUS_LABEL: Record<string, string> = {
   new: "New",
   open: "Open",
-  call_not_connected: "Not Connected",
+  call_not_connected: "Not connected",
   visited: "Visited",
-  appointment_fixed: "Appointment Fixed",
+  appointment_fixed: "Appointment fixed",
   follow_up: "Follow-up",
   closed: "Closed",
 }
@@ -84,22 +88,19 @@ const SCORE_BADGE: Record<ScoreTone, string> = { hot: "bg-rose-100", mid: "bg-am
 const sameScore = (a: string | null | undefined, b: string) => (a ?? "").trim().toLowerCase() === b.trim().toLowerCase()
 
 const NOT_CONNECTED_REASONS = [
-  { key: "out_of_coverage", label: "Out of Coverage" },
+  { key: "out_of_coverage", label: "Out of coverage" },
   { key: "busy", label: "Busy" },
-  { key: "switched_off", label: "Switched Off" },
-  { key: "invalid_number", label: "Invalid Number" },
+  { key: "switched_off", label: "Switched off" },
+  { key: "invalid_number", label: "Invalid number" },
 ]
 const CONNECTED_OUTCOMES = [
   { key: "visited", label: "Visited" },
-  { key: "appointment_fixed", label: "Appointment Fixed" },
+  { key: "appointment_fixed", label: "Appointment fixed" },
   { key: "follow_up", label: "Follow-up" },
 ]
 
-const KERALA_DISTRICTS = [
-  "Thiruvananthapuram", "Kollam", "Pathanamthitta", "Alappuzha",
-  "Kottayam", "Idukki", "Ernakulam", "Thrissur", "Palakkad",
-  "Malappuram", "Kozhikode", "Wayanad", "Kannur", "Kasaragod",
-]
+/** The upload route's limit; bigger files are refused before they are sent. */
+const MAX_UPLOAD_BYTES = 16 * 1024 * 1024
 
 const ROLE_LABEL: Record<string, string> = {
   owner: "Owner", supervisor: "Supervisor", admin: "Admin", agent: "Agent", viewer: "Viewer",
@@ -109,7 +110,7 @@ const ROLE_LABEL: Record<string, string> = {
 // same "From Device" / "From File Manager" grouping.
 const ATTACH_OPTIONS = [
   { key: "document" as const, label: "Document", icon: FileText, color: "text-blue-500", accept: ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" },
-  { key: "image" as const, label: "Photos & Videos", icon: Image, color: "text-emerald-500", accept: "image/png,image/jpeg,image/webp,video/mp4,video/3gpp" },
+  { key: "image" as const, label: "Photos & videos", icon: Image, color: "text-emerald-500", accept: "image/png,image/jpeg,image/webp,video/mp4,video/3gpp" },
   { key: "audio" as const, label: "Audio", icon: Music, color: "text-purple-500", accept: "audio/*" },
 ]
 
@@ -153,6 +154,8 @@ export default function LeadDetailPage() {
 
   const [copied, setCopied] = useState<string | null>(null)
   const [scoreOptions, setScoreOptions] = useState<ScoreOption[]>(DEFAULT_SCORES)
+  /** The business's own districts (Settings → Leads); none = type it freely. */
+  const [districts, setDistricts] = useState<string[]>([])
   const [savingScore, setSavingScore] = useState<string | null>(null)
   const [moreOpen, setMoreOpen] = useState(false)
 
@@ -161,8 +164,12 @@ export default function LeadDetailPage() {
     let current = true
     apiFetch("/api/leads/settings")
       .then((r) => r.json())
-      .then((sr: { score_options?: unknown }) => {
-        if (!current || !Array.isArray(sr.score_options) || sr.score_options.length === 0) return
+      .then((sr: { score_options?: unknown; districts?: unknown }) => {
+        if (!current) return
+        if (Array.isArray(sr.districts)) {
+          setDistricts(sr.districts.map((d: unknown) => (typeof d === "string" ? d : (d as { label?: string })?.label ?? "")).filter(Boolean))
+        }
+        if (!Array.isArray(sr.score_options) || sr.score_options.length === 0) return
         const list = sr.score_options
           .map((v: unknown) => (typeof v === "string" ? { icon: "", label: v } : (v as ScoreOption)))
           .filter((o) => o && typeof o.label === "string" && o.label.trim() !== "")
@@ -194,7 +201,9 @@ export default function LeadDetailPage() {
   const [drafting, setDrafting] = useState(false)
   const [sending, setSending] = useState(false)
   const [attachOpen, setAttachOpen] = useState(false)
-  const { userId, canViewAllLeads } = useAuth()
+  const { userId, canViewAllLeads, account } = useAuth()
+  const zone = account?.timezone ?? "Asia/Kolkata"
+  const confirm = useConfirm()
   // Managers hand a lead to anyone on the team (and the chat with it).
   const [teamMembers, setTeamMembers] = useState<Array<{ user_id: string; full_name: string | null; email: string | null; role?: string }>>([])
   const [assigning, setAssigning] = useState(false)
@@ -225,11 +234,14 @@ export default function LeadDetailPage() {
   // Website and Telegram chats: no 24-hour window, no WhatsApp templates.
   const isWebsiteChat = conversationChannel === "website" || conversationChannel === "telegram"
   const sessionExpired = whatsappSessionExpired && !isWebsiteChat
+  const channelName = conversationChannel === "website" ? "Website" : conversationChannel === "telegram" ? "Telegram" : "WhatsApp"
 
+  const [loadError, setLoadError] = useState<string | null>(null)
   const loadLead = useCallback(() => {
-    fetch(`/api/leads/${id}?from=${encodeURIComponent(fromTab)}`)
+    apiFetch(`/api/leads/${id}?from=${encodeURIComponent(fromTab)}`)
       .then((r) => r.json())
       .then((d) => {
+        setLoadError(null)
         setLead(d.lead ?? null)
         setPrevId(d.prevId ?? null)
         setNextId(d.nextId ?? null)
@@ -241,7 +253,11 @@ export default function LeadDetailPage() {
           setAddress(d.lead?.contact?.address ?? "")
         }
       })
-      .catch(() => toast.error("Failed to load lead"))
+      .catch((err) => {
+        console.error("[lead] load failed:", err)
+        // 404 is "no such lead"; anything else is worth saying.
+        if ((err as { status?: number })?.status !== 404) setLoadError(errorText(err, "Could not load this lead."))
+      })
       .finally(() => setLoading(false))
   }, [id, fromTab])
 
@@ -262,7 +278,7 @@ export default function LeadDetailPage() {
         setConversationId(lastChat?.conversation_id ?? null)
         setConversationChannel(lastChat?.channel === "website" || lastChat?.channel === "telegram" ? lastChat.channel : "whatsapp")
       })
-      .catch(() => {})
+      .catch((err) => console.warn("[lead] chat load failed:", err))
       .finally(() => setChatLoading(false))
   }, [contactId])
 
@@ -304,30 +320,36 @@ export default function LeadDetailPage() {
     if (!contactId || !newNoteText.trim()) return
     setAddingNote(true)
     try {
-      const res = await fetch(`/api/contacts/${contactId}/notes`, {
+      const res = await apiFetch(`/api/contacts/${contactId}/notes`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ note_text: newNoteText.trim() }),
       })
-      if (res.ok) {
-        const body = await res.json()
-        if (body.note) setContactNotes((prev) => [body.note, ...prev])
-        setNewNoteText("")
-        setNewNoteOpen(false)
-        toast.success("Note added")
-      } else {
-        toast.error("Failed to add note")
-      }
-    } catch { toast.error("Failed to add note") }
-    finally { setAddingNote(false) }
+      const body = await res.json().catch(() => ({}))
+      if (body.note) setContactNotes((prev) => [body.note, ...prev])
+      else loadContactNotes()
+      setNewNoteText("")
+      setNewNoteOpen(false)
+      setNotesOpen(true)
+      toast.success("Note added")
+    } catch (err) {
+      console.error("[lead] add note failed:", err)
+      toast.error(errorText(err, "Could not add the note."))
+    } finally { setAddingNote(false) }
   }
 
   async function deleteNote(noteId: string) {
     if (!contactId) return
-    const prev = contactNotes
-    setContactNotes((p) => p.filter((n) => n.id !== noteId))
-    const res = await fetch(`/api/contacts/${contactId}/notes/${noteId}`, { method: "DELETE" })
-    if (!res.ok) { setContactNotes(prev); toast.error("Failed to delete note") }
+    const ok = await confirm({ title: "Delete this note?", description: "The note is removed for everyone. This cannot be undone.", confirmLabel: "Delete note", variant: "destructive" })
+    if (!ok) return
+    try {
+      await apiFetch(`/api/contacts/${contactId}/notes/${noteId}`, { method: "DELETE" })
+      setContactNotes((p) => p.filter((n) => n.id !== noteId))
+      toast.success("Note deleted")
+    } catch (err) {
+      console.error("[lead] delete note failed:", err)
+      toast.error(errorText(err, "Could not delete the note."))
+    }
   }
 
   /**
@@ -342,32 +364,39 @@ export default function LeadDetailPage() {
     if (!userId) return
     setPicking(true)
     try {
-      const res = await fetch(`/api/leads/${id}`, {
+      const res = await apiFetch(`/api/leads/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ assigned_to: userId }),
       })
-      if (!res.ok) { toast.error("Could not pick this lead"); return }
       const body = await res.json()
       setLead((prev) => prev ? { ...prev, ...body.lead } : body.lead)
-    } catch {
-      toast.error("Could not reach the server")
+      toast.success("Lead picked")
+    } catch (err) {
+      console.error("[lead] pick failed:", err)
+      toast.error(errorText(err, "Could not pick this lead."))
     } finally {
       setPicking(false)
     }
   }, [id, userId])
 
+  /** True only when the server saved it; a failure says why, once. */
   const patchLead = useCallback(async (patch: Record<string, unknown>) => {
-    const res = await fetch(`/api/leads/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(patch),
-    })
-    if (!res.ok) { toast.error("Failed to save changes"); return false }
-    const body = await res.json()
-    setLead((prev) => prev ? { ...prev, ...body.lead } : body.lead)
-    loadLead()
-    return true
+    try {
+      const res = await apiFetch(`/api/leads/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patch),
+      })
+      const body = await res.json()
+      setLead((prev) => prev ? { ...prev, ...body.lead } : body.lead)
+      loadLead()
+      return true
+    } catch (err) {
+      console.error("[lead] save failed:", err)
+      toast.error(errorText(err, "Could not save the change."))
+      return false
+    }
   }, [id, loadLead])
 
   async function saveDetails() {
@@ -406,8 +435,9 @@ export default function LeadDetailPage() {
     if (!connectedChoice) return
     if (connectedChoice === "follow_up") { setFollowupOpen(true); return }
     setRecording("connected")
-    await patchLead({ status: connectedChoice, call_result: "connected" })
+    const ok = await patchLead({ status: connectedChoice, call_result: "connected" })
     setRecording(null)
+    if (!ok) return
     setConnectedChoice("")
     toast.success("Outcome recorded")
   }
@@ -415,18 +445,21 @@ export default function LeadDetailPage() {
   async function recordNotConnected() {
     if (!notConnectedChoice) return
     setRecording("not_connected")
-    await patchLead({ status: "call_not_connected", call_outcome: notConnectedChoice, call_result: "not_connected" })
+    const ok = await patchLead({ status: "call_not_connected", call_outcome: notConnectedChoice, call_result: "not_connected" })
     setRecording(null)
+    if (!ok) return
     setNotConnectedChoice("")
     toast.success("Outcome recorded")
   }
 
-  async function handleFollowupSave(data: { due_at: string; note: string }) {
+  async function handleFollowupSave(data: { due_at: string; note: string }): Promise<boolean> {
     // Only reached from "Connected → Follow-up", so it is a connected call.
-    await patchLead({ status: "follow_up", due_at: data.due_at, follow_up_note: data.note, call_result: "connected" })
+    const ok = await patchLead({ status: "follow_up", due_at: data.due_at, follow_up_note: data.note, call_result: "connected" })
+    if (!ok) return false
     setFollowupOpen(false)
     setConnectedChoice("")
     toast.success("Follow-up scheduled")
+    return true
   }
 
   async function handleCloseConfirm(result: CloseLeadResult) {
@@ -436,7 +469,8 @@ export default function LeadDetailPage() {
       patch.lost_reason = result.remarks
       if (result.reasonKey) patch.lost_reason_key = result.reasonKey
     }
-    await patchLead(patch)
+    // Not closed: the dialog stays open with what was typed.
+    if (!(await patchLead(patch))) throw new Error("not saved")
 
     if (result.pipelineId && result.stageId && lead) {
       const res = await fetch("/api/deals", {
@@ -452,7 +486,11 @@ export default function LeadDetailPage() {
           lost_reason: result.outcome === "lost" ? result.remarks : undefined,
         }),
       })
-      if (!res.ok) toast.error("Lead closed, but adding to pipeline failed")
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string }
+        console.error("[lead] closed, but the deal failed:", res.status, body.error)
+        toast.error(body.error ? `Lead closed, but the deal was not added: ${body.error}` : "Lead closed, but adding it to the pipeline failed.")
+      }
     }
 
     toast.success(result.outcome === "won" ? "Lead closed — Won 🎉" : "Lead closed — Lost")
@@ -469,22 +507,28 @@ export default function LeadDetailPage() {
   }
 
   async function copyPhone(value: string) {
-    await navigator.clipboard.writeText(value)
-    setCopied(value)
-    setTimeout(() => setCopied(null), 2000)
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(value)
+      toast.success("Number copied")
+      setTimeout(() => setCopied(null), 2000)
+    } catch (err) {
+      console.warn("[lead] copy failed:", err)
+      toast.error("Could not copy the number. Select it and copy it yourself.")
+    }
   }
 
   async function openContactEdit() {
     if (!contactId) return
     setContactEditLoading(true)
     try {
-      const res = await fetch(`/api/contacts/${contactId}`)
-      if (!res.ok) { toast.error("Failed to load contact"); return }
+      const res = await apiFetch(`/api/contacts/${contactId}`)
       const body = await res.json()
       setContactEditData(body.contact ?? null)
       setContactEditOpen(true)
-    } catch {
-      toast.error("Failed to load contact")
+    } catch (err) {
+      console.error("[lead] contact load failed:", err)
+      toast.error(errorText(err, "Could not open the contact."))
     } finally {
       setContactEditLoading(false)
     }
@@ -501,19 +545,19 @@ export default function LeadDetailPage() {
     if (!conversationId || drafting) return
     setDrafting(true)
     try {
-      const res = await fetch("/api/messages/ai-suggest", {
+      const res = await apiFetch("/api/messages/ai-suggest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conversation_id: conversationId }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Could not draft a reply")
-      setComposerText(data.draft)
+      setComposerText(typeof data.draft === "string" ? data.draft : "")
       // Warnings are surfaced rather than swallowed: a weak knowledge
       // match is exactly what the agent should check before sending.
       for (const warning of (data.warnings ?? []) as string[]) toast.warning(warning)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not draft a reply")
+      console.error("[lead] draft failed:", err)
+      toast.error(errorText(err, "Could not draft a reply."))
     } finally {
       setDrafting(false)
     }
@@ -522,16 +566,19 @@ export default function LeadDetailPage() {
   async function sendMessage() {
     const text = composerText.trim()
     if (!text || !conversationId || sessionExpired) return
+    if (sending) return
     setSending(true)
     try {
-      const res = await fetch("/api/whatsapp/send", {
+      await apiFetch("/api/whatsapp/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ conversation_id: conversationId, message_type: "text", content_text: text }),
       })
-      if (!res.ok) { toast.error("Failed to send message"); return }
       setComposerText("")
       loadChat()
+    } catch (err) {
+      console.error("[lead] send failed:", err)
+      toast.error(errorText(err, "The message was not sent."))
     } finally {
       setSending(false)
     }
@@ -554,7 +601,8 @@ export default function LeadDetailPage() {
   async function handleSendTemplate(template: MessageTemplate, values: TemplateSendValues) {
     if (!conversationId) return
     const renderedBody = renderTemplateBody(template.body_text, values.body, values.bodyByName)
-    const res = await fetch("/api/whatsapp/send", {
+    try {
+    await apiFetch("/api/whatsapp/send", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -573,19 +621,26 @@ export default function LeadDetailPage() {
         content_text: renderedBody,
       }),
     })
-    if (!res.ok) { toast.error("Failed to send template"); return }
     loadChat()
+    } catch (err) {
+      console.error("[lead] template send failed:", err)
+      toast.error(errorText(err, "The template was not sent."))
+    }
   }
 
   async function sendMediaUrl(url: string, mediaType: "image" | "document" | "audio" | "video") {
     if (!conversationId) return
-    const sendRes = await fetch("/api/whatsapp/send", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ conversation_id: conversationId, message_type: mediaType, media_url: url }),
-    })
-    if (!sendRes.ok) { toast.error("Failed to send attachment"); return }
-    loadChat()
+    try {
+      await apiFetch("/api/whatsapp/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ conversation_id: conversationId, message_type: mediaType, media_url: url }),
+      })
+      loadChat()
+    } catch (err) {
+      console.error("[lead] attachment send failed:", err)
+      toast.error(errorText(err, "The attachment was not sent."))
+    }
   }
 
   function openFilePicker(accept: string) {
@@ -597,16 +652,26 @@ export default function LeadDetailPage() {
   }
 
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
+    const picked = e.target.files?.[0]
     e.target.value = ""
-    if (!file || !conversationId) return
+    if (!picked || !conversationId) return
 
     setUploading(true)
     try {
+      // A photo goes as a WhatsApp image, which must be under 5 MB: camera
+      // photos are shrunk first. Anything else must fit the 16 MB upload.
+      const file = picked.type.startsWith("image/") ? await shrinkImageForWhatsApp(picked) : picked
+      if (file.type.startsWith("image/") && file.size > WHATSAPP_IMAGE_MAX_BYTES) {
+        toast.error("This photo is over 5 MB, the most WhatsApp accepts for an image. Send it from the Inbox as a document instead.")
+        return
+      }
+      if (file.size > MAX_UPLOAD_BYTES) {
+        toast.error("This file is over 16 MB, the most that can be sent. Make it smaller and try again.")
+        return
+      }
       const form = new FormData()
       form.append("file", file)
-      const uploadRes = await fetch("/api/upload", { method: "POST", body: form })
-      if (!uploadRes.ok) { toast.error("Upload failed"); return }
+      const uploadRes = await apiFetch("/api/upload", { method: "POST", body: form })
       const { url } = await uploadRes.json()
 
       const mediaType = file.type.startsWith("image/") ? "image"
@@ -615,8 +680,9 @@ export default function LeadDetailPage() {
         : "document"
 
       await sendMediaUrl(url, mediaType)
-    } catch {
-      toast.error("Upload failed")
+    } catch (err) {
+      console.error("[lead] upload failed:", err)
+      toast.error(errorText(err, "The upload failed."))
     } finally {
       setUploading(false)
     }
@@ -627,14 +693,15 @@ export default function LeadDetailPage() {
     router.push(`/leads/${targetId}?from=${encodeURIComponent(fromTab)}`)
   }
 
+  /** dateKey is a business-zone day (YYYY-MM-DD); messages are matched the same way. */
   function jumpToDate(dateKey: string) {
-    const target = messages.find((m) => new Date(m.created_at).toISOString().slice(0, 10) >= dateKey)
+    const target = messages.find((m) => dayKeyInZone(m.created_at, zone) >= dateKey)
     if (!target) { toast.info("No messages around that date"); return }
     document.getElementById(`msg-${target.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
   }
 
   if (loading) return (
-    <div className="flex flex-col h-full bg-[#F4F6FA]">
+    <div className="flex flex-col h-full bg-background" aria-busy="true" aria-label="Loading the lead">
       <div className="flex items-center gap-3 px-6 py-4 bg-white border-b border-slate-100">
         <div className="h-8 w-8 bg-slate-100 rounded-lg animate-pulse" />
         <div className="h-5 w-48 bg-slate-100 rounded animate-pulse" />
@@ -645,10 +712,15 @@ export default function LeadDetailPage() {
     </div>
   )
 
+  const listHref = fromTab ? `/leads?tab=${encodeURIComponent(fromTab)}` : "/leads"
+
   if (!lead) return (
-    <div className="flex flex-col h-full bg-[#F4F6FA] items-center justify-center">
-      <p className="text-[14px] text-slate-400">Lead not found</p>
-      <button onClick={() => router.push("/leads")} className="mt-3 text-[13px] text-indigo-600 hover:underline">Back to Leads</button>
+    <div className="flex flex-col h-full bg-background items-center justify-center px-4 text-center">
+      <p role={loadError ? "alert" : undefined} className="text-[14px] text-slate-600">{loadError ?? "This lead was not found. It may have been deleted, or it belongs to someone else."}</p>
+      <div className="mt-3 flex gap-3">
+        {loadError && <button type="button" onClick={() => { setLoading(true); loadLead() }} className="text-[13px] font-medium text-indigo-700 hover:underline">Try again</button>}
+        <button type="button" onClick={() => router.push(listHref)} className="text-[13px] font-medium text-indigo-700 hover:underline">Back to leads</button>
+      </div>
     </div>
   )
 
@@ -661,16 +733,16 @@ export default function LeadDetailPage() {
   const scoreIndex = scoreOptions.findIndex((o) => sameScore(lead.score, o.label))
 
   return (
-    <div className="flex flex-col h-full bg-[#F4F6FA]">
+    <div className="flex flex-col h-full bg-background">
       {/* Header */}
       <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-6 py-3 sm:py-4 bg-white border-b border-slate-100 shrink-0">
-        <button onClick={() => router.push("/leads")} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100 shrink-0" aria-label="Back">
-          <ArrowLeft className="h-4 w-4 text-slate-500" />
+        <button type="button" onClick={() => router.push(listHref)} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100 shrink-0" aria-label="Back to leads">
+          <ArrowLeft className="h-4 w-4 text-slate-500" aria-hidden="true" />
         </button>
         <div className="flex items-center gap-2 min-w-0 flex-1 text-[14px]">
-          <button onClick={() => router.push("/leads")} className="hidden sm:inline text-slate-400 hover:text-slate-600 shrink-0">Leads</button>
+          <button type="button" onClick={() => router.push(listHref)} className="hidden sm:inline text-slate-500 hover:text-slate-700 shrink-0">Leads</button>
           <span className="hidden sm:inline text-slate-300 shrink-0" aria-hidden="true">/</span>
-          <span className="font-bold text-slate-800 truncate">{lead.title}</span>
+          <span className="font-bold text-slate-800 truncate" title={lead.title}>{lead.title}</span>
           {/* A closed lead says how it ended. "Closed" was the same
               word for somebody who signed up and somebody who went
               elsewhere — see src/lib/leads/outcome.ts. */}
@@ -688,13 +760,13 @@ export default function LeadDetailPage() {
         </div>
 
         <div className="hidden sm:flex items-center gap-1 shrink-0 rounded-xl border border-slate-200 p-0.5">
-          <button onClick={() => goTo(prevId)} disabled={!prevId}
-            className="flex items-center justify-center h-7 w-7 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent" aria-label="Previous">
-            <ChevronLeft className="h-3.5 w-3.5 text-slate-500" />
+          <button type="button" onClick={() => goTo(prevId)} disabled={!prevId}
+            className="flex items-center justify-center h-7 w-7 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent" aria-label="Previous lead">
+            <ChevronLeft className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
           </button>
-          <button onClick={() => goTo(nextId)} disabled={!nextId}
-            className="flex items-center justify-center h-7 w-7 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent" aria-label="Next">
-            <ChevronRight className="h-3.5 w-3.5 text-slate-500" />
+          <button type="button" onClick={() => goTo(nextId)} disabled={!nextId}
+            className="flex items-center justify-center h-7 w-7 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent" aria-label="Next lead">
+            <ChevronRight className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
           </button>
         </div>
 
@@ -709,9 +781,9 @@ export default function LeadDetailPage() {
           />
         </span>
 
-        <button onClick={() => setCloseDialogOpen(true)}
+        <button type="button" onClick={() => setCloseDialogOpen(true)}
           className="hidden sm:flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-rose-50 text-rose-700 text-[12px] font-semibold hover:bg-rose-100 shrink-0">
-          Close Lead
+          Close lead
         </button>
 
         {/* Phone: every header action in one menu. Always mounted and shown
@@ -753,15 +825,18 @@ export default function LeadDetailPage() {
           </div>
         </div>
 
-        <button onClick={saveDetails} disabled={savingDetails}
-          className="hidden sm:flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-indigo-600 text-white text-[12px] font-semibold hover:bg-indigo-700 disabled:opacity-60 shrink-0">
-          {savingDetails ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save
+        <button type="button" onClick={saveDetails} disabled={savingDetails} title="Save lead details"
+          className="hidden sm:flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-primary text-primary-foreground text-[12px] font-semibold hover:bg-primary/90 disabled:opacity-60 shrink-0">
+          {savingDetails ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Check className="h-3.5 w-3.5" aria-hidden="true" />} Save
         </button>
       </div>
 
       {/* Body — left: scrollable lead workspace, right: fixed WhatsApp chat */}
-      <div className="flex-1 overflow-hidden grid grid-cols-1 xl:grid-cols-[1fr_420px]">
-        <div className="overflow-y-auto p-6 space-y-4">
+      {/* Wide screens: the details scroll on the left, the chat stays on
+          the right. Narrower: one page that scrolls, the chat below the
+          details at a height it can be used at — not two half screens. */}
+      <div className="flex-1 overflow-y-auto xl:overflow-hidden xl:grid xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="p-3 sm:p-6 space-y-4 xl:overflow-y-auto">
           {/* Contact hero card */}
           {/* One row when the card is wide; on a phone: name and actions,
               then the numbers, then who it is assigned to. Sized by the
@@ -792,7 +867,7 @@ export default function LeadDetailPage() {
                 <h1 className="truncate text-[18px] font-bold text-slate-900 @3xl:text-[20px]">{displayName}</h1>
                 {(lead.district || lead.place) && (
                   <p className="mt-0.5 flex items-center gap-1 truncate text-[12px] text-slate-400">
-                    <MapPin className="h-3 w-3 shrink-0" /> {[lead.place, lead.district].filter(Boolean).join(", ")}
+                    <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" /> {[lead.place, lead.district].filter(Boolean).join(", ")}
                   </p>
                 )}
               </div>
@@ -800,13 +875,13 @@ export default function LeadDetailPage() {
               {/* On a phone: call and edit stay beside the name */}
               <div className="flex shrink-0 items-center gap-2 @3xl:hidden">
                 {phone && (
-                  <a href={`tel:${phone}`} aria-label={`Call ${phone}`} className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white hover:bg-emerald-600">
-                    <Phone className="h-4 w-4" />
+                  <a href={`tel:${phone}`} aria-label={`Call ${phone}`} className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">
+                    <Phone className="h-4 w-4" aria-hidden="true" />
                   </a>
                 )}
-                <button onClick={openContactEdit} disabled={!contactId || contactEditLoading} title="Edit contact" aria-label="Edit contact"
+                <button type="button" onClick={openContactEdit} disabled={!contactId || contactEditLoading} title="Edit contact" aria-label="Edit contact"
                   className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50">
-                  {contactEditLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+                  {contactEditLoading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Pencil className="h-4 w-4" aria-hidden="true" />}
                 </button>
                 <RecordHistoryButton targetType="lead" targetId={String(lead.id)} className="h-10 min-w-10 rounded-xl" iconOnlyOnPhone />
               </div>
@@ -815,7 +890,7 @@ export default function LeadDetailPage() {
               {(phone || altPhone) && (
                 <div className="flex w-full flex-wrap items-center gap-1.5 @md:gap-2 @3xl:w-auto @3xl:flex-nowrap">
                   {phone && (
-                    <button onClick={() => copyPhone(phone)} title="Copy number" aria-label={`Copy ${phone}`}
+                    <button type="button" onClick={() => copyPhone(phone)} title="Copy number" aria-label={`Copy ${phone}`}
                       className="inline-flex h-9 items-center gap-1.5 rounded-full bg-indigo-100 px-2.5 text-[12.5px] font-bold tabular-nums text-indigo-900 hover:bg-indigo-200 @md:px-4 @md:text-[14px]">
                       {phone}
                       {copied === phone && <Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Copied" />}
@@ -869,13 +944,13 @@ export default function LeadDetailPage() {
               )}
               {/* Wide card: Call and Edit at the end of the row */}
               {phone && (
-                <a href={`tel:${phone}`} className="hidden h-10 shrink-0 items-center gap-2 rounded-xl bg-emerald-500 px-5 text-[14px] font-semibold text-white hover:bg-emerald-600 @3xl:inline-flex">
-                  <Phone className="h-4 w-4" /> Call
+                <a href={`tel:${phone}`} className="hidden h-10 shrink-0 items-center gap-2 rounded-xl bg-emerald-600 px-5 text-[14px] font-semibold text-white hover:bg-emerald-700 @3xl:inline-flex">
+                  <Phone className="h-4 w-4" aria-hidden="true" /> Call
                 </a>
               )}
-              <button onClick={openContactEdit} disabled={!contactId || contactEditLoading} title="Edit contact" aria-label="Edit contact"
+              <button type="button" onClick={openContactEdit} disabled={!contactId || contactEditLoading} title="Edit contact" aria-label="Edit contact"
                 className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 @3xl:flex">
-                {contactEditLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+                {contactEditLoading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Pencil className="h-4 w-4" aria-hidden="true" />}
               </button>
               <span className="hidden @3xl:inline-flex">
                 <RecordHistoryButton targetType="lead" targetId={String(lead.id)} className="h-10 rounded-xl" />
@@ -904,21 +979,28 @@ export default function LeadDetailPage() {
             {/* Lead Details */}
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
               <div className="mb-4 flex items-center justify-between gap-2">
-                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Lead Details</p>
+                <h2 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Lead details</h2>
                 <GenderBadge gender={lead.contact?.gender} />
               </div>
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">District</label>
-                  <select value={district} onChange={(e) => { setDistrict(e.target.value); dirtyRef.current = true }}
-                    className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400">
-                    <option value="">Select district…</option>
-                    {KERALA_DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
-                  </select>
+                  <label htmlFor="lead-district" className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">District</label>
+                  {districts.length > 0 ? (
+                    <select id="lead-district" value={district} onChange={(e) => { setDistrict(e.target.value); dirtyRef.current = true }}
+                      className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400">
+                      <option value="">Choose a district…</option>
+                      {district && !districts.includes(district) && <option value={district}>{district}</option>}
+                      {districts.map((d) => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  ) : (
+                    <input id="lead-district" name="lead-district" autoComplete="off" maxLength={60} value={district}
+                      onChange={(e) => { setDistrict(e.target.value); dirtyRef.current = true }} placeholder="District or area"
+                      className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400" />
+                  )}
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Place / Area</label>
-                  <input autoComplete="off" value={place} onChange={(e) => { setPlace(e.target.value); dirtyRef.current = true }}
+                  <label htmlFor="lead-place" className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Place / area</label>
+                  <input id="lead-place" name="lead-place" autoComplete="off" maxLength={120} value={place} onChange={(e) => { setPlace(e.target.value); dirtyRef.current = true }}
                     placeholder="City / area"
                     className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400" />
                 </div>
@@ -972,21 +1054,22 @@ export default function LeadDetailPage() {
                   <div className="flex items-center justify-between">
                     <button type="button" onClick={() => setNotesOpen((v) => !v)} disabled={!contactId}
                       className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide hover:text-slate-700 disabled:opacity-50">
-                      <FileText className="h-3.5 w-3.5" />
+                      <FileText className="h-3.5 w-3.5" aria-hidden="true" />
                       Notes
                       <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">{contactNotes.length}</span>
                     </button>
                     <button type="button" onClick={() => setNewNoteOpen((v) => !v)} disabled={!contactId}
-                      className={cn("flex h-6 w-6 items-center justify-center rounded-lg transition-all disabled:opacity-40",
-                        newNoteOpen ? "bg-indigo-100 text-indigo-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")}>
-                      {newNoteOpen ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                      aria-label={newNoteOpen ? "Cancel the new note" : "Add a note"} aria-expanded={newNoteOpen}
+                      className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition-colors disabled:opacity-40",
+                        newNoteOpen ? "bg-indigo-100 text-indigo-600" : "text-slate-500 hover:bg-slate-100 hover:text-slate-700")}>
+                      {newNoteOpen ? <X className="h-3.5 w-3.5" aria-hidden="true" /> : <Plus className="h-3.5 w-3.5" aria-hidden="true" />}
                     </button>
                   </div>
 
                   {newNoteOpen && (
                     <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 space-y-2">
-                      <textarea autoComplete="off" rows={3} value={newNoteText} onChange={(e) => setNewNoteText(e.target.value)}
-                        placeholder="Write a note…" autoFocus
+                      <textarea autoComplete="off" rows={3} maxLength={4000} value={newNoteText} onChange={(e) => setNewNoteText(e.target.value)}
+                        aria-label="New note" placeholder="Write a note…"
                         className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none" />
                       <div className="flex gap-2">
                         <button type="button" onClick={() => { setNewNoteOpen(false); setNewNoteText("") }} disabled={addingNote}
@@ -1009,11 +1092,11 @@ export default function LeadDetailPage() {
                         {contactNotes.map((note) => (
                           <div key={note.id} className="group/note rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5">
                             <div className="flex items-start justify-between gap-2">
-                              <p className="text-[12px] text-slate-700 leading-relaxed whitespace-pre-wrap">{note.note_text}</p>
-                              <button type="button" onClick={() => deleteNote(note.id)}
+                              <p className="min-w-0 break-words text-[12px] text-slate-700 leading-relaxed whitespace-pre-wrap">{note.note_text}</p>
+                              <button type="button" onClick={() => void deleteNote(note.id)}
                                 aria-label="Delete note"
-                                className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full text-amber-500 opacity-0 group-hover/note:opacity-100 hover:bg-amber-100 transition-opacity">
-                                <Trash2 className="h-3 w-3" />
+                                className="shrink-0 flex h-6 w-6 items-center justify-center rounded-full text-amber-700 hover:bg-amber-100 transition-opacity focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/note:opacity-100">
+                                <Trash2 className="h-3 w-3" aria-hidden="true" />
                               </button>
                             </div>
                             <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-amber-700">
@@ -1023,7 +1106,7 @@ export default function LeadDetailPage() {
                                   {ROLE_LABEL[note.created_by_role] ?? note.created_by_role}
                                 </span>
                               )}
-                              <span>{note.created_at ? new Date(note.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</span>
+                              <span>{formatInZone(note.created_at, zone, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span>
                             </div>
                           </div>
                         ))}
@@ -1031,13 +1114,13 @@ export default function LeadDetailPage() {
                     )
                   )}
                 </div>
-                <button onClick={saveDetails} disabled={savingDetails}
-                  className="w-full h-10 rounded-xl bg-indigo-600 text-white text-[13px] font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
-                  {savingDetails && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Save Changes
+                <button type="button" onClick={saveDetails} disabled={savingDetails}
+                  className="w-full h-10 rounded-xl bg-primary text-primary-foreground text-[13px] font-semibold hover:bg-primary/90 disabled:opacity-60 flex items-center justify-center gap-2">
+                  {savingDetails && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />} {savingDetails ? "Saving…" : "Save changes"}
                 </button>
                 <div className="pt-2 border-t border-slate-100 space-y-0.5">
-                  <p className="text-[11px] text-slate-400">Created: {new Date(lead.created_at).toLocaleString()}</p>
-                  <p className="text-[11px] text-slate-400">Updated: {new Date(lead.updated_at).toLocaleString()}</p>
+                  <p className="text-[11px] text-slate-500">Created {formatInZone(lead.created_at, zone)}</p>
+                  <p className="text-[11px] text-slate-500">Updated {formatInZone(lead.updated_at, zone)}</p>
                 </div>
               </div>
             </div>
@@ -1048,9 +1131,9 @@ export default function LeadDetailPage() {
             <div className="flex flex-col gap-4 [&>*:last-child]:flex-1">
               {/* Log Call Outcome */}
               <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-                <p className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-4">
-                  <Phone className="h-3.5 w-3.5" /> Log Call Outcome
-                </p>
+                <h2 className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-4">
+                  <Phone className="h-3.5 w-3.5" aria-hidden="true" /> Log call outcome
+                </h2>
 
                 {/* Mode switch — only one of Connected / Call Not Connected is
                     editable at a time, chosen here instead of both being
@@ -1070,38 +1153,38 @@ export default function LeadDetailPage() {
                   )}>
                     <input autoComplete="off" type="radio" name="call-mode" checked={callMode === "not_connected"}
                       onChange={() => setCallMode("not_connected")} className="accent-rose-500" />
-                    <span className={cn("text-[12.5px] font-bold", callMode === "not_connected" ? "text-rose-700" : "text-slate-500")}>Call Not Connected</span>
+                    <span className={cn("text-[12.5px] font-bold", callMode === "not_connected" ? "text-rose-700" : "text-slate-500")}>Not connected</span>
                   </label>
                 </div>
 
                 {callMode === "connected" ? (
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 space-y-2.5">
                     <p className="flex items-center gap-2 text-[13px] font-bold text-emerald-700">
-                      <Phone className="h-4 w-4" /> Connected
+                      <Phone className="h-4 w-4" aria-hidden="true" /> Connected
                     </p>
-                    <select value={connectedChoice} onChange={(e) => setConnectedChoice(e.target.value)}
+                    <select aria-label="Outcome of the connected call" value={connectedChoice} onChange={(e) => setConnectedChoice(e.target.value)}
                       className="w-full h-9 rounded-xl border border-emerald-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-100">
                       <option value="">Choose outcome…</option>
                       {CONNECTED_OUTCOMES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
                     </select>
                     <button onClick={recordConnected} disabled={!connectedChoice || recording !== null}
                       className="w-full h-10 rounded-xl bg-emerald-500 text-white text-[13px] font-bold hover:bg-emerald-600 disabled:opacity-50 flex items-center justify-center gap-2">
-                      {recording === "connected" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Record Outcome
+                      {recording === "connected" && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />} Record outcome
                     </button>
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 space-y-2.5">
                     <p className="flex items-center gap-2 text-[13px] font-bold text-rose-700">
-                      <PhoneOff className="h-4 w-4" /> Call Not Connected
+                      <PhoneOff className="h-4 w-4" aria-hidden="true" /> Not connected
                     </p>
-                    <select value={notConnectedChoice} onChange={(e) => setNotConnectedChoice(e.target.value)}
+                    <select aria-label="Why the call did not connect" value={notConnectedChoice} onChange={(e) => setNotConnectedChoice(e.target.value)}
                       className="w-full h-9 rounded-xl border border-rose-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-100">
                       <option value="">Choose reason…</option>
                       {NOT_CONNECTED_REASONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
                     </select>
                     <button onClick={recordNotConnected} disabled={!notConnectedChoice || recording !== null}
                       className="w-full h-10 rounded-xl bg-rose-500 text-white text-[13px] font-bold hover:bg-rose-600 disabled:opacity-50 flex items-center justify-center gap-2">
-                      {recording === "not_connected" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Record Outcome
+                      {recording === "not_connected" && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />} Record outcome
                     </button>
                   </div>
                 )}
@@ -1118,16 +1201,16 @@ export default function LeadDetailPage() {
 
           {/* Timeline — below the grid, reached by scrolling */}
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-4">Timeline</p>
+            <h2 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-4">Timeline</h2>
             <LeadActivityTimeline activities={activities} isClosed={lead.status === "closed"} onItemClick={contactId ? jumpToDate : undefined} />
           </div>
         </div>
 
         {/* WhatsApp Chat panel */}
-        <div className="flex flex-col overflow-hidden border-l border-slate-100 bg-white">
+        <section aria-label="Chat" className="flex h-[85dvh] min-h-[28rem] flex-col overflow-hidden border-t border-slate-200 bg-white xl:h-auto xl:min-h-0 xl:border-l xl:border-t-0">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
-            <MessageSquare className="h-4 w-4 text-emerald-500" />
-            <p className="text-[12px] font-bold text-slate-500 uppercase tracking-wide">WhatsApp Chat</p>
+            <MessageSquare className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+            <h2 className="text-[12px] font-bold text-slate-500 uppercase tracking-wide">{channelName} chat</h2>
           </div>
           <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white text-[12px] font-bold">
@@ -1135,15 +1218,15 @@ export default function LeadDetailPage() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold text-slate-800 truncate">{displayName}</p>
-              <p className="text-[11px] text-slate-400">WhatsApp</p>
+              <p className="text-[11px] text-slate-500">{channelName}</p>
             </div>
-            <button onClick={loadChat} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-slate-100 shrink-0" title="Refresh" aria-label="Refresh">
-              <RefreshCw className={cn("h-3.5 w-3.5 text-slate-400", chatLoading && "animate-spin")} />
+            <button type="button" onClick={loadChat} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-slate-100 shrink-0" title="Refresh the chat" aria-label="Refresh the chat">
+              <RefreshCw className={cn("h-3.5 w-3.5 text-slate-500", chatLoading && "animate-spin")} aria-hidden="true" />
             </button>
-            <button onClick={() => router.push(conversationId ? `/inbox?c=${conversationId}` : "/inbox")}
+            <Link href={conversationId ? `/inbox?c=${conversationId}` : "/inbox"}
               className="flex items-center gap-1 shrink-0 h-7 px-2.5 rounded-lg border border-slate-200 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
-              <ExternalLink className="h-3 w-3" /> Inbox
-            </button>
+              <ExternalLink className="h-3 w-3" aria-hidden="true" /> Inbox
+            </Link>
           </div>
 
           {/* Same WhatsApp-style doodle wallpaper as the main Inbox thread
@@ -1182,9 +1265,9 @@ export default function LeadDetailPage() {
                   type="button"
                   onClick={pickLead}
                   disabled={picking || !userId}
-                  className="mt-4 inline-flex h-9 items-center gap-2 rounded-xl bg-[#4A5CE8] px-4 text-[13px] font-semibold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50"
+                  className="mt-4 inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-4 text-[13px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                 >
-                  {picking && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                  {picking && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
                   Pick this lead
                 </button>
                 <p className="mt-2.5 text-[11px] text-slate-400">
@@ -1237,13 +1320,15 @@ export default function LeadDetailPage() {
               </div>
             )}
 
-            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+            {/* Phone: the message box gets the whole first row, the buttons sit under it. */}
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 sm:flex-nowrap">
               <EmojiPickerPopover onSelect={insertEmoji} disabled={!conversationId || sessionExpired} />
               {conversationId && <ScheduleMenuButton conversationId={conversationId} channel={conversationChannel} />}
               <div className="relative shrink-0">
                 <button type="button" onClick={() => setAttachOpen((v) => !v)} disabled={!conversationId || uploading || sessionExpired}
-                  className="text-slate-400 hover:text-slate-600 disabled:opacity-40" title={sessionExpired ? "Session expired — send a template to re-engage first" : "Attach"}>
-                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+                  aria-label="Attach a file" aria-expanded={attachOpen}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:text-slate-700 disabled:opacity-40" title={sessionExpired ? "Session expired — send a template to re-engage first" : "Attach"}>
+                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Paperclip className="h-4 w-4" aria-hidden="true" />}
                 </button>
                 {attachOpen && (
                   <>
@@ -1254,12 +1339,12 @@ export default function LeadDetailPage() {
                           <button type="button" onClick={() => { setAttachOpen(false); setTemplatePickerOpen(true) }}
                             className="flex w-full items-center gap-3 px-4 py-2.5 text-[13px] text-slate-800 hover:bg-slate-100 transition-colors">
                             <LayoutTemplate className="h-4 w-4 shrink-0 text-amber-500" />
-                            Message Template
+                            Message template
                           </button>
                           <div className="mx-3 my-1 border-t border-slate-100" />
                         </>
                       )}
-                      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">From Device</div>
+                      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">From device</div>
                       {ATTACH_OPTIONS.map(({ key, label, icon: Icon, color, accept }) => (
                         <button key={key} type="button" onClick={() => openFilePicker(accept)}
                           className="flex w-full items-center gap-3 px-4 py-2.5 text-[13px] text-slate-800 hover:bg-slate-100 transition-colors">
@@ -1268,41 +1353,45 @@ export default function LeadDetailPage() {
                         </button>
                       ))}
                       <div className="mx-3 my-1 border-t border-slate-100" />
-                      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">From File Manager</div>
+                      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">From file manager</div>
                       <button type="button" onClick={() => { setAttachOpen(false); setFilePickerOpen(true) }}
                         className="flex w-full items-center gap-3 px-4 py-2.5 text-[13px] text-slate-800 hover:bg-slate-100 transition-colors">
                         <FolderOpen className="h-4 w-4 shrink-0 text-indigo-500" />
-                        Browse Files
+                        Browse files
                       </button>
                     </div>
                   </>
                 )}
               </div>
-              <input autoComplete="off" value={composerText} onChange={(e) => setComposerText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+              {/* A real multi-line box: Enter sends, Shift+Enter starts a new line. */}
+              <textarea autoComplete="off" rows={1} value={composerText} onChange={(e) => setComposerText(e.target.value)}
+                aria-label="Message"
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void sendMessage() } }}
                 placeholder={
                   !conversationId
-                    ? "No WhatsApp conversation yet"
+                    ? "No conversation with this person yet"
                     : sessionExpired
-                      ? "Session expired - use a template"
+                      ? "Session expired — use a template"
                       : "Type a message…"
                 }
                 disabled={!conversationId || sending || sessionExpired}
-                className="flex-1 min-w-0 bg-transparent text-[13px] text-slate-800 outline-none disabled:opacity-50" />
-              <button onClick={draftReply} disabled={!conversationId || drafting || sessionExpired}
+                className="order-first max-h-32 min-h-[1.5rem] min-w-0 flex-1 basis-full resize-none bg-transparent py-1 text-[13px] text-slate-800 outline-none [field-sizing:content] disabled:opacity-50 sm:order-none sm:basis-0" />
+              <button type="button" onClick={draftReply} disabled={!conversationId || drafting || sessionExpired}
+                aria-label="Draft a reply with AI"
                 title="Draft a reply from this conversation — you approve it before it sends"
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-40">
-                {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />}
               </button>
-              <button onClick={sendMessage} disabled={!conversationId || !composerText.trim() || sending || sessionExpired}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40">
-                {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              <button type="button" onClick={() => void sendMessage()} disabled={!conversationId || !composerText.trim() || sending || sessionExpired}
+                aria-label="Send message"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40">
+                {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Send className="h-3.5 w-3.5" aria-hidden="true" />}
               </button>
             </div>
-            <p className="mt-1 text-right text-[10px] text-slate-400">Enter to send · Shift+Enter new line</p>
+            <p className="mt-1 text-right text-[10px] text-slate-500">Enter to send · Shift+Enter for a new line</p>
           </div>
           )}
-        </div>
+        </section>
       </div>
 
       <CloseLeadDialog

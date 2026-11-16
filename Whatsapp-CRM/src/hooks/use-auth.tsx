@@ -57,6 +57,8 @@ interface AccountSummary {
   id: string;
   name: string;
   default_currency: string;
+  /** The business's time zone (Settings → Company); Asia/Kolkata when unset. */
+  timezone: string;
 }
 
 interface AuthContextValue {
@@ -106,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: data.account.id,
             name: data.account.name,
             default_currency: data.account.default_currency ?? DEFAULT_CURRENCY,
+            timezone: typeof data.account.timezone === "string" && data.account.timezone ? data.account.timezone : "Asia/Kolkata",
           });
         }
       }

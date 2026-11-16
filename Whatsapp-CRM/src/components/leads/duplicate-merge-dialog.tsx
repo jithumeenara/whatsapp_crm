@@ -5,6 +5,8 @@ import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Copy, Loader2, Merge, X, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/hooks/use-auth'
+import { formatInZone } from '@/lib/format/business-time'
 
 /**
  * Finding the same person entered twice, and folding them into one.
@@ -54,6 +56,8 @@ export function DuplicateMergeDialog({
 }) {
   const [groups, setGroups] = useState<DuplicateGroup[]>([])
   const [loading, setLoading] = useState(true)
+  const { account } = useAuth()
+  const zone = account?.timezone ?? 'Asia/Kolkata'
   const [busyContact, setBusyContact] = useState<string | null>(null)
   const [keepBy, setKeepBy] = useState<Record<string, string>>({})
 
@@ -206,7 +210,7 @@ export function DuplicateMergeDialog({
                                 ? ` · ${lead.assignee.profile?.full_name || lead.assignee.email}`
                                 : ' · unassigned'}
                               {' · '}
-                              {new Date(lead.created_at).toLocaleDateString()}
+                              {formatInZone(lead.created_at, zone, { day: 'numeric', month: 'short', year: 'numeric' })}
                             </p>
                           </div>
                           {/* What this row carries. The number is the
@@ -244,10 +248,12 @@ export function DuplicatesButton({ onClick, count }: { onClick: () => void; coun
     <button
       type="button"
       onClick={onClick}
-      className="flex h-9 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 text-[12.5px] font-medium text-amber-700 transition-colors hover:bg-amber-100"
+      aria-label={`${count} duplicate${count === 1 ? '' : 's'} — review and merge`}
+      className="flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-amber-200 bg-amber-50 px-2.5 text-[12.5px] font-medium text-amber-800 transition-colors hover:bg-amber-100 sm:px-3"
     >
-      <Copy className="h-3.5 w-3.5" />
-      {count} duplicate{count === 1 ? '' : 's'}
+      <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+      <span className="tabular-nums">{count}</span>
+      <span className="hidden sm:inline">duplicate{count === 1 ? '' : 's'}</span>
     </button>
   )
 }

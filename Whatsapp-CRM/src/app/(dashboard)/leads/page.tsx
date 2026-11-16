@@ -1,12 +1,15 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef, useMemo, Suspense } from "react"
+import { useEffect, useState, useCallback, useRef, useMemo, Suspense, useSyncExternalStore } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import Link from "next/link"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useConfirm } from "@/hooks/use-confirm"
 import { MyTasksTab } from "@/components/leads/my-tasks-tab"
 import {
   TrendingUp, Plus, Search, RefreshCw, Flame, Snowflake,
-  Thermometer, MapPin, Phone, User, UserCheck,
-  X, Filter, MoreHorizontal, Trash2, EyeOff, Eye, AlertTriangle,
+  Thermometer, MapPin, Phone, User,
+  Filter, MoreHorizontal, Trash2, EyeOff, Eye,
   LayoutGrid, Table2, ChevronRight, Clock, Calendar,
   Sparkles, Bell, UserPlus, Globe, Megaphone, Share2, Bot,
   Loader2,
@@ -40,12 +43,8 @@ interface FollowUp {
 }
 // ---- constants ----
 
-const KERALA_DISTRICTS = [
-  "Thiruvananthapuram","Kollam","Pathanamthitta","Alappuzha",
-  "Kottayam","Idukki","Ernakulam","Thrissur","Palakkad",
-  "Malappuram","Kozhikode","Wayanad","Kannur","Kasaragod",
-]
-const SOURCES = ["whatsapp","instagram","telegram","website","campaign","referral","manual"]
+/** Leads per page; "Show more" asks for the next page (the API allows up to 100). */
+const PAGE_SIZE = 50
 
 interface TabDef { key: string; label: string; color: string; icon?: React.ReactNode }
 
@@ -54,10 +53,10 @@ interface TabDef { key: string; label: string; color: string; icon?: React.React
 // looked — see the GET handler in /api/leads for the whole story.
 const TABS: TabDef[] = [
   { key: "mine",      label: "Mine",       color: "text-indigo-600" },
-  { key: "new_pool",  label: "New Pool",   color: "text-sky-700"    },
+  { key: "new_pool",  label: "New pool",   color: "text-sky-700"    },
   { key: "follow_up", label: "Follow-up",  color: "text-orange-700" },
   { key: "overdue",   label: "Overdue",    color: "text-rose-700"   },
-  { key: "all",       label: "All Open",   color: "text-slate-600"  },
+  { key: "all",       label: "All open",   color: "text-slate-600"  },
   { key: "closed",    label: "Closed",     color: "text-emerald-700"},
   // Open and closed together. "All Open" answers "what needs doing" and
   // is the right default; this answers "where is that person", which
@@ -101,13 +100,8 @@ const STATUS_CHIP: Record<string, string> = {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  new:"New", open:"Open", call_not_connected:"Not Connected", visited:"Visited",
-  appointment_fixed:"Appt Fixed", follow_up:"Follow-up", closed:"Closed",
-}
-
-const SOURCE_LABEL: Record<string, string> = {
-  whatsapp:"WhatsApp", instagram:"Instagram", website:"Website",
-  campaign:"Campaign", referral:"Referral", manual:"Manual",
+  new:"New", open:"Open", call_not_connected:"Not connected", visited:"Visited",
+  appointment_fixed:"Appointment fixed", follow_up:"Follow-up", closed:"Closed",
 }
 
 function cn(...c: (string | boolean | undefined | null)[]) {
@@ -115,8 +109,20 @@ function cn(...c: (string | boolean | undefined | null)[]) {
 }
 
 function initials(name: string | null | undefined, phone: string) {
-  if (name) return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)
-  return phone.slice(-2)
+  const words = (name ?? "").trim().split(/\s+/).filter(Boolean)
+  if (words.length > 0) return words.map((w) => w[0]).join("").toUpperCase().slice(0, 2)
+  return phone.slice(-2) || "?"
+}
+
+/** First letter of a name, or "?" — an empty name ("") must not crash a tile. */
+function firstLetter(value: string | null | undefined) {
+  const t = (value ?? "").trim()
+  return t ? t[0].toUpperCase() : "?"
+}
+
+/** A person's name as the list shows it: name, else email, else "Agent". */
+function personName(p: { email?: string | null; profile?: { full_name?: string | null } | null } | null | undefined) {
+  return p?.profile?.full_name?.trim() || p?.email?.trim() || "Agent"
 }
 
 function relTime(iso: string) {
@@ -181,13 +187,24 @@ function NotAnEnquiryChip({ lead }: { lead: Lead }) {
       title={lead.ai_reason ?? "The assistant did not see an enquiry in this conversation."}
       className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10.5px] font-medium text-amber-800"
     >
-      <Sparkles className="h-2.5 w-2.5" />
+      <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />
       Probably not an enquiry
     </span>
   )
 }
 
 interface TagItem { id: string; name: string; color: string }
+/** What /api/tags and /api/leads/settings send; every field may be missing. */
+interface TagsReply { tags?: TagItem[] }
+interface SettingsReply {
+  scoring_mode?: string
+  ai_lead_enabled?: boolean
+  sla_warn_hours?: number
+  sla_breach_hours?: number
+  score_options?: unknown[]
+  lead_sources?: unknown[]
+  districts?: unknown[]
+}
 
 // ---- score badge ----
 
@@ -228,7 +245,7 @@ function ScoreBadge({ lead, ladder }: { lead: Lead; ladder: string[] }) {
       title={note ?? undefined}
       className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${tone}`}
     >
-      <Icon className="h-3 w-3" />
+      <Icon className="h-3 w-3" aria-hidden="true" />
       {label}
       {/* A score that changed on its own with no explanation is the kind
           of thing people file a bug about. The dot says there is a
@@ -293,7 +310,7 @@ function SourceBadge({ source, sources }: { source?: string | null; sources?: { 
 
   const customIcon = match?.icon
     ? (match.icon.startsWith("data:") || match.icon.startsWith("http") || match.icon.startsWith("/"))
-      ? <img src={match.icon} alt="" className="h-3 w-3 object-contain rounded-sm" />
+      ? <img src={match.icon} alt="" width={12} height={12} loading="lazy" className="h-3 w-3 object-contain rounded-sm" />
       : <span className="text-[11px] leading-none">{match.icon}</span>
     : null
   const icon = override?.icon ?? customIcon ?? <UserPlus className="h-3 w-3" />
@@ -314,8 +331,8 @@ function formatSourceLabel(raw: string) {
 // ---- create lead dialog ----
 
 function CreateLeadDialog({
-  open, onClose, onSaved, scoringMode, scoreOptions, sourceOptions,
-}: { open: boolean; onClose: () => void; onSaved: () => void; scoringMode: string; scoreOptions: { icon: string; label: string }[]; sourceOptions: { icon: string; label: string }[] }) {
+  open, onClose, onSaved, scoringMode, scoreOptions, sourceOptions, districts,
+}: { open: boolean; onClose: () => void; onSaved: () => void; scoringMode: string; scoreOptions: { icon: string; label: string }[]; sourceOptions: { icon: string; label: string }[]; districts: string[] }) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
   const [duplicateInfo, setDuplicateInfo] = useState<DuplicateInfo | null>(null)
@@ -410,7 +427,11 @@ function CreateLeadDialog({
     setDuplicateInfo(null)
   }
 
-  if (!open) return null
+  function closeAll() {
+    if (saving) return
+    onClose(); resetAll()
+  }
+
   return (
     <>
       {duplicateInfo && (
@@ -423,16 +444,13 @@ function CreateLeadDialog({
           onCancel={() => { setDuplicateInfo(null); setPendingForm(null) }}
         />
       )}
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 flex items-center justify-between border-b border-slate-100 px-5 py-4 bg-white rounded-t-2xl">
-          <h2 className="text-[15px] font-semibold text-slate-900">New Lead</h2>
-          <button type="button" onClick={() => { onClose(); resetAll() }} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Close">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <form onSubmit={handleSave} className="p-5 space-y-4">
+      <Dialog open={open} onOpenChange={(o) => { if (!o) closeAll() }}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto overscroll-contain bg-white sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-[15px] font-semibold text-slate-900">New lead</DialogTitle>
+          <DialogDescription className="text-[12px] text-slate-500">Who it is for, and what they need.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSave} className="space-y-4">
 
           <ContactPicker value={picked} onChange={setPicked} idPrefix="lead" />
 
@@ -480,8 +498,8 @@ function CreateLeadDialog({
 
           {/* Title */}
           <div>
-            <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Lead Title *</label>
-            <input autoComplete="off"
+            <label htmlFor="lead-title" className="block text-[12px] font-medium text-slate-600 mb-1.5">Lead title <span className="text-rose-600" aria-hidden="true">*</span></label>
+            <input id="lead-title" name="lead-title" autoComplete="off" maxLength={200}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
               placeholder="e.g. Building Project, Hospital Enquiry"
               value={form.title}
@@ -491,8 +509,8 @@ function CreateLeadDialog({
           </div>
 
           <div>
-            <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Description</label>
-            <textarea autoComplete="off"
+            <label htmlFor="lead-notes" className="block text-[12px] font-medium text-slate-600 mb-1.5">Description</label>
+            <textarea id="lead-notes" name="lead-notes" autoComplete="off"
               rows={3} maxLength={2000}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none resize-none"
               placeholder="Purpose of the lead and what they need"
@@ -503,8 +521,8 @@ function CreateLeadDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Source</label>
-              <select
+              <label htmlFor="lead-source" className="block text-[12px] font-medium text-slate-600 mb-1.5">Source</label>
+              <select id="lead-source"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
                 value={form.source}
                 onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
@@ -514,8 +532,8 @@ function CreateLeadDialog({
             </div>
             {(scoringMode === "score" || scoringMode === "both") && (
               <div>
-                <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Score</label>
-                <select
+                <label htmlFor="lead-score" className="block text-[12px] font-medium text-slate-600 mb-1.5">Score</label>
+                <select id="lead-score"
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
                   value={form.score}
                   onChange={(e) => setForm((f) => ({ ...f, score: e.target.value }))}
@@ -528,35 +546,44 @@ function CreateLeadDialog({
 
           {(scoringMode === "quality" || scoringMode === "both") && (
             <div>
-              <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Quality</label>
-              <select
+              <label htmlFor="lead-quality" className="block text-[12px] font-medium text-slate-600 mb-1.5">Quality</label>
+              <select id="lead-quality"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
                 value={form.lead_quality}
                 onChange={(e) => setForm((f) => ({ ...f, lead_quality: e.target.value }))}
               >
                 <option value="">— select —</option>
                 <option value="qualified">Qualified</option>
-                <option value="not_qualified">Not Qualified</option>
-                <option value="wrong_enquiry">Wrong Enquiry</option>
+                <option value="not_qualified">Not qualified</option>
+                <option value="wrong_enquiry">Wrong enquiry</option>
               </select>
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[12px] font-medium text-slate-600 mb-1.5">District</label>
-              <select
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
-                value={form.district}
-                onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))}
-              >
-                <option value="">— select —</option>
-                {KERALA_DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
+              <label htmlFor="lead-district" className="block text-[12px] font-medium text-slate-600 mb-1.5">District</label>
+              {districts.length > 0 ? (
+                <select id="lead-district"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
+                  value={form.district}
+                  onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))}
+                >
+                  <option value="">Choose…</option>
+                  {districts.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              ) : (
+                <input id="lead-district" name="lead-district" autoComplete="off" maxLength={60}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
+                  placeholder="District or area"
+                  value={form.district}
+                  onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))}
+                />
+              )}
             </div>
             <div>
-              <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Place</label>
-              <input autoComplete="off"
+              <label htmlFor="lead-place" className="block text-[12px] font-medium text-slate-600 mb-1.5">Place</label>
+              <input id="lead-place" name="lead-place" autoComplete="off" maxLength={120}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
                 placeholder="Town / area"
                 value={form.place}
@@ -567,58 +594,20 @@ function CreateLeadDialog({
 
 
           <div className="flex gap-3 pt-1">
-            <button type="button" onClick={() => { onClose(); resetAll() }}
-              className="flex-1 rounded-lg border border-slate-200 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+            <button type="button" onClick={closeAll} disabled={saving}
+              className="flex-1 rounded-lg border border-slate-200 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50">
               Cancel
             </button>
             <button type="submit" disabled={saving || !form.title.trim()}
-              className="flex-1 rounded-lg py-2 text-[13px] font-medium text-white disabled:opacity-50 transition-colors bg-indigo-600 hover:bg-indigo-700">
-              {saving ? "Saving…" : "Create Lead"}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary py-2 text-[13px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50">
+              {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+              {saving ? "Saving…" : "Create lead"}
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+      </Dialog>
     </>
-  )
-}
-
-// ---- confirm dialog ----
-
-function ConfirmDialog({
-  open, title, description, confirmLabel, danger,
-  onConfirm, onCancel, loading,
-}: {
-  open: boolean; title: string; description: string
-  confirmLabel: string; danger?: boolean
-  onConfirm: () => void; onCancel: () => void; loading?: boolean
-}) {
-  if (!open) return null
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} />
-      <div className="relative w-full max-w-sm rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 overflow-hidden">
-        <div className={cn("px-5 pt-5 pb-4", danger ? "bg-rose-50/60" : "bg-slate-50/60")}>
-          <div className={cn("mb-3 flex h-10 w-10 items-center justify-center rounded-xl",
-            danger ? "bg-rose-100" : "bg-indigo-100")}>
-            <AlertTriangle className={cn("h-5 w-5", danger ? "text-rose-700" : "text-indigo-600")} />
-          </div>
-          <h3 className="text-[15px] font-bold text-slate-900">{title}</h3>
-          <p className="mt-1 text-[13px] text-slate-500 leading-relaxed">{description}</p>
-        </div>
-        <div className="flex gap-3 px-5 py-4 bg-white border-t border-slate-100">
-          <button type="button" onClick={onCancel} disabled={loading}
-            className="flex-1 rounded-xl border border-slate-200 py-2.5 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50">
-            Cancel
-          </button>
-          <button type="button" onClick={onConfirm} disabled={loading}
-            className={cn("flex-1 rounded-xl py-2.5 text-[13px] font-semibold text-white transition-colors disabled:opacity-50",
-              danger ? "bg-rose-600 hover:bg-rose-700" : "bg-indigo-600 hover:bg-indigo-700")}>
-            {loading ? "Working…" : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -635,30 +624,35 @@ function LeadMenu({ lead, menuOpenId, onMenuToggle, onDelete, onHide, onAddToPip
   const isHidden = (lead as unknown as Record<string, unknown>).is_hidden === true
   return (
     <div onClick={(e) => e.stopPropagation()}>
-      <button type="button" onClick={() => onMenuToggle(lead.id)}
-        className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-all" aria-label="More actions">
-        <MoreHorizontal className="h-4 w-4" />
+      {/* Always visible on touch screens and when focused; on a mouse it
+          shows on hover, so a long list stays quiet. */}
+      <button type="button" onClick={() => onMenuToggle(lead.id)} aria-haspopup="menu" aria-expanded={isMenuOpen}
+        className={cn(
+          "relative z-10 flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-opacity focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100",
+          isMenuOpen && "opacity-100 [@media(hover:hover)]:opacity-100",
+        )} aria-label={`More actions for ${lead.title}`}>
+        <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
       </button>
       {isMenuOpen && (
-        <div className="absolute right-0 top-full mt-1 z-30 w-52 rounded-xl border border-slate-200 bg-white shadow-xl py-1 ring-1 ring-black/5">
-          <button type="button"
+        <div role="menu" aria-label={`Actions for ${lead.title}`} className="absolute right-0 top-full mt-1 z-30 w-52 rounded-xl border border-slate-200 bg-white shadow-xl py-1 ring-1 ring-black/5">
+          <button type="button" role="menuitem"
             onClick={() => { onAddToPipeline(lead); onMenuToggle(lead.id) }}
             className="flex w-full items-center gap-2.5 px-4 py-2.5 text-[13px] text-indigo-700 hover:bg-indigo-50 transition-colors">
-            <ChevronRight className="h-3.5 w-3.5 text-indigo-500" /> Add to Pipeline
+            <ChevronRight className="h-3.5 w-3.5 text-indigo-500" aria-hidden="true" /> Add to pipeline
           </button>
           <div className="mx-3 my-1 border-t border-slate-100" />
-          <button type="button"
+          <button type="button" role="menuitem"
             onClick={() => { onHide(lead.id, !isHidden); onMenuToggle(lead.id) }}
             className="flex w-full items-center gap-2.5 px-4 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors">
             {isHidden
-              ? <><Eye className="h-3.5 w-3.5 text-indigo-500" /> Show to Agents</>
-              : <><EyeOff className="h-3.5 w-3.5 text-slate-400" /> Hide from Agents</>}
+              ? <><Eye className="h-3.5 w-3.5 text-indigo-500" aria-hidden="true" /> Show to agents</>
+              : <><EyeOff className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" /> Hide from agents</>}
           </button>
           <div className="mx-3 my-1 border-t border-slate-100" />
-          <button type="button"
+          <button type="button" role="menuitem"
             onClick={() => { onDelete(lead.id); onMenuToggle(lead.id) }}
             className="flex w-full items-center gap-2.5 px-4 py-2.5 text-[13px] text-rose-700 hover:bg-rose-50 transition-colors">
-            <Trash2 className="h-3.5 w-3.5" /> Delete Lead
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Delete lead
           </button>
         </div>
       )}
@@ -678,11 +672,12 @@ const STATUS_BAR: Record<string, string> = {
 }
 
 function LeadTile({
-  lead, tab, scoringMode, scoreLadder, menuOpenId, sources, onPick, onOpen, onMenuToggle, onDelete, onHide, onAddToPipeline,
+  lead, tab, scoringMode, scoreLadder, menuOpenId, sources, href, picking, onPick, onMenuToggle, onDelete, onHide, onAddToPipeline,
 }: {
   lead: Lead; tab: string; scoringMode: string; scoreLadder: string[]; menuOpenId: string | null
   sources: { icon: string; label: string }[]
-  onPick: (id: string) => void; onOpen: (id: string) => void
+  href: string; picking: boolean
+  onPick: (id: string) => void
   onMenuToggle: (id: string) => void
   onDelete: (id: string) => void
   onHide: (id: string, hidden: boolean) => void
@@ -697,9 +692,9 @@ function LeadTile({
   const showPick = isUnassigned && (tab === "new_pool" || tab === "all" || tab === "follow_up")
 
   return (
-    <div onClick={() => onOpen(lead.id)}
+    <div
       className={cn(
-        "group relative rounded-2xl border shadow-[0_2px_8px_rgba(0,0,0,0.06)] cursor-pointer hover:shadow-[0_8px_24px_rgba(99,102,241,0.12)] hover:border-indigo-200 hover:-translate-y-0.5 transition-all duration-200 overflow-hidden flex flex-col",
+        "group relative rounded-2xl border shadow-[0_2px_8px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_24px_rgba(99,102,241,0.12)] hover:border-indigo-200 focus-within:border-indigo-300 transition-[box-shadow,border-color] duration-200 overflow-hidden flex flex-col",
         isNew ? "bg-indigo-50/60 border-indigo-200" : "bg-white border-slate-100"
       )}>
 
@@ -709,8 +704,8 @@ function LeadTile({
       {/* New badge strip */}
       {isNew && (
         <div className="flex items-center gap-1 bg-indigo-600 px-3 py-1">
-          <Sparkles className="h-3 w-3 text-white/80" />
-          <span className="text-[10px] font-bold text-white uppercase tracking-wider">New Lead</span>
+          <Sparkles className="h-3 w-3 text-white/80" aria-hidden="true" />
+          <span className="text-[10px] font-bold text-white uppercase tracking-wider">New lead</span>
         </div>
       )}
 
@@ -725,13 +720,16 @@ function LeadTile({
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <p className={cn("text-[15px] font-bold leading-tight truncate",
-                isHidden ? "text-slate-400" : "text-slate-900")}>
+              {/* The whole tile opens the lead: this link stretches over it
+                  (after:inset-0), and the buttons on the tile sit above it. */}
+              <Link href={href} title={lead.title}
+                className={cn("min-w-0 text-[15px] font-bold leading-tight truncate after:absolute after:inset-0 after:content-[''] focus-visible:outline-none",
+                  isHidden ? "text-slate-400" : "text-slate-900")}>
                 {lead.title}
-              </p>
+              </Link>
               {isHidden && (
                 <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-                  <EyeOff className="h-2.5 w-2.5" /> Hidden
+                  <EyeOff className="h-2.5 w-2.5" aria-hidden="true" /> Hidden
                 </span>
               )}
             </div>
@@ -766,14 +764,14 @@ function LeadTile({
         <div className="space-y-1.5">
           {phone && (
             <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2">
-              <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-              <span className="text-[13px] font-medium text-slate-700 tracking-wide">{phone}</span>
+              <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
+              <span className="text-[13px] font-medium text-slate-700 tracking-wide tabular-nums">{phone}</span>
             </div>
           )}
           {lead.district && (
             <div className="flex items-center gap-2 px-1">
-              <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
-              <span className="text-[12px] text-slate-500">
+              <MapPin className="h-3 w-3 text-slate-400 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 truncate text-[12px] text-slate-500">
                 {lead.district}{lead.place ? `, ${lead.place}` : ""}
               </span>
             </div>
@@ -783,27 +781,28 @@ function LeadTile({
         {/* Footer: assignee + time */}
         <div className="mt-auto flex items-center justify-between gap-2 pt-3 border-t border-slate-100">
           {lead.assignee ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-600">
-              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-bold text-indigo-700 shrink-0">
-                {(lead.assignee.profile?.full_name ?? lead.assignee.email ?? "?")[0].toUpperCase()}
-              </div>
-              {lead.assignee.profile?.full_name ?? lead.assignee.email ?? "Agent"}
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-[11px] text-slate-600">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-bold text-indigo-700 shrink-0" aria-hidden="true">
+                {firstLetter(personName(lead.assignee))}
+              </span>
+              <span className="truncate">{personName(lead.assignee)}</span>
             </span>
           ) : showPick ? (
-            <button type="button"
+            <button type="button" disabled={picking}
               onClick={(e) => { e.stopPropagation(); onPick(lead.id) }}
-              className="inline-flex items-center gap-1 rounded-full bg-indigo-600 px-3 py-1 text-[11px] font-bold text-white hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-200">
-              + Pick Lead
+              className="relative z-10 inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-[11px] font-bold text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-60">
+              {picking && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
+              Pick lead
             </button>
           ) : (
             <span className="text-[11px] text-slate-400 flex items-center gap-1">
-              <User className="h-3 w-3" /> Unassigned
+              <User className="h-3 w-3" aria-hidden="true" /> Unassigned
             </span>
           )}
           <div className="flex items-center gap-2 shrink-0">
             <SourceBadge source={lead.source} sources={sources} />
             <span className="flex items-center gap-1 text-[11px] text-slate-400">
-              <Clock className="h-3 w-3" />
+              <Clock className="h-3 w-3" aria-hidden="true" />
               {relTime(lead.updated_at)}
             </span>
           </div>
@@ -840,11 +839,12 @@ function BulkButton({
 }
 
 function LeadRow({
-  lead, index, tab, scoringMode, scoreLadder, menuOpenId, sources, onPick, onOpen, onMenuToggle, onDelete, onHide, onAddToPipeline,
+  lead, index, tab, scoringMode, scoreLadder, menuOpenId, sources, href, picking, onPick, onOpen, onMenuToggle, onDelete, onHide, onAddToPipeline,
   selected, onToggleSelect, sla,
 }: {
   lead: Lead; index: number; tab: string; scoringMode: string; scoreLadder: string[]; menuOpenId: string | null
   sources: { icon: string; label: string }[]
+  href: string; picking: boolean
   onPick: (id: string) => void; onOpen: (id: string) => void
   onMenuToggle: (id: string) => void
   onDelete: (id: string) => void
@@ -868,7 +868,11 @@ function LeadRow({
   const slaState = slaStateFor(lead, sla)
 
   return (
-    <tr onClick={() => onOpen(lead.id)}
+    <tr onClick={(e) => {
+        // Links, buttons and boxes in the row do their own thing.
+        if ((e.target as HTMLElement).closest("a,button,input,select,label")) return
+        onOpen(lead.id)
+      }}
       className={cn(
         "group border-b border-slate-100 cursor-pointer transition-colors",
         SLA_STYLES[slaState].bar,
@@ -893,21 +897,21 @@ function LeadRow({
       <td className="px-5 py-3.5">
         <div className="flex items-center gap-3">
           {/* New indicator */}
-          {isNew && <div className="h-2 w-2 rounded-full bg-indigo-500 shrink-0" />}
+          {isNew && <span className="h-2 w-2 rounded-full bg-indigo-500 shrink-0" aria-hidden="true" />}
           <div className={cn(
             "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[12px] font-bold",
             isHidden ? "bg-slate-100 text-slate-400" : isNew ? "bg-indigo-600 text-white" : "bg-indigo-100 text-indigo-700"
-          )}>{ini}</div>
+          )} aria-hidden="true">{ini}</div>
           <div className="min-w-0">
-            <p className={cn("text-[13px] font-semibold truncate", isHidden ? "text-slate-400" : "text-slate-900")}>
+            <Link href={href} title={lead.title} className={cn("block text-[13px] font-semibold truncate hover:underline", isHidden ? "text-slate-400" : "text-slate-900")}>
               {lead.title}
-            </p>
+            </Link>
           </div>
           {/* A mark, not a removal. See src/lib/leads/ai-detect.ts —
               the lead keeps its place in the pool and the agent
               decides; this only says where to start. */}
           <NotAnEnquiryChip lead={lead} />
-          {isHidden && <EyeOff className="h-3.5 w-3.5 text-slate-300 shrink-0" />}
+          {isHidden && <EyeOff className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-label="Hidden from agents" />}
         </div>
       </td>
       <td className="px-4 py-3.5">
@@ -927,7 +931,7 @@ function LeadRow({
             {contactName && <span className="text-[12px] font-medium text-slate-700">{contactName}</span>}
             {phone && (
               <span className="flex items-center gap-1 text-[11px] text-slate-500">
-                <Phone className="h-2.5 w-2.5 text-slate-400" />{phone}
+                <Phone className="h-2.5 w-2.5 text-slate-400" aria-hidden="true" /><span className="tabular-nums">{phone}</span>
               </span>
             )}
           </div>
@@ -935,18 +939,19 @@ function LeadRow({
       </td>
       <td className="px-4 py-3.5 hidden xl:table-cell text-[12px] text-slate-500">
         {lead.district
-          ? <span className="flex items-center gap-1"><MapPin className="h-3 w-3 text-slate-400" />{lead.district}</span>
+          ? <span className="flex items-center gap-1"><MapPin className="h-3 w-3 text-slate-400" aria-hidden="true" />{lead.district}</span>
           : <span className="text-slate-300">—</span>}
       </td>
       <td className="px-4 py-3.5 hidden lg:table-cell">
         {lead.assignee ? (
           <span className="text-[12px] text-slate-600">
-            {lead.assignee.profile?.full_name ?? lead.assignee.email ?? "Agent"}
+            {personName(lead.assignee)}
           </span>
         ) : showPick ? (
-          <button type="button"
+          <button type="button" disabled={picking}
             onClick={(e) => { e.stopPropagation(); onPick(lead.id) }}
-            className="rounded-full bg-indigo-600 px-2.5 py-0.5 text-[11px] font-semibold text-white hover:bg-indigo-700 transition-colors">
+            className="inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60">
+            {picking && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
             Pick
           </button>
         ) : (
@@ -966,7 +971,7 @@ function LeadRow({
             )}
             title={`Last touched ${relTime(lead.updated_at)}`}
           >
-            <span className={cn("h-1.5 w-1.5 rounded-full", SLA_STYLES[slaState].dot)} />
+            <span className={cn("h-1.5 w-1.5 rounded-full", SLA_STYLES[slaState].dot)} aria-hidden="true" />
             {describeUntouched(lead.updated_at)}
           </span>
         )}
@@ -977,7 +982,7 @@ function LeadRow({
             <LeadMenu lead={lead} menuOpenId={menuOpenId}
               onMenuToggle={onMenuToggle} onDelete={onDelete} onHide={onHide} onAddToPipeline={onAddToPipeline} />
           </div>
-          <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-indigo-400 transition-colors" />
+          <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-indigo-400 transition-colors" aria-hidden="true" />
         </div>
       </td>
     </tr>
@@ -992,6 +997,8 @@ const FU_STATUS_CHIP: Record<string, string> = {
   missed:    "bg-rose-50 text-rose-700 border-rose-200",
   cancelled: "bg-slate-100 text-slate-500 border-slate-200",
 }
+
+const FU_STATUS_LABEL: Record<string, string> = { pending: "Pending", done: "Done", missed: "Missed", cancelled: "Cancelled" }
 
 function FollowUpRow({ item, index, onNavigate }: {
   item: FollowUp; index: number; onNavigate: (id: string) => void
@@ -1026,7 +1033,7 @@ function FollowUpRow({ item, index, onNavigate }: {
       <td className="px-4 py-3.5">
         <span className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold",
           FU_STATUS_CHIP[item.status] ?? "bg-slate-50 text-slate-600 border-slate-200")}>
-          {item.status}
+          {FU_STATUS_LABEL[item.status] ?? item.status}
         </span>
       </td>
       <td className="px-4 py-3.5">
@@ -1034,7 +1041,7 @@ function FollowUpRow({ item, index, onNavigate }: {
           overdue ? "font-semibold text-rose-700" : "text-slate-600")}>
           <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
           {fmtDate(item.due_at)}
-          {overdue && <span className="ml-1 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">OVERDUE</span>}
+          {overdue && <span className="ml-1 rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-800">Overdue</span>}
         </span>
       </td>
       <td className="px-4 py-3.5 hidden lg:table-cell text-[12px] text-slate-500">
@@ -1090,6 +1097,12 @@ function SkeletonRow({ cols = 8 }: { cols?: number }) {
  *  disappears — so this is the width at which the table stops being
  *  reachable, not merely cramped. */
 const LEADS_TABLE_MIN_WIDTH = 640
+
+/** Re-read the preferred view when the window is resized across the phone width. */
+function subscribeToWidth(onChange: () => void) {
+  window.addEventListener("resize", onChange)
+  return () => window.removeEventListener("resize", onChange)
+}
 
 function preferredLeadsView(): "tiles" | "table" {
   // Server render, and any browser that refuses storage: the table is
@@ -1162,11 +1175,20 @@ function LeadsV2() {
   const [taskCount, setTaskCount] = useState(0)
   const [tasksReload, setTasksReload] = useState(0)
   const [tags, setTags] = useState<TagItem[]>([])
-  const [activeTagId, setActiveTagId] = useState("")
-  const [scoreFilter, setScoreFilter] = useState("")
-  const [districtFilter, setDistrictFilter] = useState("")
-  const [search, setSearch] = useState("")
-  const [searchQ, setSearchQ] = useState("")
+  const [activeTagId, setActiveTagId] = useState(() => searchParams.get("tag") ?? "")
+  const [scoreFilter, setScoreFilter] = useState(() => searchParams.get("score") ?? "")
+  const [districtFilter, setDistrictFilter] = useState(() => searchParams.get("district") ?? "")
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "")
+  const [searchQ, setSearchQ] = useState(() => searchParams.get("q") ?? "")
+  /** The business's own districts (Settings → Leads); none = no district filter. */
+  const [districts, setDistricts] = useState<string[]>([])
+  /** How many leads match on the server; the list holds the pages loaded so far. */
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [pickingId, setPickingId] = useState<string | null>(null)
+  const [bulkCloseOpen, setBulkCloseOpen] = useState(false)
+  const confirm = useConfirm()
   const [aiLeadEnabled, setAiLeadEnabled] = useState(false)
   const [scoringMode, setScoringMode] = useState("score")
   const [scoreOptions, setScoreOptions] = useState<{ icon: string; label: string }[]>([
@@ -1193,7 +1215,13 @@ function LeadsV2() {
   //
   // Read lazily so the first paint is already right: a default applied
   // in an effect flashes the wrong layout on every load.
-  const [view, setView] = useState<"tiles" | "table">(() => preferredLeadsView())
+  // The server cannot know the screen width, so it renders the table and
+  // the browser switches after hydration (useSyncExternalStore) — reading
+  // window during the first render made server and browser disagree on a
+  // phone (a hydration error). A choice made here wins over the default.
+  const preferredView = useSyncExternalStore(subscribeToWidth, preferredLeadsView, () => "table" as const)
+  const [chosenView, setView] = useState<"tiles" | "table" | null>(null)
+  const view = chosenView ?? preferredView
 
   /** Remembers the choice, so the default is only ever a starting
    *  point. Storage can throw in a private window; the view still
@@ -1209,9 +1237,15 @@ function LeadsV2() {
   const [createOpen, setCreateOpen] = useState(false)
   const [followUpOpen, setFollowUpOpen] = useState(false)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
-  const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState(false)
   const [pipelineLead, setPipelineLead] = useState<Lead | null>(null)
+
+  // An open card menu closes on Escape.
+  useEffect(() => {
+    if (!menuOpenId) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpenId(null) }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [menuOpenId])
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isLeadTab = !["follow_ups", "tasks", "funnel", "to_review"].includes(tab)
@@ -1226,30 +1260,41 @@ function LeadsV2() {
   // a search typed while an earlier one was still on its way could
   // otherwise land last and leave results for the older words.
   const loadSeq = useRef(0)
+  const listParams = useCallback((pageNo: number) => {
+    const params = new URLSearchParams({ tab: effectiveTab, page: String(pageNo), limit: String(PAGE_SIZE) })
+    if (activeTagId) params.set("tag_id", activeTagId)
+    if (searchQ) params.set("q", searchQ)
+    if (scoreFilter) params.set("score", scoreFilter)
+    if (districtFilter) params.set("district", districtFilter)
+    return params
+  }, [effectiveTab, activeTagId, searchQ, scoreFilter, districtFilter])
+
   const loadData = useCallback(async () => {
     const seq = ++loadSeq.current
     setLoading(true)
     try {
       if (tab === "follow_ups") {
-        const r = await fetch("/api/follow-ups?limit=100").then((x) => x.json())
+        const r = await apiFetch("/api/follow-ups?limit=100").then((x) => x.json())
         if (seq !== loadSeq.current) return
-        setFollowUps(r.followUps ?? r ?? [])
+        setFollowUps(Array.isArray(r?.followUps) ? r.followUps : Array.isArray(r) ? r : [])
       } else if (tab === "tasks") {
         // Nothing to load here: the tab fetches its own list.
       } else {
-        const params = new URLSearchParams({ tab: effectiveTab })
-        if (activeTagId) params.set("tag_id", activeTagId)
-        if (searchQ) params.set("q", searchQ)
-        if (scoreFilter) params.set("score", scoreFilter)
-        if (districtFilter) params.set("district", districtFilter)
+        // The list must load; tags and settings may fail without hiding it.
         const [lr, tr, sr] = await Promise.all([
-          fetch(`/api/leads?${params}`).then((r) => r.json()),
-          fetch("/api/tags").then((r) => r.json()),
-          fetch("/api/leads/settings").then((r) => r.json()),
+          apiFetch(`/api/leads?${listParams(0)}`).then((r) => r.json()),
+          fetch("/api/tags").then((r): Promise<TagsReply> => (r.ok ? r.json() : Promise.resolve({}))).catch((): TagsReply => ({})),
+          fetch("/api/leads/settings").then((r): Promise<SettingsReply> => (r.ok ? r.json() : Promise.resolve({}))).catch((): SettingsReply => ({})),
         ])
         if (seq !== loadSeq.current) return
-        setLeads(lr.leads ?? lr ?? [])
-        setTags(tr?.tags ?? tr ?? [])
+        const list: Lead[] = Array.isArray(lr?.leads) ? lr.leads : []
+        setLeads(list)
+        setPage(0)
+        setTotal(typeof lr?.total === "number" ? lr.total : list.length)
+        setTags(Array.isArray(tr?.tags) ? tr.tags : [])
+        if (Array.isArray(sr?.districts)) {
+          setDistricts((sr.districts as unknown[]).map((d) => (typeof d === "string" ? d : (d as { label?: string })?.label ?? "")).filter(Boolean))
+        }
         setScoringMode(sr.scoring_mode ?? "score")
         setAiLeadEnabled(sr.ai_lead_enabled === true)
         setSla({
@@ -1268,12 +1313,55 @@ function LeadsV2() {
           ))
         }
       }
-    } catch {
-      if (seq === loadSeq.current) toast.error("Failed to load")
+    } catch (err) {
+      console.error("[leads] load failed:", err)
+      if (seq === loadSeq.current) toast.error(errorText(err, "Could not load the leads."))
     } finally {
       if (seq === loadSeq.current) setLoading(false)
     }
-  }, [tab, effectiveTab, activeTagId, searchQ, scoreFilter, districtFilter])
+  }, [tab, listParams])
+
+  /** The next page, added under the ones on screen. A newer load wins. */
+  async function loadMore() {
+    if (loadingMore) return
+    const seq = loadSeq.current
+    const next = page + 1
+    setLoadingMore(true)
+    try {
+      const lr = await apiFetch(`/api/leads?${listParams(next)}`).then((r) => r.json())
+      if (seq !== loadSeq.current) return
+      const more: Lead[] = Array.isArray(lr?.leads) ? lr.leads : []
+      setLeads((prev) => {
+        const seen = new Set(prev.map((l) => l.id))
+        return [...prev, ...more.filter((l) => !seen.has(l.id))]
+      })
+      setPage(next)
+      if (typeof lr?.total === "number") setTotal(lr.total)
+    } catch (err) {
+      console.error("[leads] load more failed:", err)
+      toast.error(errorText(err, "Could not load more leads."))
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
+  // The address carries the tab and filters, so a reload or a shared
+  // link opens the same list.
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (tab !== "new_pool") params.set("tab", tab)
+    if (searchQ) params.set("q", searchQ)
+    if (scoreFilter) params.set("score", scoreFilter)
+    if (districtFilter) params.set("district", districtFilter)
+    if (activeTagId) params.set("tag", activeTagId)
+    const group = new URLSearchParams(window.location.search).get("group")
+    if (tab === "tasks" && group) params.set("group", group)
+    const next = params.toString()
+    if (next !== window.location.search.replace(/^\?/, "")) {
+      const path = window.location.pathname
+      router.replace(next ? `${path}?${next}` : path, { scroll: false })
+    }
+  }, [tab, searchQ, scoreFilter, districtFilter, activeTagId, router])
 
   // A selection that survives a tab or search change would apply to
   // leads the person is no longer looking at.
@@ -1316,31 +1404,40 @@ function LeadsV2() {
   }
 
   async function handlePick(id: string) {
+    if (pickingId) return
+    setPickingId(id)
     try {
       await apiFetch(`/api/leads/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ claim: true }),
       })
-      toast.success("Lead claimed!")
-      loadData()
+      toast.success("Lead claimed")
+      await loadData()
     } catch (err) {
-      toast.error(errorText(err, "Failed to claim lead"))
+      console.error("[leads] claim failed:", err)
+      toast.error(errorText(err, "Could not claim this lead."))
+    } finally {
+      setPickingId(null)
     }
   }
 
   async function handleDelete(id: string) {
-    setDeleting(true)
+    const lead = leads.find((l) => l.id === id)
+    const ok = await confirm({
+      title: "Delete this lead?",
+      description: `“${lead?.title ?? "This lead"}” and its activity history are deleted for good. This cannot be undone.`,
+      confirmLabel: "Delete lead",
+      variant: "destructive",
+    })
+    if (!ok) return
     try {
-      const res = await fetch(`/api/leads/${id}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("Failed")
+      await apiFetch(`/api/leads/${id}`, { method: "DELETE" })
       toast.success("Lead deleted")
-      setDeleteId(null)
-      loadData()
-    } catch {
-      toast.error("Failed to delete lead")
-    } finally {
-      setDeleting(false)
+      await loadData()
+    } catch (err) {
+      console.error("[leads] delete failed:", err)
+      toast.error(errorText(err, "Could not delete this lead."))
     }
   }
 
@@ -1408,13 +1505,12 @@ function LeadsV2() {
     if (selectedIds.size === 0 || bulkBusy) return
     setBulkBusy(true)
     try {
-      const res = await fetch("/api/leads/ai-review", {
+      const res = await apiFetch("/api/leads/ai-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lead_ids: [...selectedIds], decision }),
       })
-      const data = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(data?.error ?? `Could not save that (${res.status})`)
+      const data = await res.json().catch(() => ({}))
       toast.success(
         decision === "accepted"
           ? `${data.accepted} closed as not an enquiry`
@@ -1423,7 +1519,8 @@ function LeadsV2() {
       setSelectedIds(new Set())
       await loadData()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save that.")
+      console.error("[leads] review failed:", err)
+      toast.error(errorText(err, "Could not save that."))
     } finally {
       setBulkBusy(false)
     }
@@ -1448,13 +1545,12 @@ function LeadsV2() {
     if (selectedIds.size === 0 || bulkBusy) return
     setBulkBusy(true)
     try {
-      const res = await fetch("/api/leads/bulk", {
+      const res = await apiFetch("/api/leads/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: [...selectedIds], ...patch }),
       })
-      const data = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(data?.error ?? `Could not apply that (${res.status})`)
+      const data = await res.json().catch(() => ({}))
       const given = data.given as Record<string, number> | undefined
       toast.success(
         given
@@ -1466,7 +1562,8 @@ function LeadsV2() {
       setSelectedIds(new Set())
       await loadData()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not apply that change.")
+      console.error("[leads] bulk change failed:", err)
+      toast.error(errorText(err, "Could not apply that change."))
     } finally {
       setBulkBusy(false)
     }
@@ -1482,7 +1579,8 @@ function LeadsV2() {
       toast.success(hide ? "Lead hidden from agents" : "Lead visible to agents")
       loadData()
     } catch (err) {
-      toast.error(errorText(err, "Failed to update lead visibility"))
+      console.error("[leads] visibility failed:", err)
+      toast.error(errorText(err, "Could not change who sees this lead."))
     }
   }
 
@@ -1503,23 +1601,28 @@ function LeadsV2() {
     tab === "funnel" || tab === "to_review"
       ? 0
       : isLeadTab
-        ? leads.length
+        ? total
         : tab === "follow_ups"
           ? followUps.length
           : taskCount
+  const hasFilters = Boolean(searchQ || scoreFilter || districtFilter || activeTagId)
+  function clearFilters() {
+    setSearch(""); setSearchQ(""); setScoreFilter(""); setDistrictFilter(""); setActiveTagId("")
+  }
+  const leadHref = (id: string) => `/leads/${id}?from=${encodeURIComponent(effectiveTab)}`
 
   return (
     <div className="min-h-full">
       {/* Page header */}
-      <div className="border-b border-slate-200 bg-white px-6 py-4 sticky top-0 z-10">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+      <div className="border-b border-slate-200 bg-white px-4 sm:px-6 py-4 sticky top-0 z-10">
+        <div className="flex items-center justify-between gap-2 sm:gap-4">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50">
-              <TrendingUp className="h-4 w-4 text-indigo-600" />
+              <TrendingUp className="h-4 w-4 text-indigo-600" aria-hidden="true" />
             </div>
             <div>
               <h1 className="text-[15px] font-semibold text-slate-900">Leads</h1>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-500 tabular-nums" aria-live="polite">
                 {loading ? "Loading…" : `${listCount} ${tab === "follow_ups" ? "follow-up" : tab === "tasks" ? "task" : "lead"}${listCount !== 1 ? "s" : ""}`}
               </p>
             </div>
@@ -1527,17 +1630,18 @@ function LeadsV2() {
           <div className="flex items-center gap-2">
             <button type="button" onClick={tab === "tasks" ? () => setTasksReload((n) => n + 1) : loadData}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title="Refresh" aria-label="Refresh">
-              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} aria-hidden="true" />
             </button>
             {/* Only when there is something to fix. A button that
                 always says zero is one people learn to ignore. */}
             <DuplicatesButton count={duplicateCount} onClick={() => setDuplicatesOpen(true)} />
             <button type="button" onClick={openCreate}
               className={cn(
-                "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium text-white transition-colors",
-                isFollowUpTab ? "bg-orange-500 hover:bg-orange-600" : "bg-indigo-600 hover:bg-indigo-700",
+                "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-semibold transition-colors",
+                isFollowUpTab ? "bg-orange-600 text-white hover:bg-orange-700" : "bg-primary text-primary-foreground hover:bg-primary/90",
               )}>
-              <Plus className="h-3.5 w-3.5" /> {isFollowUpTab ? "New Follow-up" : "New Lead"}
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="sr-only xs:not-sr-only">{isFollowUpTab ? "New follow-up" : "New lead"}</span>
             </button>
           </div>
         </div>
@@ -1569,16 +1673,16 @@ function LeadsV2() {
 
         {/* Tab menu */}
         <div className="mt-4">
-          <div className="flex overflow-x-auto scrollbar-hide">
+          <div role="tablist" aria-label="Lead lists" className="flex overflow-x-auto scrollbar-hide">
             {visibleTabs.map((t) => (
-              <button key={t.key} type="button" onClick={() => setTab(t.key)}
+              <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
                 className={cn(
-                  "relative shrink-0 flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-medium transition-all whitespace-nowrap border-b-2",
+                  "relative shrink-0 flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-medium transition-colors whitespace-nowrap border-b-2",
                   tab === t.key
                     ? "border-indigo-600 text-slate-900"
                     : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300",
                 )}>
-                <span className={cn("h-2 w-2 rounded-full shrink-0", TAB_DOT[t.key] ?? "bg-slate-400")} />
+                <span className={cn("h-2 w-2 rounded-full shrink-0", TAB_DOT[t.key] ?? "bg-slate-400")} aria-hidden="true" />
                 {t.label}
               </button>
             ))}
@@ -1594,8 +1698,8 @@ function LeadsV2() {
       {isLeadTab && (
         <div className="border-b border-slate-100 bg-white px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="relative w-full sm:flex-1 sm:max-w-xs shrink-0">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            <input autoComplete="off"
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+            <input autoComplete="off" type="search" name="lead-search" aria-label="Search leads"
               className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 py-1.5 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white outline-none transition-colors"
               placeholder="Search leads…"
               value={search}
@@ -1625,28 +1729,31 @@ function LeadsV2() {
               ))}
             </select>
 
-            <select
-              value={districtFilter}
-              onChange={(e) => setDistrictFilter(e.target.value)}
-              aria-label="Filter by district"
-              className={cn(
-                "h-7 shrink-0 rounded-lg border px-2 text-[11.5px] outline-none transition-colors",
-                districtFilter
-                  ? "border-indigo-200 bg-indigo-50 text-indigo-700"
-                  : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50",
-              )}
-            >
-              <option value="">Any district</option>
-              {KERALA_DISTRICTS.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
+            {(districts.length > 0 || districtFilter) && (
+              <select
+                value={districtFilter}
+                onChange={(e) => setDistrictFilter(e.target.value)}
+                aria-label="Filter by district"
+                className={cn(
+                  "h-7 shrink-0 rounded-lg border px-2 text-[11.5px] outline-none transition-colors",
+                  districtFilter
+                    ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                    : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50",
+                )}
+              >
+                <option value="">Any district</option>
+                {districtFilter && !districts.includes(districtFilter) && <option value={districtFilter}>{districtFilter}</option>}
+                {districts.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            )}
 
             {tags.length > 0 && (
               <>
-                <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
                 {tags.map((tag) => (
-                  <button key={tag.id} type="button"
+                  <button key={tag.id} type="button" aria-pressed={activeTagId === tag.id}
                     onClick={() => setActiveTagId((prev) => prev === tag.id ? "" : tag.id)}
                     className={cn(
                       "shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors border",
@@ -1663,22 +1770,22 @@ function LeadsV2() {
           </div>
 
           <div className="hidden sm:flex items-center rounded-xl border border-slate-200 bg-slate-50 p-0.5 shrink-0">
-            <button type="button" onClick={() => chooseView("tiles")} title="Tile view"
-              className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition-all",
-                view === "tiles" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600")} aria-label="Tile view">
-              <LayoutGrid className="h-3.5 w-3.5" />
+            <button type="button" onClick={() => chooseView("tiles")} title="Tile view" aria-pressed={view === "tiles"}
+              className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
+                view === "tiles" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700")} aria-label="Tile view">
+              <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
-            <button type="button" onClick={() => chooseView("table")} title="Table view"
-              className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition-all",
-                view === "table" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600")} aria-label="Table view">
-              <Table2 className="h-3.5 w-3.5" />
+            <button type="button" onClick={() => chooseView("table")} title="Table view" aria-pressed={view === "table"}
+              className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
+                view === "table" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700")} aria-label="Table view">
+              <Table2 className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
         </div>
       )}
 
       {/* Lead list */}
-      <div className={cn(isLeadTab && view === "tiles" ? "p-6" : "")} onClick={() => setMenuOpenId(null)}>
+      <div className={cn(isLeadTab && view === "tiles" ? "p-4 sm:p-6" : "")} onClick={() => setMenuOpenId(null)}>
 
         {/* ── Follow-ups tab ── */}
         {tab === "follow_ups" && (
@@ -1697,7 +1804,7 @@ function LeadsV2() {
               action={
                 <button type="button" onClick={() => setFollowUpOpen(true)}
                   className="mt-5 flex items-center gap-1.5 rounded-xl bg-orange-500 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-orange-600 transition-colors">
-                  <Plus className="h-4 w-4" /> Create Follow-up
+                  <Plus className="h-4 w-4" aria-hidden="true" /> Create follow-up
                 </button>
               } />
           ) : (
@@ -1763,11 +1870,12 @@ function LeadsV2() {
             >
               Not connected
             </BulkButton>
+            {/* Won or lost, as the close dialog asks — reports count both. */}
             <BulkButton
               disabled={bulkBusy}
-              onClick={() => applyBulk({ status: "closed" }, "closed")}
+              onClick={() => setBulkCloseOpen(true)}
             >
-              Close
+              Close…
             </BulkButton>
             {canViewAllLeads && (
               <BulkButton
@@ -1822,7 +1930,7 @@ function LeadsV2() {
               </>
             )}
 
-            {bulkBusy && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />}
+            {bulkBusy && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" aria-label="Working" />}
           </div>
         )}
 
@@ -1871,29 +1979,43 @@ function LeadsV2() {
               </table>
             )
           ) : leads.length === 0 ? (
-            <EmptyState
-              icon={<TrendingUp className="h-8 w-8 text-indigo-300" />}
-              title="No leads found"
-              desc={searchQ ? "Try a different search term" : isFollowUpTab ? "Schedule a call back and it will appear here" : "Create your first lead to get started"}
-              action={!searchQ ? (
-                <button type="button" onClick={openCreate}
-                  className={cn(
-                    "mt-5 flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white transition-colors shadow-sm",
-                    isFollowUpTab ? "bg-orange-500 hover:bg-orange-600 shadow-orange-200" : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200",
-                  )}>
-                  <Plus className="h-4 w-4" /> {isFollowUpTab ? "Create Follow-up" : "Create Lead"}
-                </button>
-              ) : undefined}
-            />
+            hasFilters ? (
+              <EmptyState
+                icon={<Search className="h-8 w-8 text-indigo-300" aria-hidden="true" />}
+                title="No leads match"
+                desc="Nothing on this tab matches the search and filters. Clear them to see every lead here."
+                action={
+                  <button type="button" onClick={clearFilters}
+                    className="mt-5 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50">
+                    Clear filters
+                  </button>
+                }
+              />
+            ) : (
+              <EmptyState
+                icon={<TrendingUp className="h-8 w-8 text-indigo-300" aria-hidden="true" />}
+                title="No leads here"
+                desc={isFollowUpTab ? "Schedule a call back and it will appear here." : "Leads on this tab will appear here. You can also add one yourself."}
+                action={
+                  <button type="button" onClick={openCreate}
+                    className={cn(
+                      "mt-5 flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-semibold transition-colors shadow-sm",
+                      isFollowUpTab ? "bg-orange-600 text-white hover:bg-orange-700" : "bg-primary text-primary-foreground hover:bg-primary/90",
+                    )}>
+                    <Plus className="h-4 w-4" aria-hidden="true" /> {isFollowUpTab ? "Create follow-up" : "Create lead"}
+                  </button>
+                }
+              />
+            )
           ) : view === "tiles" ? (
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {leads.map((lead) => (
                 <LeadTile key={lead.id} lead={lead} tab={effectiveTab} scoringMode={scoringMode} scoreLadder={scoreLadder}
                   menuOpenId={menuOpenId} sources={sourceOptions}
+                  href={leadHref(lead.id)} picking={pickingId === lead.id}
                   onPick={handlePick}
-                  onOpen={(id) => router.push(`/leads/${id}?from=${effectiveTab}`)}
                   onMenuToggle={(id) => setMenuOpenId((prev) => prev === id ? null : id)}
-                  onDelete={(id) => setDeleteId(id)}
+                  onDelete={(id) => void handleDelete(id)}
                   onHide={handleHide}
                   onAddToPipeline={(l) => setPipelineLead(l)}
                 />
@@ -1908,7 +2030,7 @@ function LeadsV2() {
                       type="checkbox"
                       checked={allOnPageSelected}
                       onChange={toggleSelectAll}
-                      aria-label="Select all leads on this page"
+                      aria-label="Select all leads shown"
                       className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
                     />
                   </th>
@@ -1930,10 +2052,11 @@ function LeadsV2() {
                     selected={selectedIds.has(lead.id)}
                     onToggleSelect={toggleSelect}
                     sla={sla}
+                    href={leadHref(lead.id)} picking={pickingId === lead.id}
                     onPick={handlePick}
-                    onOpen={(id) => router.push(`/leads/${id}?from=${effectiveTab}`)}
+                    onOpen={(id) => router.push(leadHref(id))}
                     onMenuToggle={(id) => setMenuOpenId((prev) => prev === id ? null : id)}
-                    onDelete={(id) => setDeleteId(id)}
+                    onDelete={(id) => void handleDelete(id)}
                     onHide={handleHide}
                     onAddToPipeline={(l) => setPipelineLead(l)}
                   />
@@ -1942,7 +2065,33 @@ function LeadsV2() {
             </table>
           )
         )}
+
+        {/* More than one page: the rest is a click away, never out of reach. */}
+        {isLeadTab && !loading && leads.length > 0 && (
+          <div className={cn("flex flex-col items-center gap-2 py-6", view === "table" && "px-4")}>
+            <p className="text-[12px] text-slate-500 tabular-nums">Showing {leads.length} of {Math.max(total, leads.length)}</p>
+            {leads.length < total && (
+              <button type="button" onClick={() => void loadMore()} disabled={loadingMore}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-5 py-2 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+                {loadingMore ? "Loading…" : `Show ${Math.min(PAGE_SIZE, total - leads.length)} more`}
+              </button>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Mounted only while open, so it starts empty every time. */}
+      {bulkCloseOpen && <BulkCloseDialog
+        open={bulkCloseOpen}
+        count={selectedIds.size}
+        busy={bulkBusy}
+        onCancel={() => setBulkCloseOpen(false)}
+        onConfirm={async (outcome, reason) => {
+          await applyBulk({ status: "closed", outcome, ...(outcome === "lost" && reason ? { lost_reason: reason } : {}) }, `closed as ${outcome}`)
+          setBulkCloseOpen(false)
+        }}
+      />}
 
       <DuplicateMergeDialog
         open={duplicatesOpen}
@@ -1963,17 +2112,7 @@ function LeadsV2() {
         scoringMode={scoringMode}
         scoreOptions={scoreOptions}
         sourceOptions={sourceOptions}
-      />
-
-      <ConfirmDialog
-        open={!!deleteId}
-        title="Delete Lead"
-        description="This lead and all its activity history will be permanently deleted. This action cannot be undone."
-        confirmLabel="Delete"
-        danger
-        loading={deleting}
-        onConfirm={() => deleteId && handleDelete(deleteId)}
-        onCancel={() => setDeleteId(null)}
+        districts={districts}
       />
 
       {pipelineLead && (
@@ -1983,7 +2122,56 @@ function LeadsV2() {
   )
 }
 
-// ---- Add to Pipeline modal ----
+// ---- Close in bulk: won or lost ----
+
+function BulkCloseDialog({ open, count, busy, onCancel, onConfirm }: {
+  open: boolean; count: number; busy: boolean
+  onCancel: () => void
+  onConfirm: (outcome: "won" | "lost", reason: string) => Promise<void>
+}) {
+  const [outcome, setOutcome] = useState<"won" | "lost" | "">("")
+  const [reason, setReason] = useState("")
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o && !busy) onCancel() }}>
+      <DialogContent className="bg-white sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-[15px] font-semibold text-slate-900">Close {count} lead{count === 1 ? "" : "s"}</DialogTitle>
+          <DialogDescription className="text-[12.5px] text-slate-500">How did they end? Reports count wins and losses.</DialogDescription>
+        </DialogHeader>
+        <div role="radiogroup" aria-label="Outcome" className="grid grid-cols-2 gap-2">
+          {(["won", "lost"] as const).map((o) => (
+            <label key={o} className={cn("flex cursor-pointer items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-[13px] font-semibold transition-colors",
+              outcome === o ? (o === "won" ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-rose-400 bg-rose-50 text-rose-800") : "border-slate-200 text-slate-600 hover:bg-slate-50")}>
+              <input type="radio" name="bulk-outcome" value={o} checked={outcome === o} onChange={() => setOutcome(o)} className={o === "won" ? "accent-emerald-600" : "accent-rose-600"} />
+              {o === "won" ? "Won" : "Lost"}
+            </label>
+          ))}
+        </div>
+        {outcome === "lost" && (
+          <div className="space-y-1.5">
+            <label htmlFor="bulk-lost-reason" className="block text-[12px] font-medium text-slate-600">Why (optional)</label>
+            <input id="bulk-lost-reason" name="bulk-lost-reason" autoComplete="off" maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Went elsewhere"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
+          </div>
+        )}
+        <DialogFooter>
+          <button type="button" onClick={onCancel} disabled={busy}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+            Cancel
+          </button>
+          <button type="button" onClick={() => outcome && void onConfirm(outcome, reason.trim())} disabled={!outcome || busy}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+            {outcome ? `Close as ${outcome}` : "Choose won or lost"}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ---- Add to pipeline ----
 
 interface PipelineOption { id: string; name: string; stages: { id: string; name: string }[] }
 
@@ -1994,30 +2182,42 @@ function AddToPipelineModal({ lead, onClose }: { lead: Lead; onClose: () => void
   const [title, setTitle] = useState(lead.title)
   const [value, setValue] = useState("")
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    fetch("/api/pipelines")
-      .then((r) => r.json())
-      .then((d) => {
-        const list: PipelineOption[] = d.pipelines ?? []
-        setPipelines(list)
-        if (list.length > 0) {
-          setSelectedPipelineId(list[0].id)
-          setSelectedStageId(list[0].stages[0]?.id ?? "")
-        }
-      })
-      .finally(() => setLoading(false))
+  const load = useCallback(async () => {
+    setLoading(true)
+    setLoadError(null)
+    try {
+      const d = await apiFetch("/api/pipelines").then((r) => r.json())
+      const list: PipelineOption[] = Array.isArray(d?.pipelines)
+        ? d.pipelines.map((p: PipelineOption) => ({ ...p, stages: Array.isArray(p.stages) ? p.stages : [] }))
+        : []
+      setPipelines(list)
+      if (list.length > 0) {
+        setSelectedPipelineId(list[0].id)
+        setSelectedStageId(list[0].stages[0]?.id ?? "")
+      }
+    } catch (err) {
+      console.error("[leads] pipelines failed:", err)
+      setLoadError(errorText(err, "Could not load the pipelines."))
+    } finally {
+      setLoading(false)
+    }
   }, [])
+  useEffect(() => { void load() }, [load])
 
   const selectedPipeline = pipelines.find((p) => p.id === selectedPipelineId)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedPipelineId || !selectedStageId) { toast.error("Select a pipeline and stage"); return }
+    if (saving) return
+    if (!selectedPipelineId || !selectedStageId) { toast.error("Choose a pipeline and a stage."); return }
+    const amount = value.trim() === "" ? 0 : Number(value)
+    if (!Number.isFinite(amount) || amount < 0) { toast.error("The deal value must be 0 or more."); return }
     setSaving(true)
     try {
-      const res = await fetch("/api/deals", {
+      await apiFetch("/api/deals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2026,99 +2226,89 @@ function AddToPipelineModal({ lead, onClose }: { lead: Lead; onClose: () => void
           lead_id:     lead.id,
           contact_id:  lead.contact?.id ?? null,
           title:       title.trim() || lead.title,
-          value:       parseFloat(value) || 0,
+          value:       amount,
         }),
       })
-      if (!res.ok) throw new Error("Failed")
-      toast.success("Deal added to pipeline")
+      toast.success("Deal added to the pipeline")
       onClose()
-    } catch {
-      toast.error("Failed to add to pipeline")
+    } catch (err) {
+      console.error("[leads] add to pipeline failed:", err)
+      toast.error(errorText(err, "Could not add it to the pipeline."))
     } finally {
       setSaving(false)
     }
   }
 
+  const FIELD = "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-100">
-        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100">
-          <div>
-            <h3 className="text-[15px] font-bold text-slate-900">Add to Pipeline</h3>
-            <p className="text-[12px] text-slate-500 mt-0.5 truncate max-w-[280px]">{lead.title}</p>
-          </div>
-          <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Close">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <Dialog open onOpenChange={(o) => { if (!o && !saving) onClose() }}>
+      <DialogContent className="bg-white sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-[15px] font-bold text-slate-900">Add to pipeline</DialogTitle>
+          <DialogDescription className="truncate text-[12px] text-slate-500" title={lead.title}>{lead.title}</DialogDescription>
+        </DialogHeader>
 
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+          <div className="flex items-center justify-center py-10" aria-busy="true" aria-label="Loading pipelines">
+            <Loader2 className="h-6 w-6 animate-spin text-indigo-500" aria-hidden="true" />
+          </div>
+        ) : loadError ? (
+          <div role="alert" className="space-y-3 py-4 text-center">
+            <p className="text-[13px] text-slate-600">{loadError}</p>
+            <button type="button" onClick={() => void load()} className="rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-50">Try again</button>
           </div>
         ) : pipelines.length === 0 ? (
-          <div className="py-10 text-center text-[13px] text-slate-500">
+          <div className="py-8 text-center text-[13px] text-slate-500">
             No pipelines yet.{" "}
-            <a href="/pipelines" className="text-indigo-600 hover:underline">Create one first →</a>
+            <Link href="/pipelines" className="font-medium text-indigo-700 hover:underline">Create one first</Link>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-[12px] font-semibold text-slate-600 mb-1">Deal Title</label>
-              <input autoComplete="off"
-                value={title} onChange={(e) => setTitle(e.target.value)} required
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              />
+              <label htmlFor="deal-title" className="mb-1 block text-[12px] font-semibold text-slate-600">Deal title</label>
+              <input id="deal-title" name="deal-title" autoComplete="off" maxLength={200}
+                value={title} onChange={(e) => setTitle(e.target.value)} required className={FIELD} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 xs:grid-cols-2">
               <div>
-                <label className="block text-[12px] font-semibold text-slate-600 mb-1">Pipeline</label>
-                <select
-                  value={selectedPipelineId}
+                <label htmlFor="deal-pipeline" className="mb-1 block text-[12px] font-semibold text-slate-600">Pipeline</label>
+                <select id="deal-pipeline" value={selectedPipelineId}
                   onChange={(e) => {
                     setSelectedPipelineId(e.target.value)
-                    const p = pipelines.find((p) => p.id === e.target.value)
+                    const p = pipelines.find((x) => x.id === e.target.value)
                     setSelectedStageId(p?.stages[0]?.id ?? "")
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                >
+                  className={FIELD}>
                   {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-[12px] font-semibold text-slate-600 mb-1">Stage</label>
-                <select
-                  value={selectedStageId} onChange={(e) => setSelectedStageId(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                >
-                  {(selectedPipeline?.stages ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                <label htmlFor="deal-stage" className="mb-1 block text-[12px] font-semibold text-slate-600">Stage</label>
+                <select id="deal-stage" value={selectedStageId} onChange={(e) => setSelectedStageId(e.target.value)} className={FIELD}>
+                  {(selectedPipeline?.stages ?? []).map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
                 </select>
               </div>
             </div>
             <div>
-              <label className="block text-[12px] font-semibold text-slate-600 mb-1">Deal Value (optional)</label>
-              <input autoComplete="off"
-                type="number" min="0" step="any" value={value} onChange={(e) => setValue(e.target.value)}
-                placeholder="0"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              />
+              <label htmlFor="deal-value" className="mb-1 block text-[12px] font-semibold text-slate-600">Deal value (optional)</label>
+              <input id="deal-value" name="deal-value" autoComplete="off" type="number" inputMode="decimal" min="0" step="any"
+                value={value} onChange={(e) => setValue(e.target.value)} placeholder="0" className={cn(FIELD, "tabular-nums placeholder:text-slate-400")} />
             </div>
-            <div className="flex gap-2 pt-1">
-              <button type="button" onClick={onClose}
-                className="flex-1 rounded-xl border border-slate-200 py-2 text-[13px] font-semibold text-slate-600 hover:bg-slate-50">
+            <DialogFooter>
+              <button type="button" onClick={onClose} disabled={saving}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
                 Cancel
               </button>
               <button type="submit" disabled={saving}
-                className="flex-1 rounded-xl bg-indigo-600 py-2 text-[13px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
-                {saving && <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />}
-                Add to Pipeline
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-[13px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+                Add to pipeline
               </button>
-            </div>
+            </DialogFooter>
           </form>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -2127,9 +2317,9 @@ function EmptyState({ icon, title, desc, action }: {
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-50 mb-4">{icon}</div>
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-50 mb-4" aria-hidden="true">{icon}</div>
       <p className="text-[15px] font-semibold text-slate-700">{title}</p>
-      <p className="mt-1 text-[13px] text-slate-400">{desc}</p>
+      <p className="mt-1 max-w-sm px-4 text-[13px] text-slate-500">{desc}</p>
       {action}
     </div>
   )

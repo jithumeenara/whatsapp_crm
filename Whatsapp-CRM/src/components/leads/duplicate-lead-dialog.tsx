@@ -2,10 +2,11 @@
 
 import { useRouter } from "next/navigation"
 import {
-  AlertTriangle, User, Phone, Mail, X,
+  AlertTriangle, User, Phone, Mail,
   ExternalLink, RefreshCw, UserPlus, Clock,
-  Flame, Thermometer, Snowflake,
+  Flame, Thermometer, Snowflake, Loader2,
 } from "lucide-react"
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,30 +101,19 @@ export function DuplicateLeadDialog({
     ?? null
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onCancel} />
-
-      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden z-10">
+    <Dialog open onOpenChange={(o) => { if (!o && !creating) onCancel() }}>
+      <DialogContent className="max-h-[90dvh] gap-0 overflow-y-auto overscroll-contain bg-white p-0 sm:max-w-md">
         {/* Header */}
-        <div className="flex items-start justify-between px-5 py-4 border-b border-slate-100 bg-amber-50">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100">
+        <div className="flex items-start gap-3 px-5 py-4 pr-12 border-b border-slate-100 bg-amber-50">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100" aria-hidden="true">
               <AlertTriangle className="h-5 w-5 text-amber-700" />
             </div>
             <div>
-              <p className="text-[14px] font-bold text-slate-900">Existing Customer Found</p>
-              <p className="text-[12px] text-slate-500 mt-0.5">
-                This contact already has {counts.total} lead{counts.total !== 1 ? "s" : ""} in the system.
-              </p>
+              <DialogTitle className="text-[14px] font-bold text-slate-900">This customer is already here</DialogTitle>
+              <DialogDescription className="text-[12px] text-slate-500 mt-0.5">
+                This contact already has {counts.total} lead{counts.total !== 1 ? "s" : ""}.
+              </DialogDescription>
             </div>
-          </div>
-          <button
-            type="button" onClick={onCancel}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"
-           aria-label="Close">
-            <X className="h-4 w-4" />
-          </button>
         </div>
 
         {/* Contact card */}
@@ -225,7 +215,7 @@ export function DuplicateLeadDialog({
                 <RefreshCw className="h-4 w-4 text-orange-700" />
               </div>
               <div>
-                <p className="text-[13px] font-semibold text-orange-900">Continue Active Lead</p>
+                <p className="text-[13px] font-semibold text-orange-900">Continue the open lead</p>
                 <p className="text-[11px] text-orange-700 truncate">Open &ldquo;{activeLead.title}&rdquo;</p>
               </div>
             </button>
@@ -240,12 +230,12 @@ export function DuplicateLeadDialog({
           >
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 group-hover:bg-slate-200 transition-colors">
               {creating
-                ? <div className="h-4 w-4 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
-                : <UserPlus className="h-4 w-4 text-slate-600" />
+                ? <Loader2 className="h-4 w-4 animate-spin text-slate-500" aria-hidden="true" />
+                : <UserPlus className="h-4 w-4 text-slate-600" aria-hidden="true" />
               }
             </div>
             <div>
-              <p className="text-[13px] font-semibold text-slate-800">Create New Lead Anyway</p>
+              <p className="text-[13px] font-semibold text-slate-800">Create a new lead anyway</p>
               <p className="text-[11px] text-slate-500">Add a fresh enquiry for this customer</p>
             </div>
           </button>
@@ -254,12 +244,13 @@ export function DuplicateLeadDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="w-full rounded-xl border border-slate-200 py-2.5 text-[13px] font-medium text-slate-500 hover:bg-slate-50 transition-colors"
+            disabled={creating}
+            className="w-full rounded-xl border border-slate-200 py-2.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
           >
             Cancel
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

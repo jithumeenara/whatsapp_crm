@@ -48,6 +48,7 @@ type RawRow = {
   call_connected_labels: unknown
   close_enquiry_reasons: unknown
   lead_sources: unknown
+  districts?: unknown
   ai_lead_enabled: boolean | null
   ai_lead_signals: unknown
   ai_lead_rules: string | null
@@ -118,6 +119,10 @@ async function runMigrations() {
   `
   await prisma.$executeRaw`
     ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS lead_sources JSONB
+  `
+  // Migration 167; read by name below, so defended like the others.
+  await prisma.$executeRaw`
+    ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS districts JSONB
   `
   // Same belt-and-braces as the columns above: the raw SELECT below
   // names these, so a deployment that has not run migration 095 yet
@@ -222,6 +227,7 @@ export async function GET() {
              call_connected_labels,
              close_enquiry_reasons,
              lead_sources,
+             districts,
              ai_lead_enabled,
              ai_lead_signals,
              ai_lead_rules,
@@ -251,6 +257,8 @@ export async function GET() {
       call_connected_labels:     normalise(row?.call_connected_labels,     DEFAULT_CONNECTED),
       close_enquiry_reasons:     normalise(row?.close_enquiry_reasons,     DEFAULT_CLOSE_REASONS),
       lead_sources:              normalise(row?.lead_sources,              DEFAULT_LEAD_SOURCES),
+      // The business's own areas; none set means free text on the lead.
+      districts:                 normalise(row?.districts,                 []),
       ...aiLeadPayload(row),
     })
   } catch (err) {
@@ -263,7 +271,7 @@ const LEAD_SETTING_KEYS = [
   "ai_judgement_mode", "ai_lead_enabled", "ai_lead_exclusions", "ai_lead_min_messages", "ai_lead_mode",
   "ai_lead_recheck_hours", "ai_lead_rules", "ai_lead_signals", "ai_lead_threshold", "auto_lead_creation",
   "call_connected_labels", "call_not_connected_labels", "close_enquiry_reasons", "lead_sources",
-  "max_concurrent_chats", "new_lead_alert_enabled", "offer_enabled", "offer_seconds", "score_options",
+  "districts", "max_concurrent_chats", "new_lead_alert_enabled", "offer_enabled", "offer_seconds", "score_options",
   "scoring_mode", "sla_breach_hours", "sla_warn_hours",
 ] as const
 
@@ -392,6 +400,25 @@ export async function PATCH(req: NextRequest) {
       `
     }
 
+    if (Array.isArray(body.districts)) {
+      // Short names, at most 200 of them: a list somebody picks from.
+      const seen = new Set<string>()
+      const districts = toListItems(body.districts as unknown[])
+        .map((d) => ({ icon: "", label: d.label.slice(0, 60) }))
+        .filter((d) => {
+          const k = d.label.toLowerCase()
+          if (seen.has(k)) return false
+          seen.add(k)
+          return true
+        })
+        .slice(0, 200)
+      await prisma.$executeRaw`
+        UPDATE lead_settings
+        SET    districts = ${JSON.stringify(districts)}::jsonb
+        WHERE  account_id = ${ctx.accountId}::uuid
+      `
+    }
+
     // ── What counts as a lead, in this account's words ──────────────────────────
     //
     // Raw SQL for the same reason the lists above use it: these columns
@@ -514,6 +541,7 @@ export async function PATCH(req: NextRequest) {
              call_connected_labels,
              close_enquiry_reasons,
              lead_sources,
+             districts,
              ai_lead_enabled,
              ai_lead_signals,
              ai_lead_rules,
@@ -547,6 +575,8 @@ export async function PATCH(req: NextRequest) {
       call_connected_labels:     normalise(row?.call_connected_labels,     DEFAULT_CONNECTED),
       close_enquiry_reasons:     normalise(row?.close_enquiry_reasons,     DEFAULT_CLOSE_REASONS),
       lead_sources:              normalise(row?.lead_sources,              DEFAULT_LEAD_SOURCES),
+      // The business's own areas; none set means free text on the lead.
+      districts:                 normalise(row?.districts,                 []),
       ...aiLeadPayload(row),
     })
   } catch (err) {

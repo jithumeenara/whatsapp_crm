@@ -6,6 +6,8 @@ import {
   TrendingUp, ChevronDown, ChevronRight, UserCheck,
 } from 'lucide-react'
 import type { LeadActivity } from '@/types'
+import { useAuth } from '@/hooks/use-auth'
+import { dayKeyInZone, formatInZone } from '@/lib/format/business-time'
 
 function cn(...c: (string | boolean | undefined | null)[]) {
   return c.filter(Boolean).join(' ')
@@ -31,11 +33,8 @@ const ICON_BG: Record<string, string> = {
   assigned:     'bg-sky-50 border-sky-100',
 }
 
-function fmtDT(iso: string) {
-  return new Date(iso).toLocaleString(undefined, {
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
+function fmtDT(iso: string, zone: string) {
+  return formatInZone(iso, zone, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
 }
 
 /**
@@ -210,13 +209,22 @@ function FlatTimeline({ activities, compact = false, onItemClick }: {
   compact?: boolean
   onItemClick?: (dateKey: string) => void
 }) {
+  const { account } = useAuth()
+  const zone = account?.timezone ?? 'Asia/Kolkata'
   return (
     <div className="space-y-0">
-      {activities.map((act, idx) => (
+      {activities.map((act, idx) => {
+        // The business day it happened on, matched against the chat the same way.
+        const open = onItemClick ? () => onItemClick(dayKeyInZone(act.created_at, zone)) : undefined
+        return (
         <div key={act.id}
-          className={cn("flex gap-3", onItemClick && "group cursor-pointer")}
-          onClick={onItemClick ? () => onItemClick(new Date(act.created_at).toISOString().slice(0, 10)) : undefined}
-          title={onItemClick ? "Click to view messages from this date" : undefined}
+          className={cn("flex gap-3", onItemClick && "group cursor-pointer rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500")}
+          onClick={open}
+          onKeyDown={open ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open() } } : undefined}
+          role={open ? 'button' : undefined}
+          tabIndex={open ? 0 : undefined}
+          aria-label={open ? `${act.title} — show the chat from this day` : undefined}
+          title={onItemClick ? "Show the chat from this day" : undefined}
         >
           {/* Timeline line */}
           <div className="flex flex-col items-center">
@@ -246,7 +254,7 @@ function FlatTimeline({ activities, compact = false, onItemClick }: {
               </p>
               <p
                 className="shrink-0 text-[11px] text-slate-400"
-                title={fmtDT(act.created_at)}
+                title={fmtDT(act.created_at, zone)}
               >
                 {relTime(act.created_at)}
               </p>
@@ -271,7 +279,8 @@ function FlatTimeline({ activities, compact = false, onItemClick }: {
             </p>
           </div>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

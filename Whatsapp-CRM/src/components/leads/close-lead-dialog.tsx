@@ -164,6 +164,9 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle, cont
         }).catch(() => {})
       }
       onOpenChange(false)
+    } catch (err) {
+      // The page already said why; the dialog stays open with what was typed.
+      console.warn('[close lead] not closed:', err)
     } finally {
       setSaving(false)
     }

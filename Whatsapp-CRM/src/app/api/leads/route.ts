@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { parseScoreInput } from '@/lib/leads/score-input'
 import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { withCallablePhones } from '@/lib/contacts/callable'
 import { canViewAllLeads } from '@/lib/auth/roles'
@@ -232,6 +233,12 @@ export async function POST(req: NextRequest) {
       force_create,  // when true: bypass duplicate check and always create
     } = body as Record<string, string | boolean | undefined>
     if (!title) return NextResponse.json({ error: 'title is required' }, { status: 400 })
+    let scoreValue = 'warm'
+    if (score !== undefined && score !== null && score !== '') {
+      const sc = parseScoreInput(score)
+      if (!sc.ok) return NextResponse.json({ error: sc.error }, { status: 400 })
+      scoreValue = sc.score
+    }
     // The assignee must be in this account, and an agent may only create
     // a lead for themselves or for the pool.
     if (assigned_to !== undefined && assigned_to !== null && assigned_to !== '') {
@@ -344,7 +351,7 @@ export async function POST(req: NextRequest) {
         // dashboard's "new for me" counts only hand-made leads as the maker's own.
         source: (source as string) ?? (ctx.apiKeyId ? 'api' : 'manual'),
         status: (status as string) ?? 'new',
-        score: (score as string) ?? 'warm',
+        score: scoreValue,
         lead_quality: (lead_quality as string) ?? null,
         district: (district as string) ?? null,
         place: (place as string) ?? null,

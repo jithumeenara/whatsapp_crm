@@ -47,6 +47,10 @@ interface BulkBody {
   /** Exactly one of these. Two at once is ambiguous about ordering and
    *  about what the activity log should say. */
   status?: string
+  /** With status 'closed': how they ended (reports count wins and losses). */
+  outcome?: string
+  /** With outcome 'lost': why, in a few words. */
+  lost_reason?: unknown
   /** A user id, or null to return leads to the pool. */
   assigned_to?: string | null
   score?: string
@@ -158,8 +162,30 @@ export async function POST(req: NextRequest) {
       data.lost_reason_key = null
       data.closed_by = null
     }
+    // Won or lost, as the close dialog asks: without it reports count a
+    // bulk close as neither.
+    if (body.outcome !== undefined) {
+      if (body.status !== 'closed') {
+        return NextResponse.json({ error: 'Won or lost goes with closing.' }, { status: 400 })
+      }
+      if (body.outcome !== 'won' && body.outcome !== 'lost') {
+        return NextResponse.json({ error: 'Choose won or lost.' }, { status: 400 })
+      }
+      if (body.outcome === 'won') {
+        data.converted_at = new Date()
+        data.lost_reason = null
+        data.lost_at = null
+        data.lost_reason_key = null
+      } else {
+        const reason = typeof body.lost_reason === 'string' ? body.lost_reason.trim().slice(0, 300) : ''
+        data.converted_at = null
+        data.lost_reason = reason || 'Closed in bulk'
+        data.lost_at = new Date()
+        data.lost_reason_key = null
+      }
+    }
     // Closing credit is given below, only to leads that were still open.
-    action = `status to ${body.status.replace(/_/g, ' ')}`
+    action = body.outcome ? `closed as ${body.outcome}` : `status to ${body.status.replace(/_/g, ' ')}`
   } else if (body.assigned_to !== undefined) {
     // Reassigning somebody else's work is a supervisor's job. An agent
     // may claim and may hand back, not hand around.

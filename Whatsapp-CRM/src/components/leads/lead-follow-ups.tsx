@@ -4,6 +4,8 @@ import { useState } from "react"
 import { toast } from "sonner"
 import { Bell, CalendarClock, Check, ChevronDown, Loader2, PhoneOff, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/hooks/use-auth"
+import { formatInZone } from "@/lib/format/business-time"
 
 export interface LeadFollowUp {
   id: string
@@ -19,10 +21,8 @@ type Outcome = "done" | "rescheduled" | "not_reached"
 const INPUT =
   "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
 
-function when(iso: string) {
-  return new Date(iso).toLocaleString("en-IN", {
-    weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true,
-  })
+function when(iso: string, zone: string) {
+  return formatInZone(iso, zone, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true })
 }
 
 function localParts(d: Date) {
@@ -66,6 +66,8 @@ export function LeadFollowUps({
   const [retry, setRetry] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showPast, setShowPast] = useState(false)
+  const { account } = useAuth()
+  const zone = account?.timezone ?? "Asia/Kolkata"
 
   const open = items.filter((f) => f.status === "pending").sort((a, b) => a.due_at.localeCompare(b.due_at))
   const past = items.filter((f) => f.status !== "pending").sort((a, b) => b.due_at.localeCompare(a.due_at))
@@ -103,8 +105,9 @@ export function LeadFollowUps({
       )
       setActive(null)
       onChanged()
-    } catch {
-      toast.error("Could not save")
+    } catch (err) {
+      console.error("[follow-ups] outcome failed:", err)
+      toast.error("Could not save. Check the connection and try again.")
     } finally {
       setSaving(false)
     }
@@ -137,7 +140,7 @@ export function LeadFollowUps({
             <div key={f.id} className={cn("rounded-xl border p-3", overdue ? "border-rose-200 bg-rose-50/40" : "border-slate-200")}>
               <div className="flex flex-wrap items-center gap-2">
                 <p className={cn("text-[13px] font-semibold", overdue ? "text-rose-700" : "text-slate-800")}>
-                  {when(f.due_at)}
+                  {when(f.due_at, zone)}
                 </p>
                 {overdue && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">Overdue</span>}
               </div>
@@ -228,7 +231,7 @@ export function LeadFollowUps({
                 return (
                   <li key={f.id} className="flex items-center gap-2 text-[12px] text-slate-600">
                     <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold", chip.cls)}>{chip.label}</span>
-                    <span className="truncate">{when(f.due_at)}{f.note ? ` — ${f.note}` : ""}</span>
+                    <span className="truncate">{when(f.due_at, zone)}{f.note ? ` — ${f.note}` : ""}</span>
                   </li>
                 )
               })}
