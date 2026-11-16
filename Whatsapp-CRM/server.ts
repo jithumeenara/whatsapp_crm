@@ -13,6 +13,7 @@ import { sweepStaffWaits } from "./src/lib/ai/staff-wait-sweep";
 import { sweepAdminChatBriefs } from "./src/lib/admin-chat/brief-sweep";
 import { sweepScheduledReports } from "./src/lib/reports/schedule/sweep";
 import { sweepReportAlerts } from "./src/lib/reports/alerts/sweep";
+import { sweepSocialConnections } from "./src/lib/meta/social-health-sweep";
 import { sweepAutoTags } from "./src/lib/ai/auto-tag";
 import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
 import { sweepTwoWaySheets } from "./src/lib/google/sheet-two-way";
@@ -299,6 +300,15 @@ app.prepare().then(() => {
       console.error("[report-alerts] sweep failed:", err);
     });
   }, 30 * 60_000);
+
+  // Messenger / Instagram connections: a token that stopped is marked and
+  // the owners told once; Instagram Login tokens are renewed before their
+  // 60 days end (src/lib/meta/social-health-sweep.ts).
+  every(() => {
+    sweepSocialConnections().catch((err) => {
+      console.error("[social-health] sweep failed:", err);
+    });
+  }, 6 * 60 * 60_000);
 
   // AI tagging: tags added (or suggested) by meaning, a minute after the
   // customer's latest message (src/lib/ai/auto-tag.ts).
