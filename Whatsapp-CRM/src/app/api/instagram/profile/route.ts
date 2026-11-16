@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { igNodeUrl } from "@/lib/meta/social-messaging"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
@@ -21,27 +22,22 @@ export async function GET() {
   try {
     const ctx = await requireRole("owner")
 
-    const rows = await prisma.$queryRaw<{ access_token: string | null }[]>`
-      SELECT access_token FROM instagram_config WHERE account_id = ${ctx.accountId}::uuid LIMIT 1
+    const rows = await prisma.$queryRaw<{ access_token: string | null; instagram_account_id: string | null }[]>`
+      SELECT access_token, instagram_account_id FROM instagram_config WHERE account_id = ${ctx.accountId}::uuid LIMIT 1
     `
     const token = openStoredSecret(rows[0]?.access_token)
     if (!token) {
       return NextResponse.json({ error: "Instagram is not connected yet — set it up in Settings > Instagram first." }, { status: 400 })
     }
 
-    // Instagram Login tokens (IGQ...) → graph.instagram.com; Facebook Page
-    // tokens (EAA...) → graph.facebook.com. Same fallback the "test" action
-    // in /api/instagram/config already uses.
-    let data: IgData | null = null
-    const igRes = await fetch(`https://graph.instagram.com/v21.0/me?fields=${FIELDS}&access_token=${token}`, { cache: "no-store" })
-    const igData = await igRes.json() as IgData
-    if (igRes.ok && !igData.error) {
-      data = igData
-    } else {
-      const fbRes = await fetch(`https://graph.facebook.com/v21.0/me?fields=${FIELDS}&access_token=${token}`, { cache: "no-store" })
-      const fbData = await fbRes.json() as IgData
-      if (fbRes.ok && !fbData.error) data = fbData
-      else return NextResponse.json({ error: (fbData.error ?? igData.error)?.message ?? "Failed to load Instagram profile" }, { status: 502 })
+    // Instagram Login token → graph.instagram.com/me; any other token → the
+    // Instagram account on graph.facebook.com (src/lib/meta/social-messaging.ts).
+    const url = igNodeUrl(token, rows[0]?.instagram_account_id, `?fields=${FIELDS}`)
+    if (!url) return NextResponse.json({ error: "Run Test Connection first so the Instagram account is known." }, { status: 400 })
+    const igRes = await fetch(`${url}&access_token=${encodeURIComponent(token)}`, { cache: "no-store" })
+    const data = await igRes.json().catch(() => ({})) as IgData
+    if (!igRes.ok || data.error) {
+      return NextResponse.json({ error: data.error?.message ?? "Failed to load Instagram profile" }, { status: 502 })
     }
 
     return NextResponse.json({

@@ -63,6 +63,18 @@ export function graphHost(channel: SocialChannel, token: string): string {
 }
 
 /**
+ * An Instagram account node (profile, media, insights, messenger_profile):
+ * /me on graph.instagram.com for an Instagram Login token, the account id on
+ * graph.facebook.com for any other token. `path` starts with "/" or "?".
+ * Returns null when an EAA token has no usable account id saved.
+ */
+export function igNodeUrl(token: string, igAccountId: string | null | undefined, path = ''): string | null {
+  if (!isFacebookToken(token)) return `https://graph.instagram.com/${MESSAGING_GRAPH_VERSION}/me${path}`
+  if (!igAccountId || !NUMERIC_ID.test(igAccountId)) return null
+  return `https://graph.facebook.com/${MESSAGING_GRAPH_VERSION}/${igAccountId}${path}`
+}
+
+/**
  * Who receives the message: the Instagram-scoped id (IGSID) or Page-scoped
  * id (PSID) kept on the contact. Older Instagram contacts kept the IGSID in
  * `phone` only, so a purely numeric phone is the fallback; a real phone

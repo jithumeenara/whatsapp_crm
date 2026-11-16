@@ -129,24 +129,28 @@ export async function GET() {
 
         withInsights = await Promise.all(
           postItems.map(async (post) => {
-            // Post insights need read_insights permission — silently ignore if missing
+            // Post insights need read_insights — silently ignored if missing.
+            // Meta removed post_impressions / post_impressions_unique /
+            // post_engaged_users (by 15 Jun 2026; one removed metric fails the
+            // whole request). Their replacements: post_media_view (views) and
+            // post_total_media_view_unique (people who viewed).
             const insResult = await fbGet(
-              `https://graph.facebook.com/v21.0/${post.id}/insights?metric=post_impressions,post_reach,post_engaged_users,post_clicks&access_token=${token}`
+              `https://graph.facebook.com/v21.0/${encodeURIComponent(post.id)}/insights?metric=post_media_view,post_total_media_view_unique&access_token=${encodeURIComponent(token)}`
             ).catch(() => null)
 
-            let reach = 0, impressions = 0, engagedUsers = 0, clicks = 0
+            let reach = 0, impressions = 0
+            const clicks = 0
             if (insResult?.ok) {
               for (const d of (insResult.json.data as Array<{ name: string; values: Array<{ value: number }> }> ?? [])) {
                 const val = d.values?.[0]?.value ?? 0
-                if (d.name === "post_reach")         reach        = val
-                if (d.name === "post_impressions")   impressions  = val
-                if (d.name === "post_engaged_users") engagedUsers = val
-                if (d.name === "post_clicks")        clicks       = val
+                if (d.name === "post_total_media_view_unique") reach       = val
+                if (d.name === "post_media_view")              impressions = val
               }
             }
+            const engagedUsers = (post.reactions?.summary?.total_count ?? 0) + (post.comments?.summary?.total_count ?? 0) + (post.shares?.count ?? 0)
 
             const reactResult = await fbGet(
-              `https://graph.facebook.com/v21.0/${post.id}/reactions?fields=id,name,pic_large,type&limit=50&access_token=${token}`
+              `https://graph.facebook.com/v21.0/${encodeURIComponent(post.id)}/reactions?fields=id,name,type&limit=50&access_token=${encodeURIComponent(token)}`
             ).catch(() => null)
             const reactions = reactResult?.ok ? ((reactResult.json.data ?? []) as unknown[]) : []
 

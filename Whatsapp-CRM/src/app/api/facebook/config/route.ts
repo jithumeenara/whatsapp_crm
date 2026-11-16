@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { identifyPageToken } from "@/lib/meta/identify"
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { auditCtx } from "@/lib/audit"
@@ -64,56 +65,34 @@ export async function PATCH(req: NextRequest) {
       if (!token) return NextResponse.json({ success: false, error: "No access token saved. Save your config first." })
 
       try {
-        type FbError = { message: string; type?: string; code?: number }
-        // Test by attempting a Messenger send to a dummy PSID.
-        // A valid token returns error code 2018109 (recipient not found) — NOT 190 (bad token).
-        // This avoids needing pages_read_engagement which requires Meta app review.
-        const testRes = await fetch(
-          `https://graph.facebook.com/v21.0/me/messages`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ recipient: { id: "0" }, message: { text: "ping" } }),
-            cache: "no-store",
-          }
-        )
-        const testData = await testRes.json() as { error?: FbError }
-        const errCode = testData.error?.code ?? 0
-
-        // Code 190 = invalid/expired token (OAuthException)
-        // Code 10 = no pages_messaging permission on token
-        // Code 2018109 / 100 with "recipient" in message = valid token, bad recipient (expected)
-        const isAuthError = errCode === 190
-        const isPermError = errCode === 10
-        const msg = testData.error?.message ?? ""
-
-        if (isAuthError) {
+        // The token must belong to the Page saved here (src/lib/meta/identify.ts).
+        // A System User token is exchanged for that Page's own token, which
+        // the Send API needs.
+        const who = await identifyPageToken(token, rows[0]?.page_id ?? null)
+        if (!who.ok) {
           await prisma.$executeRaw`
-            UPDATE facebook_config SET status='error', test_error=${msg}, last_tested_at=now(), updated_at=now()
+            UPDATE facebook_config SET status='error', test_error=${who.error}, last_tested_at=now(), updated_at=now()
             WHERE account_id = ${ctx.accountId}::uuid
           `
-          return NextResponse.json({ success: false, error: "Token is invalid or expired. Generate a new Page Access Token in Meta Developer Console → Messenger → API Settings." })
+          return NextResponse.json({ success: false, error: who.error })
         }
-
-        if (isPermError) {
-          await prisma.$executeRaw`
-            UPDATE facebook_config SET status='error', test_error=${msg}, last_tested_at=now(), updated_at=now()
-            WHERE account_id = ${ctx.accountId}::uuid
-          `
-          return NextResponse.json({ success: false, error: "Token is missing pages_messaging permission. Make sure you generated a Page Access Token (not a User token) from Messenger → API Settings → Access Tokens." })
+        const taken = await prisma.$queryRaw<{ n: number }[]>`
+          SELECT 1 AS n FROM facebook_config WHERE account_id <> ${ctx.accountId}::uuid AND page_id = ${who.pageId} LIMIT 1
+        `
+        if (taken.length > 0) {
+          return NextResponse.json({ success: false, error: "This Facebook Page is already connected to another workspace." }, { status: 409 })
         }
-
-        // Any other error (recipient not found, etc.) means the token is valid
-        const savedRow = rows[0]
-        const pageName = savedRow?.page_id ? `Page ${savedRow.page_id}` : "Facebook Page"
+        const sealedPageToken = who.pageToken === token ? null : sealSecret(who.pageToken)
         await prisma.$executeRaw`
-          UPDATE facebook_config SET status='connected', page_name=${pageName},
+          UPDATE facebook_config SET status='connected', page_id=${who.pageId}, page_name=${who.pageName},
+            access_token = COALESCE(${sealedPageToken}, access_token), token_kind=${who.tokenKind},
             test_error=null, last_tested_at=now(), updated_at=now()
           WHERE account_id = ${ctx.accountId}::uuid
         `
-        return NextResponse.json({ success: true, name: pageName })
+        return NextResponse.json({ success: true, name: who.pageName ?? `Page ${who.pageId}`, page_id: who.pageId })
       } catch (e) {
-        return NextResponse.json({ success: false, error: e instanceof Error ? e.message : "Network error" })
+        console.error("[facebook config] test failed:", e)
+        return NextResponse.json({ success: false, error: "Could not reach Meta. Check the server's internet connection and try again." })
       }
     }
 

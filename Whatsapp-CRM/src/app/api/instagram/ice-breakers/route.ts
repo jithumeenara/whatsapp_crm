@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { igNodeUrl } from "@/lib/meta/social-messaging"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { auditCtx } from "@/lib/audit"
 import { auditConfigChange } from "@/lib/audit/config-change"
@@ -27,7 +28,7 @@ export async function GET() {
     await ensureTable()
 
     const rows = await prisma.$queryRaw<RawRow[]>`
-      SELECT access_token, ice_breakers, persistent_menu, profile_synced_at
+      SELECT access_token, instagram_account_id, ice_breakers, persistent_menu, profile_synced_at
       FROM instagram_config WHERE account_id = ${ctx.accountId}::uuid LIMIT 1
     `
     const row = rows[0]
@@ -73,7 +74,7 @@ export async function PATCH(req: NextRequest) {
 
     await ensureTable()
     const rows = await prisma.$queryRaw<RawRow[]>`
-      SELECT access_token, ice_breakers, persistent_menu, profile_synced_at
+      SELECT access_token, instagram_account_id, ice_breakers, persistent_menu, profile_synced_at
       FROM instagram_config WHERE account_id = ${ctx.accountId}::uuid LIMIT 1
     `
     const token = openStoredSecret(rows[0]?.access_token)
@@ -84,20 +85,23 @@ export async function PATCH(req: NextRequest) {
     // One Graph API call syncs both ice breakers and the persistent menu —
     // Meta requires call_to_actions wrapped per-locale even for a single
     // default locale.
+    const profileUrl = igNodeUrl(token, rows[0]?.instagram_account_id, "/messenger_profile?platform=instagram")
+    if (!profileUrl) return NextResponse.json({ error: "Run Test Connection first so the Instagram account is known." }, { status: 400 })
+    // Meta's current shape: call_to_actions per locale, a default locale
+    // required; at most 4 ice breakers. An empty menu is left out.
     const res = await fetch(
-      `https://graph.instagram.com/v21.0/me/messenger_profile?access_token=${encodeURIComponent(token)}`,
+      `${profileUrl}&access_token=${encodeURIComponent(token)}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ice_breakers: iceBreakers.map((ib) => ({ question: ib.question, payload: ib.payload })),
-          persistent_menu: [
-            {
-              locale: "default",
-              composer_input_disabled: false,
-              call_to_actions: persistentMenu,
-            },
-          ],
+          ice_breakers: [{
+            locale: "default",
+            call_to_actions: iceBreakers.slice(0, 4).map((ib) => ({ question: ib.question, payload: ib.payload })),
+          }],
+          ...(persistentMenu.length > 0
+            ? { persistent_menu: [{ locale: "default", call_to_actions: persistentMenu.slice(0, 20) }] }
+            : {}),
         }),
       },
     )
@@ -131,12 +135,12 @@ export async function DELETE(req?: Request) {
     const ctx = await requireRole("owner")
     await ensureTable()
     const rows = await prisma.$queryRaw<RawRow[]>`
-      SELECT access_token FROM instagram_config WHERE account_id = ${ctx.accountId}::uuid LIMIT 1
+      SELECT access_token, instagram_account_id FROM instagram_config WHERE account_id = ${ctx.accountId}::uuid LIMIT 1
     `
     const token = openStoredSecret(rows[0]?.access_token)
     if (token) {
       await fetch(
-        `https://graph.instagram.com/v21.0/me/messenger_profile?fields=ice_breakers,persistent_menu&access_token=${encodeURIComponent(token)}`,
+        `${igNodeUrl(token, rows[0]?.instagram_account_id, "/messenger_profile?platform=instagram") ?? "https://graph.instagram.com/v21.0/me/messenger_profile?platform=instagram"}&fields=ice_breakers,persistent_menu&access_token=${encodeURIComponent(token)}`,
         { method: "DELETE" },
       ).catch(() => {})
     }

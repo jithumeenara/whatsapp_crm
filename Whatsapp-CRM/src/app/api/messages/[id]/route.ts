@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { graphHost } from "@/lib/meta/social-messaging"
 import { onceSchemaPatch } from "@/lib/db/schema-patch"
 import { ForbiddenError, UnauthorizedError, requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
@@ -120,7 +121,7 @@ async function deleteInstagramMessage(accountId: string, messageId: string) {
   if (!token) throw new Error("Instagram not configured")
 
   const res = await fetch(
-    `https://graph.instagram.com/v21.0/${encodeURIComponent(messageId)}?access_token=${encodeURIComponent(token)}`,
+    `${graphHost("instagram", token)}/${encodeURIComponent(messageId)}?access_token=${encodeURIComponent(token)}`,
     { method: "DELETE" }
   )
   if (!res.ok) {

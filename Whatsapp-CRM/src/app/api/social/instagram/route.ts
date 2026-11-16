@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { graphHost } from "@/lib/meta/social-messaging"
 import { requireRole } from "@/lib/auth/account"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
 
@@ -24,15 +25,19 @@ export async function GET() {
 
     const token = openStoredSecret(cfg.access_token)
     const igId  = cfg.instagram_account_id
+    if (!token || !/^\d{1,30}$/.test(igId)) return NextResponse.json({ error: "Run Test Connection in Settings first." }, { status: 400 })
+    // Instagram Login token → graph.instagram.com; any other → graph.facebook.com.
+    const host = graphHost("instagram", token)
+    const enc = encodeURIComponent(token)
 
     // Fetch profile + first page of media in parallel
     const [profileRes, mediaRes] = await Promise.all([
       fetch(
-        `https://graph.instagram.com/v21.0/${igId}?fields=id,username,name,biography,followers_count,follows_count,media_count,profile_picture_url,website&access_token=${token}`,
+        `${host}/${igId}?fields=id,username,name,biography,followers_count,follows_count,media_count,profile_picture_url,website&access_token=${enc}`,
         { cache: "no-store" }
       ),
       fetch(
-        `https://graph.instagram.com/v21.0/${igId}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count&limit=100&access_token=${token}`,
+        `${host}/${igId}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count&limit=100&access_token=${enc}`,
         { cache: "no-store" }
       ),
     ])
@@ -86,13 +91,14 @@ export async function GET() {
       const batch = allMedia.slice(i, i + BATCH)
       const results = await Promise.all(
         batch.map(async (item) => {
-          const isVideo = item.media_type === "VIDEO"
-          const metric  = isVideo ? "reach,saved,video_views,total_interactions" : "reach,saved,total_interactions"
+          // Current metrics only: video_views was removed by Meta (8 Jan 2025)
+          // and one removed metric fails the whole request. `views` covers videos.
+          const metric  = "reach,saved,total_interactions,views"
 
           let reach = 0, saved = 0, videoViews = 0, totalInteractions = 0
 
           const res = await fetch(
-            `https://graph.instagram.com/v21.0/${item.id}/insights?metric=${metric}&access_token=${token}`,
+            `${host}/${encodeURIComponent(item.id)}/insights?metric=${metric}&access_token=${enc}`,
             { cache: "no-store" }
           ).catch(() => null)
 

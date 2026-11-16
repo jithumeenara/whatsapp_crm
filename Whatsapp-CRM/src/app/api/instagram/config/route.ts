@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { identifyInstagramToken } from "@/lib/meta/identify"
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { auditCtx } from "@/lib/audit"
@@ -76,61 +77,47 @@ export async function PATCH(req: NextRequest) {
       }
 
       try {
-        type IgData = { id?: string; name?: string; username?: string; error?: { message: string } }
-
-        // Instagram Login tokens (IGQ...) → graph.instagram.com
-        // Facebook Page tokens (EAA...)  → graph.facebook.com
-        // Try Instagram endpoint first; fall back to Facebook endpoint.
-        let data: IgData | null = null
-        let ok = false
-
-        const igRes = await fetch(
-          `https://graph.instagram.com/v21.0/me?fields=id,username,name&access_token=${token}`,
-          { cache: "no-store" }
-        )
-        const igData = await igRes.json() as IgData
-        if (igRes.ok && !igData.error) {
-          data = igData; ok = true
-        } else {
-          // Fallback: Facebook Graph API (for Page tokens)
-          const fbRes = await fetch(
-            `https://graph.facebook.com/v21.0/me?fields=id,name,username&access_token=${token}`,
-            { cache: "no-store" }
-          )
-          const fbData = await fbRes.json() as IgData
-          if (fbRes.ok && !fbData.error) {
-            data = fbData; ok = true
-          } else {
-            // Report the Instagram error (more relevant for our use case)
-            data = igData
-          }
-        }
-
-        if (!ok || !data || data.error) {
-          const msg = data?.error?.message ?? "Invalid token — check it was copied in full from Meta"
+        // Which account the token belongs to, read from Meta (src/lib/meta/identify.ts):
+        // the professional account id webhooks carry — never the app-scoped /me id.
+        const who = await identifyInstagramToken(token, rows[0]?.instagram_account_id ?? null)
+        if (!who.ok) {
           await prisma.$executeRaw`
             UPDATE instagram_config
-            SET status = 'error', test_error = ${msg}, last_tested_at = now(), updated_at = now()
+            SET status = 'error', test_error = ${who.error}, last_tested_at = now(), updated_at = now()
             WHERE account_id = ${ctx.accountId}::uuid
           `
-          return NextResponse.json({ success: false, error: msg })
+          return NextResponse.json({ success: false, error: who.error })
+        }
+
+        // One workspace per Instagram account: webhooks route by this id.
+        const taken = await prisma.$queryRaw<{ n: number }[]>`
+          SELECT 1 AS n FROM instagram_config
+          WHERE account_id <> ${ctx.accountId}::uuid AND instagram_account_id = ${who.igAccountId} LIMIT 1
+        `
+        if (taken.length > 0) {
+          return NextResponse.json({ success: false, error: "This Instagram account is already connected to another workspace." }, { status: 409 })
         }
 
         await prisma.$executeRaw`
           UPDATE instagram_config
           SET status = 'connected',
-              ig_username = ${data.username ?? null},
-              ig_name = ${data.name ?? null},
-              instagram_account_id = COALESCE(NULLIF(instagram_account_id, ''), ${data.id ?? null}),
+              ig_username = ${who.username},
+              ig_name = ${who.name},
+              instagram_account_id = ${who.igAccountId},
+              page_id = COALESCE(${who.pageId}, page_id),
+              token_kind = ${who.tokenKind},
               test_error = null,
               last_tested_at = now(),
               updated_at = now()
           WHERE account_id = ${ctx.accountId}::uuid
         `
-        return NextResponse.json({ success: true, id: data.id, name: data.name, username: data.username })
+        return NextResponse.json({
+          success: true, id: who.igAccountId, name: who.name, username: who.username, token_kind: who.tokenKind,
+          ...(who.others > 0 ? { note: `This token can also reach ${who.others} other Instagram account(s); the saved one was used.` } : {}),
+        })
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Network error"
-        return NextResponse.json({ success: false, error: msg })
+        console.error("[instagram config] test failed:", e)
+        return NextResponse.json({ success: false, error: "Could not reach Meta. Check the server's internet connection and try again." })
       }
     }
 
