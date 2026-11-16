@@ -240,3 +240,14 @@ audit entries for connect, disconnect, publish, delete, hide.
 2. Phase order: suggested 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7.
 3. Should the AI ever answer **comments** by itself, or only suggest?
 4. Marketing Messages (paid Messenger broadcasts): needed, or skip?
+
+## 7. Decisions (owner, 2026-11-16)
+- This becomes a SaaS product. **For now** ACSTI Kerala and SP Fort each use
+  their **own verified business portfolio and Meta app**; app id, app secret
+  and `config_id` are read per server/workspace from Settings, never hardcoded.
+  After company registration (GST/PAN → business verification) one shared
+  Meta app replaces them by changing those settings only.
+- Customer easy connect must work; token paste stays.
+- Build **all phases**, in order 0 → 7.
+- AI on comments: **suggest only** (no automatic public replies).
+- Marketing Messages (paid Messenger broadcasts): built behind a setting, off by default.
