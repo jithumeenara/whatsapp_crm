@@ -25,6 +25,7 @@ export async function ensureFacebookConfigTable() {
       updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `.catch(() => {})
+  await addConnectionColumns("facebook_config")
 }
 
 export async function ensureInstagramConfigTable() {
@@ -53,4 +54,35 @@ export async function ensureInstagramConfigTable() {
       updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `
+  await addConnectionColumns("instagram_config")
+}
+
+/**
+ * Migration 168's columns, also added here so a server that has not run it
+ * yet still works. Safe to run every time (IF NOT EXISTS).
+ *  - human_agent_enabled: reply up to 7 days with the HUMAN_AGENT tag
+ *    (only once Meta approves the Human Agent feature for the app)
+ *  - connected_via: 'manual' (pasted token) or 'login' (one-click connect)
+ *  - token_kind, token_expires_at, granted_permissions: what the token is
+ *    and may do, shown to the owner and used by the health check
+ *  - app_secret (Instagram): an own app's secret, sealed, for webhook signatures
+ */
+async function addConnectionColumns(table: "facebook_config" | "instagram_config") {
+  const stmts = table === "facebook_config"
+    ? [
+        prisma.$executeRaw`ALTER TABLE facebook_config ADD COLUMN IF NOT EXISTS human_agent_enabled BOOLEAN NOT NULL DEFAULT false`,
+        prisma.$executeRaw`ALTER TABLE facebook_config ADD COLUMN IF NOT EXISTS connected_via TEXT NOT NULL DEFAULT 'manual'`,
+        prisma.$executeRaw`ALTER TABLE facebook_config ADD COLUMN IF NOT EXISTS token_kind TEXT`,
+        prisma.$executeRaw`ALTER TABLE facebook_config ADD COLUMN IF NOT EXISTS token_expires_at TIMESTAMPTZ`,
+        prisma.$executeRaw`ALTER TABLE facebook_config ADD COLUMN IF NOT EXISTS granted_permissions JSONB`,
+      ]
+    : [
+        prisma.$executeRaw`ALTER TABLE instagram_config ADD COLUMN IF NOT EXISTS human_agent_enabled BOOLEAN NOT NULL DEFAULT false`,
+        prisma.$executeRaw`ALTER TABLE instagram_config ADD COLUMN IF NOT EXISTS connected_via TEXT NOT NULL DEFAULT 'manual'`,
+        prisma.$executeRaw`ALTER TABLE instagram_config ADD COLUMN IF NOT EXISTS token_kind TEXT`,
+        prisma.$executeRaw`ALTER TABLE instagram_config ADD COLUMN IF NOT EXISTS token_expires_at TIMESTAMPTZ`,
+        prisma.$executeRaw`ALTER TABLE instagram_config ADD COLUMN IF NOT EXISTS granted_permissions JSONB`,
+        prisma.$executeRaw`ALTER TABLE instagram_config ADD COLUMN IF NOT EXISTS app_secret TEXT`,
+      ]
+  for (const st of stmts) await st.catch((err: unknown) => console.warn(`[${table}] column not added:`, err instanceof Error ? err.message : err))
 }

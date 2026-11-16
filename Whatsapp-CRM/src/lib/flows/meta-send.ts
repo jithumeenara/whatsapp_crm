@@ -17,7 +17,7 @@ import {
   type InteractiveListSection,
   type MediaKind,
 } from '@/lib/whatsapp/meta-api'
-import { decrypt, openStoredSecret } from '@/lib/whatsapp/encryption'
+import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveUploadPath } from '@/lib/whatsapp/media-ref'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import { sendSmsText } from '@/lib/messaging/channels/sms'

@@ -180,6 +180,69 @@ export async function socialSenderAction(target: SocialTarget, action: 'typing_o
   }).catch((e) => console.warn(`[${target.channel} sender action] skipped:`, e?.message))
 }
 
+/** messaging_type / tag for a send, from the window decision. */
+export function envelopeFor(decision: WindowDecision): Record<string, string> {
+  return decision.ok && decision.tag === 'HUMAN_AGENT'
+    ? { messaging_type: 'MESSAGE_TAG', tag: 'HUMAN_AGENT' }
+    : { messaging_type: 'RESPONSE' }
+}
+
+/**
+ * Has the business turned on Human agent replies for this channel (allowed
+ * once Meta approves the Human Agent feature)? Off when the setting or its
+ * column does not exist yet.
+ */
+export async function humanAgentEnabled(accountId: string, channel: SocialChannel): Promise<boolean> {
+  try {
+    const rows = channel === 'instagram'
+      ? await prisma.$queryRaw<{ human_agent_enabled: boolean | null }[]>`
+          SELECT human_agent_enabled FROM instagram_config WHERE account_id = ${accountId}::uuid LIMIT 1`
+      : await prisma.$queryRaw<{ human_agent_enabled: boolean | null }[]>`
+          SELECT human_agent_enabled FROM facebook_config WHERE account_id = ${accountId}::uuid LIMIT 1`
+    return rows[0]?.human_agent_enabled === true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * An image, video, audio file or document. A public https link is passed to
+ * Meta; this account's own upload (/api/files/…, behind sign-in, so Meta
+ * cannot fetch it) is read from disk and sent as multipart — never another
+ * account's file (resolveUploadPath refuses it before anything is read).
+ */
+export async function socialSendAttachment(
+  target: SocialTarget,
+  accountId: string,
+  kind: 'image' | 'video' | 'audio' | 'document',
+  link: string,
+  envelope: Record<string, string> = { messaging_type: 'RESPONSE' },
+): Promise<{ messageId: string | null }> {
+  const type = kind === 'document' ? 'file' : kind
+  if (/^https:\/\//i.test(link)) {
+    return socialPost(target, { recipient: { id: target.recipientId }, message: { attachment: { type, payload: { url: link, is_reusable: true } } }, ...envelope })
+  }
+  const [{ readFile }, { basename }, { lookup }, { resolveUploadPath }] = await Promise.all([
+    import('fs/promises'), import('path'), import('mime-types'), import('@/lib/whatsapp/media-ref'),
+  ])
+  const filePath = await resolveUploadPath(link, accountId)
+  const fileBuffer = await readFile(filePath)
+  const filename = basename(filePath)
+  const mimeType = (lookup(filename) || 'application/octet-stream') as string
+  const form = new FormData()
+  form.append('recipient', JSON.stringify({ id: target.recipientId }))
+  form.append('message', JSON.stringify({ attachment: { type, payload: { is_reusable: true } } }))
+  form.append('filedata', new Blob([new Uint8Array(fileBuffer)], { type: mimeType }), filename)
+  for (const [k, v] of Object.entries(envelope)) form.append(k, v)
+  const res = await fetch(`${target.url}?access_token=${encodeURIComponent(target.token)}`, { method: 'POST', body: form })
+  const data = (await res.json().catch(() => ({}))) as { message_id?: string; error?: { message?: string; code?: number; error_subcode?: number } }
+  if (!res.ok || data.error) {
+    console.error(`[${target.channel} attachment] Meta error:`, res.status, data.error?.code, data.error?.message)
+    throw new Error(explainMetaError(data.error, res.status))
+  }
+  return { messageId: data.message_id ?? null }
+}
+
 /** When the customer last wrote in this conversation (for the window). */
 export async function lastInboundAt(conversationId: string): Promise<Date | null> {
   const row = await prisma.message.findFirst({

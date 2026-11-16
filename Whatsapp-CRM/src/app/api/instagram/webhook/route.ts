@@ -387,7 +387,7 @@ async function processIgMessage({
   const ownerUserId = ownerProfile.user_id
 
   // --- Find or create contact ---
-  const contactOutcome = await findOrCreateIgContact(accountId, ownerUserId, senderIgsid, accessToken, igAccountId)
+  const contactOutcome = await findOrCreateIgContact(accountId, ownerUserId, senderIgsid, accessToken)
   if (!contactOutcome) return
   const { contact, wasCreated } = contactOutcome
 
@@ -640,7 +640,6 @@ async function findOrCreateIgContact(
   ownerUserId: string,
   igsid: string,
   accessToken: string,
-  _igAccountId: string | null = null,
 ) {
   // Matched by exact equality on the dedicated instagram_id column — NOT
   // findExistingContact's fuzzy last-8-digit phone matching, which is meant

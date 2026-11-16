@@ -128,7 +128,8 @@ FROM (VALUES
   ('164_scheduled_reports',            to_regclass('scheduled_reports') IS NOT NULL),
   ('165_report_goals',                 to_regclass('report_goals') IS NOT NULL),
   ('166_report_alert_log',             to_regclass('report_alert_log') IS NOT NULL),
-  ('167_lead_districts',               EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'lead_settings' AND column_name = 'districts'))
+  ('167_lead_districts',               EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'lead_settings' AND column_name = 'districts')),
+  ('168_meta_channel_connection',      to_regclass('messages_conversation_message_id_idx') IS NOT NULL)
 ) AS m(migration, present)
 ORDER BY m.migration;
 

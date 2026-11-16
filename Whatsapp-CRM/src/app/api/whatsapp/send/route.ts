@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
+import { envelopeFor, humanAgentEnabled, lastInboundAt, loadSocialTarget, socialPost, socialSendAttachment, windowDecision, type SocialChannel, type SocialTarget } from '@/lib/meta/social-messaging'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { verifyApiKey } from '@/lib/auth/api-key'
 import { canSendMessages, isAccountRole } from '@/lib/auth/roles'
 import { sendTextMessage, sendTemplateMessage, sendMediaMessage, sendCatalogMessage, sendSingleProductMessage, sendMultiProductMessage, type MultiProductSection } from '@/lib/whatsapp/meta-api'
-import { decrypt, encrypt, isLegacyFormat, openStoredSecret } from '@/lib/whatsapp/encryption'
+import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import { MediaPathError, resolveMediaRef as resolveAccountMediaRef } from '@/lib/whatsapp/media-ref'
 import {
@@ -30,176 +31,60 @@ import { audit, auditCtx } from '@/lib/audit'
 import { stampFirstResponse } from '@/lib/leads/first-response'
 
 
-// ── Instagram send helper ─────────────────────────────────────────────────────
-type IgConfigRow = { access_token: string | null }
+// ── Messenger + Instagram (an agent's reply) ─────────────────────────────────
+// Host, recipient and Meta's window: src/lib/meta/social-messaging.ts.
 
-async function handleInstagramSend({
+async function handleSocialSend({
+  channel,
   accountId,
   userId,
   conversationId,
-  contactIgsid,
+  contactId,
   messageType,
   contentText,
   mediaUrl,
 }: {
-  accountId:     string
-  userId:        string
-  conversationId: string
-  contactIgsid:  string
-  messageType:   string
-  contentText:   string | null
-  mediaUrl:      string | null
-}): Promise<NextResponse> {
-  // Load Instagram config
-  const rows = await prisma.$queryRaw<IgConfigRow[]>`
-    SELECT access_token FROM instagram_config WHERE account_id = ${accountId}::uuid LIMIT 1
-  `.catch(() => [] as IgConfigRow[])
-
-  const token = openStoredSecret(rows[0]?.access_token)
-  if (!token) {
-    return NextResponse.json(
-      { error: 'Instagram not configured. Set up Instagram in Settings → Instagram.' },
-      { status: 400 }
-    )
-  }
-
-  // Build message payload
-  type IgPayload = {
-    recipient: { id: string }
-    message:
-      | { text: string }
-      | { attachment: { type: string; payload: { url: string } } }
-  }
-
-  let message: IgPayload['message']
-  if (mediaUrl && ['image', 'video', 'audio', 'document'].includes(messageType)) {
-    const publicUrl = mediaUrl.startsWith('/')
-      ? `${process.env.NEXTAUTH_URL ?? ''}${mediaUrl}`
-      : mediaUrl
-    message = {
-      attachment: {
-        type: messageType === 'document' ? 'file' : messageType,
-        payload: { url: publicUrl },
-      },
-    }
-  } else {
-    if (!contentText) {
-      return NextResponse.json({ error: 'content_text is required' }, { status: 400 })
-    }
-    message = { text: contentText }
-  }
-
-  const igRes = await fetch(
-    `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(token)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recipient: { id: contactIgsid }, message }),
-    }
-  )
-
-  const igData = await igRes.json() as { message_id?: string; error?: { message: string } }
-
-  if (!igRes.ok || igData.error) {
-    const msg = igData.error?.message ?? `Instagram API error ${igRes.status}`
-    console.error('[instagram/send] error:', msg)
-    return NextResponse.json({ error: msg }, { status: 502 })
-  }
-
-  // Persist message to DB
-  const savedMsg = await prisma.message.create({
-    data: {
-      conversation_id: conversationId,
-      sender_type:     'agent',
-      sender_id:       userId,
-      content_type:    messageType,
-      content_text:    contentText,
-      media_url:       mediaUrl ?? null,
-      message_id:      igData.message_id ?? null,
-      status:          'sent',
-    },
-  })
-  emitToAccount(accountId, 'message', { eventType: 'INSERT', new: savedMsg, old: {} })
-
-  const updatedConv = await prisma.conversation.update({
-    where: { id: conversationId },
-    data: {
-      last_message_text: contentText ?? `[${messageType}]`,
-      last_message_at:   new Date(),
-    },
-  })
-  emitToAccount(accountId, 'conversation', { eventType: 'UPDATE', new: updatedConv, old: {} })
-
-  return NextResponse.json({ success: true, message_id: savedMsg.id })
-}
-
-// ── Facebook Messenger send helper ───────────────────────────────────────────
-type FbConfigRow = { access_token: string | null }
-
-async function handleFacebookSend({
-  accountId,
-  userId,
-  conversationId,
-  contactPsid,
-  messageType,
-  contentText,
-  mediaUrl,
-}: {
+  channel:        SocialChannel
   accountId:      string
   userId:         string
   conversationId: string
-  contactPsid:    string
+  contactId:      string
   messageType:    string
   contentText:    string | null
   mediaUrl:       string | null
 }): Promise<NextResponse> {
-  const rows = await prisma.$queryRaw<FbConfigRow[]>`
-    SELECT access_token FROM facebook_config WHERE account_id = ${accountId}::uuid LIMIT 1
-  `.catch(() => [] as FbConfigRow[])
-
-  const token = openStoredSecret(rows[0]?.access_token)
-  if (!token) {
-    return NextResponse.json(
-      { error: 'Facebook not configured. Set up Facebook in Settings → Facebook.' },
-      { status: 400 }
-    )
+  const label = channel === 'instagram' ? 'Instagram' : 'Messenger'
+  let target: SocialTarget
+  try {
+    target = await loadSocialTarget(accountId, contactId, channel)
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : `${label} is not connected.` }, { status: 400 })
   }
 
-  type FbPayload = {
-    recipient: { id: string }
-    message: { text: string } | { attachment: { type: string; payload: { url: string; is_reusable: boolean } } }
+  // Meta's window, checked here — not left to Meta's raw error, and API-key
+  // sends obey it too.
+  const decision = windowDecision(await lastInboundAt(conversationId), new Date(), await humanAgentEnabled(accountId, channel))
+  if (!decision.ok) return NextResponse.json({ error: decision.reason, code: 'outside_window' }, { status: 409 })
+  const envelope = envelopeFor(decision)
+
+  const isMedia = Boolean(mediaUrl) && ['image', 'video', 'audio', 'document'].includes(messageType)
+  if (!isMedia && !contentText?.trim()) {
+    return NextResponse.json({ error: 'content_text is required' }, { status: 400 })
   }
 
-  let message: FbPayload['message']
-  if (mediaUrl && ['image', 'video', 'audio', 'document'].includes(messageType)) {
-    const publicUrl = mediaUrl.startsWith('/')
-      ? `${process.env.NEXTAUTH_URL ?? ''}${mediaUrl}`
-      : mediaUrl
-    message = {
-      attachment: {
-        type: messageType === 'document' ? 'file' : messageType,
-        payload: { url: publicUrl, is_reusable: true },
-      },
+  let metaMessageId: string | null
+  try {
+    if (isMedia) {
+      ;({ messageId: metaMessageId } = await socialSendAttachment(target, accountId, messageType as 'image' | 'video' | 'audio' | 'document', mediaUrl as string, envelope))
+      // A caption travels as its own text message (attachments carry none).
+      if (contentText?.trim()) {
+        await socialPost(target, { recipient: { id: target.recipientId }, message: { text: contentText }, ...envelope })
+      }
+    } else {
+      ;({ messageId: metaMessageId } = await socialPost(target, { recipient: { id: target.recipientId }, message: { text: contentText }, ...envelope }))
     }
-  } else {
-    if (!contentText) return NextResponse.json({ error: 'content_text is required' }, { status: 400 })
-    message = { text: contentText }
-  }
-
-  const fbRes = await fetch(
-    `https://graph.facebook.com/v21.0/me/messages?access_token=${encodeURIComponent(token)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recipient: { id: contactPsid }, message }),
-    }
-  )
-
-  const fbData = await fbRes.json() as { message_id?: string; error?: { message: string } }
-  if (!fbRes.ok || fbData.error) {
-    const msg = fbData.error?.message ?? `Facebook API error ${fbRes.status}`
-    console.error('[facebook/send] error:', msg)
-    return NextResponse.json({ error: msg }, { status: 502 })
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : `${label} did not accept the message.` }, { status: 502 })
   }
 
   const savedMsg = await prisma.message.create({
@@ -210,7 +95,7 @@ async function handleFacebookSend({
       content_type:    messageType,
       content_text:    contentText,
       media_url:       mediaUrl ?? null,
-      message_id:      fbData.message_id ?? null,
+      message_id:      metaMessageId,
       status:          'sent',
     },
   })
@@ -656,34 +541,26 @@ async function sendPost(request: Request, onSender: (who: SentBy) => void): Prom
       })
     }
 
+    // Messenger / Instagram contacts are addressed by their PSID / IGSID,
+    // not a phone number — handled before the phone check.
+    if (convChannel === 'instagram' || convChannel === 'facebook') {
+      return handleSocialSend({
+        channel: convChannel,
+        accountId,
+        userId,
+        conversationId: conversation_id,
+        contactId: conversation.contact_id,
+        messageType: message_type,
+        contentText: content_text ?? null,
+        mediaUrl: media_url ?? null,
+      })
+    }
+
     if (!contact?.phone) {
       return NextResponse.json(
         { error: 'Contact phone number not found' },
         { status: 400 }
       )
-    }
-
-    if (convChannel === 'instagram') {
-      return handleInstagramSend({
-        accountId,
-        userId,
-        conversationId: conversation_id,
-        contactIgsid: contact.phone,
-        messageType: message_type,
-        contentText: content_text ?? null,
-        mediaUrl: media_url ?? null,
-      })
-    }
-    if (convChannel === 'facebook') {
-      return handleFacebookSend({
-        accountId,
-        userId,
-        conversationId: conversation_id,
-        contactPsid: contact.phone,
-        messageType: message_type,
-        contentText: content_text ?? null,
-        mediaUrl: media_url ?? null,
-      })
     }
     if (convChannel === 'sms' || convChannel === 'rcs') {
       if (message_type !== 'text' || !content_text) {
