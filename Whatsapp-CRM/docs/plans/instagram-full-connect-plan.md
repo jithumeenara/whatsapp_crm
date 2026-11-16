@@ -9,7 +9,32 @@ for Instagram". Works for any business with an Instagram professional
 
 ## 1. What Meta allows today (facts)
 
-### Two ways in
+### Update (checked again 2026-11-16): Meta now lists THREE setups
+From Meta's Instagram Platform overview:
+| Setup | Meta says | Login | Token | Host | Facebook Page |
+|---|---|---|---|---|---|
+| **Instagram API with Unified Login** | **"recommended for new integrations"** | Instagram or Facebook credentials, through Facebook Login for Business | Business Integration System User token — "defaults to never expire" (60-day option exists) | graph.facebook.com | Not required (business portfolio required) |
+| Instagram API with Instagram Login | for "existing Instagram Login integrations" | Business Login for Instagram | Instagram user token, 60 days, refreshable | graph.instagram.com | Not required |
+| Instagram API with Facebook Login | for "existing Page-linked integrations" | Facebook | User or Page token | graph.facebook.com | Required |
+
+Unified Login uses the `instagram_*` permissions (`instagram_basic`,
+`instagram_manage_messages`, `instagram_manage_comments`,
+`instagram_content_publish`, `instagram_manage_insights`,
+`instagram_manage_contents`, `instagram_manage_engagement`) and supports
+hashtag search, product tagging and partnership ads. For system-user
+configurations Facebook Login for Business uses a `config_id` instead of
+`scope`, `response_type=code` and `override_default_response_type=true`.
+Meta's pages give **no retirement date** for the other two setups.
+Developer reports (not Meta) say Meta apps created since late Oct 2026 can
+only use Unified Login.
+
+**Revised recommendation:** Phase 1 connects with **Unified Login** (one
+button, no Page, never-expiring token, all features). Tokens already pasted
+today keep working: the CRM picks the host by token type
+(Instagram-login tokens → graph.instagram.com, the rest → graph.facebook.com),
+so a Business Manager **System User token** also works.
+
+### Two ways in (original section)
 | | Instagram Login (Business Login) | Facebook Login |
 |---|---|---|
 | Needs a Facebook Page | No | Yes |
