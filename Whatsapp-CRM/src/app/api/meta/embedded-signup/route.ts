@@ -17,6 +17,7 @@ import { createOrGetDataset } from "@/lib/meta-ads/api"
 import { listOwnedCatalogs } from "@/lib/whatsapp/catalog-api"
 import { auditCtx } from "@/lib/audit"
 import { auditConfigChange } from "@/lib/audit/config-change"
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
 /**
  * POST /api/meta/embedded-signup
@@ -194,7 +195,7 @@ export async function POST(req: NextRequest) {
 async function discoverAndSaveFacebookAndInstagram(accountId: string, businessToken: string) {
   const result = { facebookConnected: false, instagramConnected: false, pageName: "", igUsername: "" }
   try {
-    const pagesRes = await fetch(`https://graph.facebook.com/v21.0/me/accounts`, { headers: { Authorization: `Bearer ${businessToken}` }, cache: "no-store" })
+    const pagesRes = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/me/accounts`, { headers: { Authorization: `Bearer ${businessToken}` }, cache: "no-store" })
     const pagesData = (await pagesRes.json()) as { data?: Array<{ id: string; name: string; access_token: string }> }
     // The Configuration may not have requested Page access at all (a
     // WhatsApp-only setup) — an empty/missing list here just means there's
@@ -231,7 +232,7 @@ async function discoverAndSaveFacebookAndInstagram(accountId: string, businessTo
     // An Instagram professional account is always linked through a Page in
     // Meta's data model — this is the standard, stable discovery call.
     const igRes = await fetch(
-      `https://graph.facebook.com/v21.0/${page.id}?fields=instagram_business_account{id,username,name}`,
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${page.id}?fields=instagram_business_account{id,username,name}`,
       { headers: { Authorization: `Bearer ${page.access_token}` }, cache: "no-store" },
     )
     const igData = (await igRes.json()) as { instagram_business_account?: { id: string; username?: string; name?: string } }
@@ -281,7 +282,7 @@ async function discoverAndSaveFacebookAndInstagram(accountId: string, businessTo
 async function discoverAndSaveMetaAds(accountId: string, userId: string, businessToken: string, wabaId: string) {
   const result = { metaAdsConnected: false, adAccountName: "" }
   try {
-    const adAccountsRes = await fetch(`https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name`, { headers: { Authorization: `Bearer ${businessToken}` }, cache: "no-store" })
+    const adAccountsRes = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/me/adaccounts?fields=id,name`, { headers: { Authorization: `Bearer ${businessToken}` }, cache: "no-store" })
     const adAccountsData = (await adAccountsRes.json()) as { data?: Array<{ id: string; name: string }> }
     const adAccount = adAccountsData.data?.[0]
 
@@ -344,7 +345,7 @@ async function discoverAndSaveMetaAds(accountId: string, userId: string, busines
 async function discoverAndSaveCatalog(accountId: string, userId: string, businessToken: string) {
   const result = { catalogConnected: false, catalogName: "" }
   try {
-    const businessesRes = await fetch(`https://graph.facebook.com/v21.0/me/businesses?fields=id,name`, {
+    const businessesRes = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/me/businesses?fields=id,name`, {
       headers: { Authorization: `Bearer ${businessToken}` },
       cache: "no-store",
     })

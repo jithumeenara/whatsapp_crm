@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 import { MediaPathError, resolveUploadPath } from '@/lib/whatsapp/media-ref'
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
 /**
  * Converts a /api/files/... URL to a raw base64 string by reading from disk.
@@ -73,7 +74,7 @@ async function resolveScreenImages(screens: InternalScreen[], accountId: string)
   })))
 }
 
-const META_API_VERSION = 'v21.0'
+const META_API_VERSION = GRAPH_API_VERSION
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 
 // ── Meta Flow JSON transformer ────────────────────────────────────

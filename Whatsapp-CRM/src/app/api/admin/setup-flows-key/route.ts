@@ -4,8 +4,9 @@ import { auditCtx } from '@/lib/audit'
 import { auditConfigChange } from '@/lib/audit/config-change'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
-const META_API_VERSION = 'v21.0'
+const META_API_VERSION = GRAPH_API_VERSION
 
 const PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0wG+W5bCPdgsRlRRO1/9

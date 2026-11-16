@@ -1,3 +1,4 @@
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 /**
  * Meta Product Catalog API helpers — separate from meta-api.ts (which is
  * WhatsApp Cloud API messaging only) because this talks to a different
@@ -6,7 +7,6 @@
  * meta-api.ts: named-args, raw fetch, throw on !response.ok.
  */
 
-const GRAPH_API_VERSION = 'v21.0'
 const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`
 
 interface MetaErrorResponse {

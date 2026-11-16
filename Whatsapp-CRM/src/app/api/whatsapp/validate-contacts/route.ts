@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config";
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
-const META_API_VERSION = "v21.0";
+const META_API_VERSION = GRAPH_API_VERSION;
 
 export interface ValidateResult {
   phone: string;

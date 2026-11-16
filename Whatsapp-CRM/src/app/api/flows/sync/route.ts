@@ -6,6 +6,7 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
 /**
  * POST /api/flows/sync
@@ -19,7 +20,7 @@ import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
  * per WABA — you can't publish two flows with the same name).
  */
 
-const META_API_VERSION = 'v21.0'
+const META_API_VERSION = GRAPH_API_VERSION
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 const PAGE_CAP = 20
 

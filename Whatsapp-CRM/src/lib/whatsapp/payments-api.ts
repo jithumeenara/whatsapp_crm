@@ -1,3 +1,4 @@
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 /**
  * In-chat UPI payments (Finding #09) — order_details/order_status
  * interactive messages, plus the UPI Intent deep-link shape. Built
@@ -10,7 +11,7 @@
  * proven. Gated end-to-end on a manual Meta support-case approval no
  * API call here can grant — see PaymentGatewayConfig's schema comment.
  */
-const META_API_VERSION = 'v21.0'
+const META_API_VERSION = GRAPH_API_VERSION
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 
 export interface MetaSendResult {

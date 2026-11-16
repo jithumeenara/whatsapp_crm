@@ -14,28 +14,28 @@ import { explainMetaError, graphHost, isFacebookToken, messagesUrl, recipientIdF
 describe('which Meta address a message goes to', () => {
   it('an Instagram Login token uses graph.instagram.com /me', () => {
     expect(messagesUrl({ channel: 'instagram', token: 'IGAAabc', igAccountId: '17841400000000' }))
-      .toBe('https://graph.instagram.com/v21.0/me/messages')
+      .toBe('https://graph.instagram.com/v27.0/me/messages')
   })
   it('an EAA token on Instagram uses graph.facebook.com with the Instagram account id', () => {
     expect(messagesUrl({ channel: 'instagram', token: 'EAAxyz', igAccountId: '17841400000000', pageId: '1029' }))
-      .toBe('https://graph.facebook.com/v21.0/17841400000000/messages')
+      .toBe('https://graph.facebook.com/v27.0/17841400000000/messages')
   })
   it('an EAA token with only a Page id uses the Page', () => {
-    expect(messagesUrl({ channel: 'instagram', token: 'EAAxyz', pageId: '1029' })).toBe('https://graph.facebook.com/v21.0/1029/messages')
+    expect(messagesUrl({ channel: 'instagram', token: 'EAAxyz', pageId: '1029' })).toBe('https://graph.facebook.com/v27.0/1029/messages')
   })
   it('Messenger uses graph.facebook.com with the Page id', () => {
-    expect(messagesUrl({ channel: 'facebook', token: 'EAAxyz', pageId: '1029' })).toBe('https://graph.facebook.com/v21.0/1029/messages')
+    expect(messagesUrl({ channel: 'facebook', token: 'EAAxyz', pageId: '1029' })).toBe('https://graph.facebook.com/v27.0/1029/messages')
   })
   it('a stored id that is not a number can never change the path', () => {
-    expect(messagesUrl({ channel: 'facebook', token: 'EAAx', pageId: '1029/../../me/accounts' })).toBe('https://graph.facebook.com/v21.0/me/messages')
-    expect(messagesUrl({ channel: 'instagram', token: 'EAAx', igAccountId: '1?x=1' })).toBe('https://graph.facebook.com/v21.0/me/messages')
+    expect(messagesUrl({ channel: 'facebook', token: 'EAAx', pageId: '1029/../../me/accounts' })).toBe('https://graph.facebook.com/v27.0/me/messages')
+    expect(messagesUrl({ channel: 'instagram', token: 'EAAx', igAccountId: '1?x=1' })).toBe('https://graph.facebook.com/v27.0/me/messages')
   })
   it('token family and read host', () => {
     expect(isFacebookToken('  EAAB')).toBe(true)
     expect(isFacebookToken('IGQWR')).toBe(false)
-    expect(graphHost('instagram', 'IGAA1')).toBe('https://graph.instagram.com/v21.0')
-    expect(graphHost('instagram', 'EAA1')).toBe('https://graph.facebook.com/v21.0')
-    expect(graphHost('facebook', 'EAA1')).toBe('https://graph.facebook.com/v21.0')
+    expect(graphHost('instagram', 'IGAA1')).toBe('https://graph.instagram.com/v27.0')
+    expect(graphHost('instagram', 'EAA1')).toBe('https://graph.facebook.com/v27.0')
+    expect(graphHost('facebook', 'EAA1')).toBe('https://graph.facebook.com/v27.0')
   })
 })
 

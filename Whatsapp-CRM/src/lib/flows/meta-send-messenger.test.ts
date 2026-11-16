@@ -73,7 +73,7 @@ describe('Messenger bot replies', () => {
     expect(h.waSends).toBe(0)
     expect(sends()).toHaveLength(1)
     const { url, body } = sends()[0]
-    expect(url.startsWith('https://graph.facebook.com/v21.0/1029384756/messages?')).toBe(true)
+    expect(url.startsWith('https://graph.facebook.com/v27.0/1029384756/messages?')).toBe(true)
     expect(new URL(url).searchParams.get('access_token')).toBe('EAApage-token')
     expect(body.recipient).toEqual({ id: '7654321098765432' })
     expect(body.messaging_type).toBe('RESPONSE')
@@ -85,7 +85,7 @@ describe('Messenger bot replies', () => {
     await engineSendInteractiveButtons({ ...base, bodyText: 'Pick one', buttons: [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }] })
     expect(h.waSends).toBe(0)
     expect(sends()).toHaveLength(2)
-    for (const c of sends()) expect(c.url.startsWith('https://graph.facebook.com/v21.0/1029384756/messages?')).toBe(true)
+    for (const c of sends()) expect(c.url.startsWith('https://graph.facebook.com/v27.0/1029384756/messages?')).toBe(true)
   })
 })
 
@@ -94,7 +94,7 @@ describe('Instagram with an EAA token', () => {
     h.channel = 'instagram'
     await engineSendText({ ...base, text: 'hi' })
     expect(sends()).toHaveLength(1)
-    expect(sends()[0].url.startsWith('https://graph.facebook.com/v21.0/17841400000000/messages?')).toBe(true)
+    expect(sends()[0].url.startsWith('https://graph.facebook.com/v27.0/17841400000000/messages?')).toBe(true)
     expect(sends()[0].body.recipient).toEqual({ id: '998877665544' })
   })
 })

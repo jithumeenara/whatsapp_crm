@@ -78,7 +78,7 @@ describe('agent reply on Messenger / Instagram', () => {
     const res = await send()
     expect(res.status).toBe(200)
     expect(h.calls).toHaveLength(1)
-    expect(h.calls[0].url.startsWith('https://graph.facebook.com/v21.0/1029/messages?')).toBe(true)
+    expect(h.calls[0].url.startsWith('https://graph.facebook.com/v27.0/1029/messages?')).toBe(true)
     expect(h.calls[0].body.recipient).toEqual({ id: '7654321' })
     expect(h.calls[0].body.messaging_type).toBe('RESPONSE')
     expect(h.saved[0]).toMatchObject({ sender_type: 'agent', message_id: 'm_meta_1' })
@@ -102,7 +102,7 @@ describe('agent reply on Messenger / Instagram', () => {
   it('Instagram with an EAA token goes to graph.facebook.com with the account id', async () => {
     h.channel = 'instagram'
     expect((await send()).status).toBe(200)
-    expect(h.calls[0].url.startsWith('https://graph.facebook.com/v21.0/17841400000000/messages?')).toBe(true)
+    expect(h.calls[0].url.startsWith('https://graph.facebook.com/v27.0/17841400000000/messages?')).toBe(true)
     expect(h.calls[0].body.recipient).toEqual({ id: '998877' })
   })
 })

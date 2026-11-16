@@ -7,6 +7,7 @@ import { prisma } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 import { derivePublicInfo } from '@/lib/flows/key-material'
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
 /**
  * The RSA key pair Meta uses to encrypt Flow requests to this CRM.
@@ -42,7 +43,7 @@ import { derivePublicInfo } from '@/lib/flows/key-material'
  * amount of care in this file would have caught.
  */
 
-const META_API_VERSION = 'v21.0'
+const META_API_VERSION = GRAPH_API_VERSION
 
 async function getAccountAndConfig(userId: string) {
   const profile = await prisma.profile.findUnique({

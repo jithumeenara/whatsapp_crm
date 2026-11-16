@@ -6,6 +6,7 @@ import { auditConfigChange } from "@/lib/audit/config-change"
 import { prisma } from "@/lib/db"
 import { ensureInstagramConfigTable as ensureTable } from "@/lib/social/ensure-tables"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
 export interface IceBreaker { question: string; payload: string }
 export type MenuItem =
@@ -141,7 +142,7 @@ export async function DELETE(req?: Request) {
     const token = openStoredSecret(rows[0]?.access_token)
     if (token) {
       await fetch(
-        `${igNodeUrl(token, rows[0]?.instagram_account_id, "/messenger_profile?platform=instagram") ?? "https://graph.instagram.com/v21.0/me/messenger_profile?platform=instagram"}&fields=ice_breakers,persistent_menu&access_token=${encodeURIComponent(token)}`,
+        `${igNodeUrl(token, rows[0]?.instagram_account_id, "/messenger_profile?platform=instagram") ?? `https://graph.instagram.com/${GRAPH_API_VERSION}/me/messenger_profile?platform=instagram`}&fields=ice_breakers,persistent_menu&access_token=${encodeURIComponent(token)}`,
         { method: "DELETE" },
       ).catch(() => {})
     }

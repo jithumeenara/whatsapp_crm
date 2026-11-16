@@ -1,3 +1,4 @@
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 /**
  * WhatsApp calling: the control plane.
  *
@@ -21,7 +22,7 @@
  * recorded in history and rung to an agent, but not picked up.
  */
 
-const META_API_VERSION = 'v21.0'
+const META_API_VERSION = GRAPH_API_VERSION
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 
 /** What Meta reports about a call, normalised to this app's vocabulary. */

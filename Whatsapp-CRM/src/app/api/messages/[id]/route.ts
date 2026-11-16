@@ -5,6 +5,7 @@ import { ForbiddenError, UnauthorizedError, requireRole, toErrorResponse } from 
 import { prisma } from "@/lib/db"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
 import { audit, auditCtx } from "@/lib/audit"
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
 // Same key as the two read routes, so whichever runs first covers all
 // three for the lifetime of the process.
@@ -139,7 +140,7 @@ async function deleteFacebookMessage(accountId: string, messageId: string) {
   if (!token) throw new Error("Facebook not configured")
 
   const res = await fetch(
-    `https://graph.facebook.com/v21.0/${encodeURIComponent(messageId)}?access_token=${encodeURIComponent(token)}`,
+    `https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(messageId)}?access_token=${encodeURIComponent(token)}`,
     { method: "DELETE" }
   )
   if (!res.ok) {

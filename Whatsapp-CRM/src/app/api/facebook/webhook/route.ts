@@ -11,6 +11,7 @@ import { runAutomationsForTrigger } from "@/lib/automations/engine"
 import { isUniqueViolation } from "@/lib/contacts/dedupe"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
 import { webhookRejected, webhookWrote } from "@/lib/audit/actors"
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
 type RawConfig = {
   account_id: string
@@ -629,7 +630,7 @@ async function processFbMessage({
 
   // Mark seen
   if (accessToken) {
-    fetch(`https://graph.facebook.com/v21.0/me/messages?access_token=${encodeURIComponent(accessToken)}`, {
+    fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/me/messages?access_token=${encodeURIComponent(accessToken)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ recipient: { id: senderPsid }, sender_action: "mark_seen" }),
@@ -688,7 +689,7 @@ async function findOrCreateFbContact(
   if (accessToken && isNew && /^\d{1,30}$/.test(psid)) {
     try {
       const res = await fetch(
-        `https://graph.facebook.com/v21.0/${psid}?fields=name,first_name,last_name&access_token=${encodeURIComponent(accessToken)}`,
+        `https://graph.facebook.com/${GRAPH_API_VERSION}/${psid}?fields=name,first_name,last_name&access_token=${encodeURIComponent(accessToken)}`,
         { cache: "no-store" }
       )
       if (res.ok) {

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
 import { auditCtx } from "@/lib/audit"
 import { auditConfigChange } from "@/lib/audit/config-change"
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
 type FbRow = { access_token: string | null; page_id: string | null }
 
@@ -26,7 +27,7 @@ export async function GET() {
     if (error) return NextResponse.json({ error }, { status: 400 })
 
     const fields = "name,about,description,website,phone,emails,picture.type(large){url}"
-    const res = await fetch(`https://graph.facebook.com/v21.0/${pageId}?fields=${fields}&access_token=${token}`, { cache: "no-store" })
+    const res = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}?fields=${fields}&access_token=${token}`, { cache: "no-store" })
     const data = await res.json() as {
       name?: string; about?: string; description?: string; website?: string
       phone?: string; emails?: string[]; picture?: { data?: { url?: string } }
@@ -68,7 +69,7 @@ export async function PATCH(req: NextRequest) {
     if (website !== undefined) params.set("website", website)
     if (phone !== undefined) params.set("phone", phone)
 
-    const res = await fetch(`https://graph.facebook.com/v21.0/${pageId}`, {
+    const res = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: params.toString(),

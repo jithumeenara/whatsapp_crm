@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Loader2, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { isFacebookOrigin } from './facebook-origin';
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
 declare global {
   interface Window {
@@ -20,7 +21,7 @@ declare global {
 }
 
 const FB_SDK_SRC = 'https://connect.facebook.net/en_US/sdk.js';
-const FB_API_VERSION = 'v21.0'; // matches META_API_VERSION in meta-api.ts
+const FB_API_VERSION = GRAPH_API_VERSION // the shared Graph API version (src/lib/meta/versions.ts)
 
 interface Props {
   onConnected?: () => void;

@@ -7,10 +7,14 @@
  * current version. v27.0 (released 4 Nov 2026) is the latest.
  * https://developers.facebook.com/documentation/ads-commerce/marketing-api/marketing-api-changelog
  *
- * Messaging (WhatsApp Cloud API, Messenger, Instagram) still runs on Graph
- * API v21.0, available until 21 January 2027; it must move before then.
+ * Messaging and everything else on the Graph API (WhatsApp Cloud API,
+ * Messenger, Instagram, Pages, Flows, Business Login) use GRAPH_API_VERSION.
+ * v21.0 is removed on 21 January 2027 and v22.0 on 20 May 2027, so all of
+ * it moved to v27.0 (16 Nov 2026).
  * https://developers.facebook.com/docs/graph-api/changelog
  */
+
+export const GRAPH_API_VERSION = 'v27.0'
 
 export const MARKETING_API_VERSION = 'v27.0'
 export const MARKETING_API_BASE = `https://graph.facebook.com/${MARKETING_API_VERSION}`

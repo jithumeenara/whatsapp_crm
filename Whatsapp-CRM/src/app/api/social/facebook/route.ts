@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth/account"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
 type FbApiError = { error?: { message: string; code?: number; type?: string } }
 
@@ -52,7 +53,7 @@ export async function GET() {
 
     // ── Step 1: Fetch basic page info ──
     const basicPageResult = await fbGet(
-      `https://graph.facebook.com/v21.0/${pageId}?fields=id,name&access_token=${token}`
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}?fields=id,name&access_token=${token}`
     )
 
     // Detect permission error (code 100 = pages_read_engagement missing; 190 = bad token)
@@ -78,7 +79,7 @@ export async function GET() {
 
     // ── Step 2: Try engagement fields — needs pages_read_engagement ──
     const engagementResult = await fbGet(
-      `https://graph.facebook.com/v21.0/${pageId}?fields=about,bio,fan_count,followers_count,picture.type(large),cover&access_token=${token}`
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}?fields=about,bio,fan_count,followers_count,picture.type(large),cover&access_token=${token}`
     )
     let needsReadEngagement = false
     if (engagementResult.ok) {
@@ -105,13 +106,13 @@ export async function GET() {
       // Use /me/feed with the Page Access Token (acts as the page itself)
       // reactions.summary(true) gets total reaction/like count; comments.summary(true) gets comment count
       const postsResult = await fbGet(
-        `https://graph.facebook.com/v21.0/me/feed?fields=id,message,created_time,full_picture,reactions.summary(true),comments.summary(true),shares&limit=30&access_token=${token}`
+        `https://graph.facebook.com/${GRAPH_API_VERSION}/me/feed?fields=id,message,created_time,full_picture,reactions.summary(true),comments.summary(true),shares&limit=30&access_token=${token}`
       )
 
       if (!postsResult.ok) {
         // Fallback: try /{pageId}/posts with minimal fields
         const fallbackResult = await fbGet(
-          `https://graph.facebook.com/v21.0/${pageId}/posts?fields=id,message,created_time,full_picture&limit=30&access_token=${token}`
+          `https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}/posts?fields=id,message,created_time,full_picture&limit=30&access_token=${token}`
         )
         if (!fallbackResult.ok) {
           postsError = (fallbackResult.json.error as { message?: string } | undefined)?.message ?? "Could not load posts"
@@ -135,7 +136,7 @@ export async function GET() {
             // whole request). Their replacements: post_media_view (views) and
             // post_total_media_view_unique (people who viewed).
             const insResult = await fbGet(
-              `https://graph.facebook.com/v21.0/${encodeURIComponent(post.id)}/insights?metric=post_media_view,post_total_media_view_unique&access_token=${encodeURIComponent(token)}`
+              `https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(post.id)}/insights?metric=post_media_view,post_total_media_view_unique&access_token=${encodeURIComponent(token)}`
             ).catch(() => null)
 
             let reach = 0, impressions = 0
@@ -150,7 +151,7 @@ export async function GET() {
             const engagedUsers = (post.reactions?.summary?.total_count ?? 0) + (post.comments?.summary?.total_count ?? 0) + (post.shares?.count ?? 0)
 
             const reactResult = await fbGet(
-              `https://graph.facebook.com/v21.0/${encodeURIComponent(post.id)}/reactions?fields=id,name,type&limit=50&access_token=${encodeURIComponent(token)}`
+              `https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(post.id)}/reactions?fields=id,name,type&limit=50&access_token=${encodeURIComponent(token)}`
             ).catch(() => null)
             const reactions = reactResult?.ok ? ((reactResult.json.data ?? []) as unknown[]) : []
 

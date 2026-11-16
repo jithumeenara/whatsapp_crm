@@ -20,9 +20,10 @@
 
 import { prisma } from '@/lib/db'
 import { openStoredSecret } from '@/lib/whatsapp/encryption'
+import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
-/** Phase 1 moves every messaging call to v27.0 (v21.0 is removed 21 Jan 2027). */
-export const MESSAGING_GRAPH_VERSION = 'v21.0'
+/** The shared Graph API version (src/lib/meta/versions.ts); v21.0 is removed 21 Jan 2027. */
+export const MESSAGING_GRAPH_VERSION = GRAPH_API_VERSION
 
 export type SocialChannel = 'instagram' | 'facebook'
 
