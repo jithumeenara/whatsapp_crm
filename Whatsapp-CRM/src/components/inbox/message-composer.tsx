@@ -566,6 +566,15 @@ export function MessageComposer({
         </div>
       )}
 
+      {/* Instagram / Messenger have no templates to reopen a chat: say why
+          the box is closed instead of just greying it out. */}
+      {sessionExpired && (channel === 'instagram' || channel === 'facebook') && (
+        <div role="status" className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Meta allows replies only within 24 hours of the customer&rsquo;s last message on {channel === 'instagram' ? 'Instagram' : 'Messenger'}.
+          This chat opens again when they message you.
+        </div>
+      )}
+
       {sessionExpired && channel !== 'instagram' && channel !== 'facebook' && channel !== 'website' && channel !== 'telegram' && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">

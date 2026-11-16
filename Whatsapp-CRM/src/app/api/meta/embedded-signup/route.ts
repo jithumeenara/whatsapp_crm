@@ -200,9 +200,19 @@ async function discoverAndSaveFacebookAndInstagram(accountId: string, businessTo
     // WhatsApp-only setup) — an empty/missing list here just means there's
     // nothing to connect, not a failure.
     const page = pagesData.data?.[0]
-    if (!page) return result
+    if (!page || !/^\d{1,30}$/.test(page.id)) return result
 
     await ensureFacebookConfigTable()
+    // One workspace per Page: webhooks route by page_id, so a second claim
+    // would deliver one business's messages into another's Inbox (the
+    // manual Settings routes already refused this; this path did not).
+    const pageTaken = await prisma.$queryRaw<{ n: number }[]>`
+      SELECT 1 AS n FROM facebook_config WHERE account_id <> ${accountId}::uuid AND page_id = ${page.id} LIMIT 1
+    `
+    if (pageTaken.length > 0) {
+      console.warn("[embedded-signup] Page already connected to another workspace — not connected here")
+      return result
+    }
     await prisma.$executeRaw`
       INSERT INTO facebook_config (id, account_id, access_token, page_id, page_name, status, test_error, last_tested_at, updated_at)
       VALUES (${randomUUID()}::uuid, ${accountId}::uuid, ${sealSecret(page.access_token)}, ${page.id}, ${page.name}, 'connected', null, now(), now())
@@ -226,7 +236,13 @@ async function discoverAndSaveFacebookAndInstagram(accountId: string, businessTo
     )
     const igData = (await igRes.json()) as { instagram_business_account?: { id: string; username?: string; name?: string } }
     const ig = igData.instagram_business_account
-    if (ig?.id) {
+    const igTaken = ig?.id
+      ? await prisma.$queryRaw<{ n: number }[]>`
+          SELECT 1 AS n FROM instagram_config WHERE account_id <> ${accountId}::uuid AND (instagram_account_id = ${ig.id} OR page_id = ${page.id}) LIMIT 1
+        `.catch(() => [] as { n: number }[])
+      : []
+    if (igTaken.length > 0) console.warn("[embedded-signup] Instagram account already connected to another workspace — not connected here")
+    if (ig?.id && /^\d{1,30}$/.test(ig.id) && igTaken.length === 0) {
       await ensureInstagramConfigTable()
       await prisma.$executeRaw`
         INSERT INTO instagram_config (id, account_id, access_token, instagram_account_id, page_id, ig_username, ig_name, status, test_error, last_tested_at, updated_at)

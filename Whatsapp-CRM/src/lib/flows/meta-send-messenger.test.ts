@@ -82,7 +82,7 @@ describe('Messenger bot replies', () => {
   it('media and buttons go to Messenger too', async () => {
     h.channel = 'facebook'
     await engineSendMedia({ ...base, kind: 'image', link: 'https://example.com/a.jpg' })
-    await engineSendInteractiveButtons({ ...base, body: 'Pick one', buttons: [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }] })
+    await engineSendInteractiveButtons({ ...base, bodyText: 'Pick one', buttons: [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }] })
     expect(h.waSends).toBe(0)
     expect(sends()).toHaveLength(2)
     for (const c of sends()) expect(c.url.startsWith('https://graph.facebook.com/v21.0/1029384756/messages?')).toBe(true)

@@ -54,8 +54,13 @@ export async function mergeContacts(args: {
     // Default: keep the survivor's value when it has one, else take the other's.
     mergedFields[field] = choices[field] === 'merged' ? merged[field] : survivor[field] ?? merged[field]
   }
-  if (!survivor.instagram_id && merged.instagram_id) mergedFields.instagram_id = merged.instagram_id
-  if (!survivor.facebook_id && merged.facebook_id) mergedFields.facebook_id = merged.facebook_id
+  // Instagram / Messenger ids are unique per account, like Telegram's: moved
+  // by clearing them on the merged record first (inside the transaction),
+  // or the survivor's update hits the unique index and the merge fails.
+  const moveInstagram = !survivor.instagram_id && Boolean(merged.instagram_id)
+  const moveFacebook = !survivor.facebook_id && Boolean(merged.facebook_id)
+  if (moveInstagram) mergedFields.instagram_id = merged.instagram_id
+  if (moveFacebook) mergedFields.facebook_id = merged.facebook_id
   // Their Telegram chat follows them (migration 140); taken off the merged
   // record first, inside the transaction, since an id may be on one only.
   const moveTelegram = !survivor.telegram_id && Boolean(merged.telegram_id)
@@ -141,7 +146,16 @@ export async function mergeContacts(args: {
     }
     counts.list_memberships = memberships.length
 
-    if (moveTelegram) await tx.contact.update({ where: { id: merged.id }, data: { telegram_id: null } })
+    if (moveTelegram || moveInstagram || moveFacebook) {
+      await tx.contact.update({
+        where: { id: merged.id },
+        data: {
+          ...(moveTelegram ? { telegram_id: null } : {}),
+          ...(moveInstagram ? { instagram_id: null } : {}),
+          ...(moveFacebook ? { facebook_id: null } : {}),
+        },
+      })
+    }
     await tx.contact.update({ where: { id: survivor.id }, data: mergedFields })
     await tx.contact.update({ where: { id: merged.id }, data: { merged_into_contact_id: survivor.id } })
     await tx.contactMerge.create({

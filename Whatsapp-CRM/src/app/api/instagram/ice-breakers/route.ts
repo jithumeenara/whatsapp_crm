@@ -17,6 +17,7 @@ const MAX_MENU_ITEMS = 3
 
 type RawRow = {
   access_token: string | null
+  instagram_account_id?: string | null
   ice_breakers: IceBreaker[] | null
   persistent_menu: MenuItem[] | null
   profile_synced_at: Date | null
