@@ -968,11 +968,29 @@ model MetaPlatformConfig {
   /// AES-256-GCM encrypted, same cipher as WhatsAppConfig.access_token.
   app_secret String
   config_id  String
+  /// Facebook Login for Business configuration for Messenger + Instagram (migration 169).
+  social_config_id String?
   updated_by String?  @db.Uuid
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
 
   @@map("meta_platform_config")
+}
+
+/// Between Meta's redirect and the owner choosing a Page / Instagram account
+/// (migration 169): sealed token, 15 minutes, one use.
+model MetaConnectSession {
+  id         String    @id @default(uuid()) @db.Uuid
+  account_id String    @db.Uuid
+  user_id    String    @db.Uuid
+  token      String
+  options    Json      @default("{}")
+  expires_at DateTime  @db.Timestamptz(6)
+  used_at    DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([account_id, expires_at], map: "meta_connect_sessions_account_idx")
+  @@map("meta_connect_sessions")
 }
 
 // ============================================================
