@@ -112,9 +112,22 @@ FROM (VALUES
   ('149_data_record_batch',            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_records' AND column_name = 'batch_id')),
   ('150_sheet_verifications',          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'sheet_verifications')),
   ('151_data_record_public_ref',       EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_records' AND column_name = 'public_ref')),
+  ('152_api_key_owner_expiry',         EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'api_keys' AND column_name = 'expires_at')),
+  ('153_social_page_unique',           to_regclass('facebook_config_page_id_key') IS NOT NULL),
+  ('154_revoke_creatorless_api_keys',  to_regclass('api_key_revocations_154') IS NOT NULL),
   ('155_sheet_verification_help',      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sheet_verifications' AND column_name = 'help_call_phone')),
   -- 156 removes what 119 made: after it, 119 reads false and 156 true.
-  ('156_drop_old_reports',             to_regclass('saved_reports') IS NULL AND to_regclass('report_exports') IS NULL)
+  ('156_drop_old_reports',             to_regclass('saved_reports') IS NULL AND to_regclass('report_exports') IS NULL),
+  ('157_audit_log',                    to_regclass('audit_events') IS NOT NULL),
+  ('158_report_foundations',           EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'deals' AND column_name = 'won_at')),
+  ('159_spend_records',                to_regclass('whatsapp_message_costs') IS NOT NULL),
+  ('160_account_report_profile',       to_regclass('account_report_profile') IS NOT NULL),
+  ('161_member_teams',                 to_regclass('member_teams') IS NOT NULL),
+  ('162_ad_attribution',               to_regclass('ad_touches') IS NOT NULL),
+  ('163_ai_handovers',                 to_regclass('ai_handovers') IS NOT NULL),
+  ('164_scheduled_reports',            to_regclass('scheduled_reports') IS NOT NULL),
+  ('165_report_goals',                 to_regclass('report_goals') IS NOT NULL),
+  ('166_report_alert_log',             to_regclass('report_alert_log') IS NOT NULL)
 ) AS m(migration, present)
 ORDER BY m.migration;
 

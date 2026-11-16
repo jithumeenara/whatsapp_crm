@@ -116,7 +116,7 @@ export function GoalsEditor() {
                 {data.goals.map((g) => (
                   <li key={g.id} className="flex min-w-0 items-center gap-3 px-4 py-3">
                     <div className="min-w-0 flex-1">
-                      <p className="break-words text-[14px] font-semibold text-slate-800">{metric(g.metric)?.label ?? g.metric}: {g.target}{unit(metric(g.metric)?.kind)}</p>
+                      <p className="break-words text-[14px] font-semibold text-slate-800">{metric(g.metric)?.label ?? g.metric}: {g.target}{metric(g.metric)?.kind === "wait" ? " min" : unit(metric(g.metric)?.kind)}</p>
                       <p className="text-[12.5px] text-slate-600">This {g.period} · {who(g.user_id)}</p>
                     </div>
                     <Button variant="destructive" size="sm" disabled={busy !== null} onClick={() => void remove(g)} aria-label={`Delete goal ${metric(g.metric)?.label ?? g.metric} for ${who(g.user_id)}`}>

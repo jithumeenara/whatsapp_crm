@@ -181,12 +181,12 @@ export function TemplateKitDialog({ open, onOpenChange, onSubmitted }: Readonly<
                   {r.samples.length > 0 && (
                     <div className="grid gap-1.5 sm:grid-cols-2">
                       {r.samples.map((s, k) => (
-                        <label key={k} className="flex items-center gap-2 text-[12px] text-slate-500">
+                        <label key={k} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-slate-500">
                           <span className="w-10 shrink-0 font-mono">{`{{${k + 1}}}`}</span>
-                          <span className="w-28 shrink-0 truncate" title={r.variable_fields?.[k] ? ALERT_FIELD_LABEL[r.variable_fields[k]] : 'Example'}>
+                          <span className="min-w-0 max-w-28 truncate" title={r.variable_fields?.[k] ? ALERT_FIELD_LABEL[r.variable_fields[k]] : 'Example'}>
                             {r.variable_fields?.[k] ? ALERT_FIELD_LABEL[r.variable_fields[k]] : 'Example'}
                           </span>
-                          <input className={FIELD} value={s} maxLength={60}
+                          <input className={cn(FIELD, 'min-w-0 flex-1 basis-40')} value={s} maxLength={60}
                             onChange={(e) => update(i, { samples: r.samples.map((x, j) => (j === k ? e.target.value : x)) })} />
                         </label>
                       ))}

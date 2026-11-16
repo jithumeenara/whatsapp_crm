@@ -3,7 +3,7 @@
 /**
  * Settings → Reports (docs/plans/reports-plan.md §4): the business's own
  * funnel stages, when open work counts as "needs doing", and ad spend
- * from outside Meta. One card, one Save. Everything is checked again on
+ * from outside Meta, and how reports look. One card, one Save. Everything is checked again on
  * the server (src/lib/reports/settings.ts); the form only helps.
  */
 
@@ -25,12 +25,15 @@ interface Template { key: string; label: string; stages: Array<{ label: string; 
 interface ServerState {
   funnel_stages: Array<{ key: string; label: string; outcome: Outcome }>
   report_settings: { leakHours: number | null; manualSpend: Array<{ month: string; source: string; amount: number; currency: string }> }
+  presentation?: { brandColor: string | null; categoryLabel: string | null }
   sla_warn_hours: number
   templates: Template[]
 }
 
 const MAX_STAGES = 12
 const MAX_SPEND_ROWS = 120
+const HEX6 = /^#?[0-9a-f]{6}$/i
+const DEFAULT_SWATCH = "#4f46e5"
 const OUTCOME_LABEL: Record<Outcome, string> = { open: "Open", won: "Won", lost: "Lost" }
 
 let nextId = 1
@@ -50,6 +53,8 @@ export function ReportsSettings() {
   const [stages, setStages] = useState<StageRow[]>([])
   const [leakHours, setLeakHours] = useState("")
   const [spend, setSpend] = useState<SpendRow[]>([])
+  const [brandColor, setBrandColor] = useState("")
+  const [categoryLabel, setCategoryLabel] = useState("")
   const [savedSnapshot, setSavedSnapshot] = useState("")
   const [templatePick, setTemplatePick] = useState("")
   const savingRef = useRef(false)
@@ -62,12 +67,16 @@ export function ReportsSettings() {
       ? rs.manualSpend.map((r) => ({ id: newId(), month: r.month, source: r.source, amount: String(r.amount), currency: r.currency }))
       : []
     const lh = rs.leakHours == null ? "" : String(rs.leakHours)
+    const bc = d.presentation?.brandColor ? `#${d.presentation.brandColor}` : ""
+    const cl = d.presentation?.categoryLabel ?? ""
     setStages(st)
+    setBrandColor(bc)
+    setCategoryLabel(cl)
     setSpend(sp)
     setLeakHours(lh)
     setSlaWarnHours(typeof d.sla_warn_hours === "number" ? d.sla_warn_hours : 24)
     setTemplates(Array.isArray(d.templates) ? d.templates : [])
-    setSavedSnapshot(snapshot(st, lh, sp))
+    setSavedSnapshot(snapshot(st, lh, sp, bc, cl))
   }, [])
 
   const load = useCallback(async () => {
@@ -86,7 +95,10 @@ export function ReportsSettings() {
 
   useEffect(() => { void load() }, [load])
 
-  const dirty = useMemo(() => snapshot(stages, leakHours, spend) !== savedSnapshot, [stages, leakHours, spend, savedSnapshot])
+  const dirty = useMemo(
+    () => snapshot(stages, leakHours, spend, brandColor, categoryLabel) !== savedSnapshot,
+    [stages, leakHours, spend, brandColor, categoryLabel, savedSnapshot],
+  )
 
   // Leaving with unsaved edits asks first.
   useEffect(() => {
@@ -149,6 +161,11 @@ export function ReportsSettings() {
       toast.error("Each spend row needs a month, a source and an amount.")
       return
     }
+    const colour = brandColor.trim()
+    if (colour && !HEX6.test(colour)) {
+      toast.error("The brand colour must be six hex digits, like #7a1f5c.")
+      return
+    }
     const hours = leakHours.trim()
     savingRef.current = true
     setSaving(true)
@@ -166,6 +183,8 @@ export function ReportsSettings() {
               amount: Number(r.amount),
               currency: r.currency.trim().toUpperCase(),
             })),
+            brandColor: colour,
+            categoryLabel: categoryLabel.trim(),
           },
         }),
       })
@@ -325,6 +344,62 @@ export function ReportsSettings() {
         </div>
       </section>
 
+      {/* ── How reports look ──────────────────────────────────────────── */}
+      <section aria-labelledby={`${uid}-look`} className="rounded-2xl border border-slate-200 bg-white shadow-card">
+        <div className="border-b border-slate-100 px-4 py-4 sm:px-5">
+          <h2 id={`${uid}-look`} className="text-[15px] font-semibold text-slate-800">How reports look</h2>
+          <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
+            Your own words and colour in reports, PDFs and slides.
+          </p>
+        </div>
+        <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
+          <div className="min-w-0 space-y-1.5">
+            <label htmlFor={`${uid}-category`} className="block text-[12px] font-medium text-slate-600">What you call a lead&rsquo;s category</label>
+            <Input
+              id={`${uid}-category`}
+              name="category-label"
+              autoComplete="off"
+              value={categoryLabel}
+              maxLength={40}
+              onChange={(e) => setCategoryLabel(e.target.value)}
+              placeholder="Category"
+              aria-describedby={`${uid}-category-hint`}
+              className="h-9 text-[13px]"
+            />
+            <p id={`${uid}-category-hint`} className="text-[11.5px] text-slate-500">For example Speciality, Course or Product. Empty: &ldquo;Category&rdquo;.</p>
+          </div>
+          <div className="min-w-0 space-y-1.5">
+            <label htmlFor={`${uid}-colour`} className="block text-[12px] font-medium text-slate-600">Brand colour</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={HEX6.test(brandColor) ? `#${brandColor.replace(/^#/, "")}` : DEFAULT_SWATCH}
+                onChange={(e) => setBrandColor(e.target.value)}
+                aria-label="Pick the brand colour"
+                className="h-9 w-11 shrink-0 cursor-pointer rounded-lg border border-slate-200 bg-white p-1"
+              />
+              <Input
+                id={`${uid}-colour`}
+                name="brand-colour"
+                autoComplete="off"
+                spellCheck={false}
+                autoCapitalize="none"
+                value={brandColor}
+                maxLength={7}
+                onChange={(e) => setBrandColor(e.target.value)}
+                placeholder="#7a1f5c"
+                aria-describedby={`${uid}-colour-hint`}
+                className="h-9 w-32 font-mono text-[13px]"
+              />
+              {brandColor && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => setBrandColor("")}>Clear</Button>
+              )}
+            </div>
+            <p id={`${uid}-colour-hint`} className="text-[11.5px] text-slate-500">Used for headings and charts in PDFs and slides. Empty: the app&rsquo;s own colour.</p>
+          </div>
+        </div>
+      </section>
+
       {/* ── AI suggestions (Performance guide, off by default) ───────── */}
       <AiGuideSetting />
 
@@ -397,10 +472,12 @@ export function ReportsSettings() {
   )
 }
 
-function snapshot(stages: StageRow[], leakHours: string, spend: SpendRow[]): string {
+function snapshot(stages: StageRow[], leakHours: string, spend: SpendRow[], brandColor: string, categoryLabel: string): string {
   return JSON.stringify([
     stages.map((s) => [s.key ?? "", s.label, s.outcome]),
     leakHours.trim(),
     spend.map((r) => [r.month, r.source, r.amount, r.currency]),
+    brandColor.trim().replace(/^#/, "").toLowerCase(),
+    categoryLabel.trim(),
   ])
 }

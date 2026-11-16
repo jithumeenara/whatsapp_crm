@@ -78,7 +78,17 @@ export async function PUT(req: NextRequest) {
       // The slides' brand colour and category name live in the same JSON.
       const p = validatePresentationSettings(body.report_settings)
       if (!p.ok) return NextResponse.json({ error: p.error }, { status: 400 })
-      data.report_settings = { ...v.settings, ...p.settings } as unknown as Prisma.InputJsonValue
+      // Left out (an older screen, another tab), the saved one is kept;
+      // sent empty, it is cleared.
+      const sent = body.report_settings as Record<string, unknown>
+      const look = { ...p.settings }
+      if (!('brandColor' in sent) || !('categoryLabel' in sent)) {
+        const row = await prisma.leadSettings.findUnique({ where: { account_id: ctx.accountId }, select: { report_settings: true } })
+        const saved = parsePresentationSettings(row?.report_settings)
+        if (!('brandColor' in sent)) look.brandColor = saved.brandColor
+        if (!('categoryLabel' in sent)) look.categoryLabel = saved.categoryLabel
+      }
+      data.report_settings = { ...v.settings, ...look } as unknown as Prisma.InputJsonValue
     }
     // The AI suggestions switch lives in the same JSON. Sent on its own, it
     // keeps the other settings; left out, the saved choice is kept (saving
