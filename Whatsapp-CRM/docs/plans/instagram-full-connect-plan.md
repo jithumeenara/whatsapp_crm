@@ -1,4 +1,5 @@
 # Plan: Instagram, fully connected
+n> **Superseded 2026-11-16 by [meta-messenger-instagram-plan.md](meta-messenger-instagram-plan.md).**
 
 Status: **research + plan only — nothing built.** Written 2026-11-16.
 Checked against Meta's own pages that day: Instagram Platform changelog
