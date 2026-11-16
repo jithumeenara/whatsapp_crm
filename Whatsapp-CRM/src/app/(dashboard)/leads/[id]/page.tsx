@@ -6,7 +6,7 @@ import { useSessionWindow } from "@/lib/hooks/use-session-window"
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Check, Pencil, Phone, PhoneOff,
   MapPin, MessageSquare, ExternalLink, RefreshCw, Paperclip, Send, Loader2,
-  FileText, Plus, Trash2, X, Image, Music, FolderOpen, LayoutTemplate, Sparkles,
+  FileText, Plus, Trash2, X, Image, Music, FolderOpen, LayoutTemplate, Sparkles, MoreVertical,
 } from "lucide-react"
 import { toast } from "sonner"
 import { apiFetch, errorText } from "@/lib/api-fetch"
@@ -26,6 +26,7 @@ import { ScheduleMenuButton } from "@/components/inbox/schedule-menu-button"
 import { TemplatePicker, type TemplateSendValues } from "@/components/inbox/template-picker"
 import { NewChatDialog } from "@/components/shared/new-chat-dialog"
 import { LeadDescription } from "@/components/leads/lead-description"
+import { LeadTags } from "@/components/leads/lead-tags"
 import { LeadFollowUps, type LeadFollowUp } from "@/components/leads/lead-follow-ups"
 import { ContactForm } from "@/components/contacts/contact-form"
 import { useRealtime } from "@/hooks/use-realtime"
@@ -56,21 +57,31 @@ const STATUS_COLOR: Record<string, string> = {
   closed: "bg-emerald-100 text-emerald-700",
 }
 
-const SCORE_OPTIONS: Array<{ key: "hot" | "warm" | "cold"; label: string; emoji: string }> = [
-  { key: "hot", label: "Hot", emoji: "🔥" },
-  { key: "warm", label: "Warm", emoji: "🌡️" },
-  { key: "cold", label: "Cold", emoji: "❄️" },
+/** The account's score levels, hottest first (Settings → Leads); these until they load. */
+type ScoreOption = { icon: string; label: string }
+const DEFAULT_SCORES: ScoreOption[] = [
+  { icon: "🔥", label: "Hot" }, { icon: "🌡️", label: "Warm" }, { icon: "❄️", label: "Cold" },
 ]
-const SCORE_ACTIVE: Record<string, string> = {
-  hot: "bg-rose-500 text-white border-rose-500",
-  warm: "bg-amber-500 text-white border-amber-500",
-  cold: "bg-sky-500 text-white border-sky-500",
+type ScoreTone = "hot" | "mid" | "cold"
+/** Hottest level red, coldest blue, the ones between amber — by place, not by word. */
+function scoreTone(index: number, count: number): ScoreTone {
+  if (count >= 2 && index === 0) return "hot"
+  if (count >= 2 && index === count - 1) return "cold"
+  return "mid"
 }
-const SCORE_INACTIVE: Record<string, string> = {
-  hot: "bg-rose-50 text-rose-700 border-rose-100 hover:bg-rose-100",
-  warm: "bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100",
-  cold: "bg-sky-50 text-sky-700 border-sky-100 hover:bg-sky-100",
+const SCORE_ACTIVE: Record<ScoreTone, string> = {
+  hot: "bg-rose-600 text-white border-rose-600 shadow-sm ring-2 ring-rose-200",
+  mid: "bg-amber-500 text-white border-amber-500 shadow-sm ring-2 ring-amber-200",
+  cold: "bg-sky-600 text-white border-sky-600 shadow-sm ring-2 ring-sky-200",
 }
+const SCORE_INACTIVE: Record<ScoreTone, string> = {
+  hot: "bg-white text-rose-700 border-rose-200 hover:bg-rose-50",
+  mid: "bg-white text-amber-800 border-amber-200 hover:bg-amber-50",
+  cold: "bg-white text-sky-700 border-sky-200 hover:bg-sky-50",
+}
+const SCORE_BADGE: Record<ScoreTone, string> = { hot: "bg-rose-100", mid: "bg-amber-100", cold: "bg-sky-100" }
+/** "Hot" (Leads list, new-lead form) and "hot" (older saves here) are the same level. */
+const sameScore = (a: string | null | undefined, b: string) => (a ?? "").trim().toLowerCase() === b.trim().toLowerCase()
 
 const NOT_CONNECTED_REASONS = [
   { key: "out_of_coverage", label: "Out of Coverage" },
@@ -141,6 +152,33 @@ export default function LeadDetailPage() {
   const [recording, setRecording] = useState<"connected" | "not_connected" | null>(null)
 
   const [copied, setCopied] = useState<string | null>(null)
+  const [scoreOptions, setScoreOptions] = useState<ScoreOption[]>(DEFAULT_SCORES)
+  const [savingScore, setSavingScore] = useState<string | null>(null)
+  const [moreOpen, setMoreOpen] = useState(false)
+
+  // The account's own score levels, so the buttons match the Leads list.
+  useEffect(() => {
+    let current = true
+    apiFetch("/api/leads/settings")
+      .then((r) => r.json())
+      .then((sr: { score_options?: unknown }) => {
+        if (!current || !Array.isArray(sr.score_options) || sr.score_options.length === 0) return
+        const list = sr.score_options
+          .map((v: unknown) => (typeof v === "string" ? { icon: "", label: v } : (v as ScoreOption)))
+          .filter((o) => o && typeof o.label === "string" && o.label.trim() !== "")
+        if (list.length > 0) setScoreOptions(list)
+      })
+      .catch((err) => console.warn("[lead] score levels failed:", err))
+    return () => { current = false }
+  }, [])
+
+  // The phone menu closes on Escape.
+  useEffect(() => {
+    if (!moreOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMoreOpen(false) }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [moreOpen])
   const [contactEditOpen, setContactEditOpen] = useState(false)
   const [contactEditData, setContactEditData] = useState<Contact | null>(null)
   const [contactEditLoading, setContactEditLoading] = useState(false)
@@ -359,7 +397,9 @@ export default function LeadDetailPage() {
   }
 
   async function setScore(score: string) {
-    await patchLead({ score })
+    if (savingScore) return
+    setSavingScore(score)
+    try { await patchLead({ score }) } finally { setSavingScore(null) }
   }
 
   async function recordConnected() {
@@ -618,17 +658,18 @@ export default function LeadDetailPage() {
   // Null unless this lead is closed; then 'won', 'lost' or plain
   // 'closed' when nobody recorded which.
   const leadOutcome = outcomeOf(lead)
+  const scoreIndex = scoreOptions.findIndex((o) => sameScore(lead.score, o.label))
 
   return (
     <div className="flex flex-col h-full bg-[#F4F6FA]">
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-4 bg-white border-b border-slate-100 shrink-0">
+      <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-6 py-3 sm:py-4 bg-white border-b border-slate-100 shrink-0">
         <button onClick={() => router.push("/leads")} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100 shrink-0" aria-label="Back">
           <ArrowLeft className="h-4 w-4 text-slate-500" />
         </button>
         <div className="flex items-center gap-2 min-w-0 flex-1 text-[14px]">
-          <button onClick={() => router.push("/leads")} className="text-slate-400 hover:text-slate-600 shrink-0">Leads</button>
-          <span className="text-slate-300 shrink-0">/</span>
+          <button onClick={() => router.push("/leads")} className="hidden sm:inline text-slate-400 hover:text-slate-600 shrink-0">Leads</button>
+          <span className="hidden sm:inline text-slate-300 shrink-0" aria-hidden="true">/</span>
           <span className="font-bold text-slate-800 truncate">{lead.title}</span>
           {/* A closed lead says how it ended. "Closed" was the same
               word for somebody who signed up and somebody who went
@@ -646,7 +687,7 @@ export default function LeadDetailPage() {
           </span>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0 rounded-xl border border-slate-200 p-0.5">
+        <div className="hidden sm:flex items-center gap-1 shrink-0 rounded-xl border border-slate-200 p-0.5">
           <button onClick={() => goTo(prevId)} disabled={!prevId}
             className="flex items-center justify-center h-7 w-7 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent" aria-label="Previous">
             <ChevronLeft className="h-3.5 w-3.5 text-slate-500" />
@@ -660,19 +701,60 @@ export default function LeadDetailPage() {
         {/* Start/re-engage a chat — pre-filled with this lead's own number,
             so re-typing what's already on screen isn't needed. Still
             editable, e.g. for the contact's alternate phone instead. */}
-        <NewChatDialog
-          className="flex items-center justify-center h-8 w-8 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-100 shrink-0"
-          initialPhone={phone ?? undefined}
-          initialName={lead.contact?.name ?? undefined}
-        />
+        <span className="hidden sm:inline-flex">
+          <NewChatDialog
+            className="flex items-center justify-center h-8 w-8 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-100 shrink-0"
+            initialPhone={phone ?? undefined}
+            initialName={lead.contact?.name ?? undefined}
+          />
+        </span>
 
         <button onClick={() => setCloseDialogOpen(true)}
-          className="flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-rose-50 text-rose-700 text-[12px] font-semibold hover:bg-rose-100 shrink-0">
+          className="hidden sm:flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-rose-50 text-rose-700 text-[12px] font-semibold hover:bg-rose-100 shrink-0">
           Close Lead
         </button>
 
+        {/* Phone: every header action in one menu. Always mounted and shown
+            with CSS: New chat owns its popup, which unmounting the menu
+            would destroy (the Inbox More menu does the same). */}
+        <div className="relative shrink-0 sm:hidden">
+          <button type="button" onClick={() => setMoreOpen((v) => !v)} aria-label="More actions" aria-expanded={moreOpen} aria-haspopup="menu"
+            className={cn("flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100", moreOpen && "bg-slate-100")}>
+            <MoreVertical className="h-4 w-4" aria-hidden="true" />
+          </button>
+          {moreOpen && <div className="fixed inset-0 z-40" aria-hidden="true" onClick={() => setMoreOpen(false)} />}
+          <div role="menu" aria-label="Lead actions"
+            className={cn("absolute right-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl",
+              moreOpen ? "visible opacity-100" : "invisible pointer-events-none opacity-0")}>
+            <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); void saveDetails() }} disabled={savingDetails}
+              className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-[13px] font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50">
+              {savingDetails ? <Loader2 className="h-4 w-4 animate-spin text-indigo-600" aria-hidden="true" /> : <Check className="h-4 w-4 text-indigo-600" aria-hidden="true" />} Save changes
+            </button>
+            <NewChatDialog
+              label="New chat"
+              onOpen={() => setMoreOpen(false)}
+              initialPhone={phone ?? undefined}
+              initialName={lead.contact?.name ?? undefined}
+              className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-[13px] font-medium text-slate-800 hover:bg-slate-50"
+            />
+            <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); goTo(prevId) }} disabled={!prevId}
+              className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-[13px] font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-40">
+              <ChevronLeft className="h-4 w-4 text-slate-500" aria-hidden="true" /> Previous lead
+            </button>
+            <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); goTo(nextId) }} disabled={!nextId}
+              className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-[13px] font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-40">
+              <ChevronRight className="h-4 w-4 text-slate-500" aria-hidden="true" /> Next lead
+            </button>
+            <div className="mx-3 my-1 border-t border-slate-100" />
+            <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); setCloseDialogOpen(true) }}
+              className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-[13px] font-semibold text-rose-700 hover:bg-rose-50">
+              <X className="h-4 w-4" aria-hidden="true" /> Close lead
+            </button>
+          </div>
+        </div>
+
         <button onClick={saveDetails} disabled={savingDetails}
-          className="flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-indigo-600 text-white text-[12px] font-semibold hover:bg-indigo-700 disabled:opacity-60 shrink-0">
+          className="hidden sm:flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-indigo-600 text-white text-[12px] font-semibold hover:bg-indigo-700 disabled:opacity-60 shrink-0">
           {savingDetails ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save
         </button>
       </div>
@@ -692,14 +774,14 @@ export default function LeadDetailPage() {
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-[20px] font-black text-white @3xl:h-14 @3xl:w-14 @3xl:text-[22px]">
                   {displayName.slice(0, 1).toUpperCase()}
                 </div>
-                {lead.score && (
+                {scoreIndex >= 0 && (
                   <span
-                    title={`${lead.score} lead`}
-                    className={cn("absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full text-[12px] shadow-sm ring-2 ring-white",
-                      lead.score === "hot" ? "bg-rose-100" : lead.score === "warm" ? "bg-amber-100" : "bg-sky-100")}
+                    title={`${scoreOptions[scoreIndex].label} lead`}
+                    className={cn("absolute -right-2 -top-2 flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[11px] font-bold text-slate-700 shadow-sm ring-2 ring-white",
+                      SCORE_BADGE[scoreTone(scoreIndex, scoreOptions.length)])}
                   >
-                    <span aria-hidden="true">{SCORE_OPTIONS.find((s) => s.key === lead.score)?.emoji}</span>
-                    <span className="sr-only">{lead.score} lead</span>
+                    <span aria-hidden="true">{scoreOptions[scoreIndex].icon || scoreOptions[scoreIndex].label.slice(0, 1).toUpperCase()}</span>
+                    <span className="sr-only">{scoreOptions[scoreIndex].label} lead</span>
                   </span>
                 )}
               </div>
@@ -857,16 +939,33 @@ export default function LeadDetailPage() {
                   </div>
                 )}
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Lead Score</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {SCORE_OPTIONS.map((s) => (
-                      <button key={s.key} onClick={() => setScore(s.key)}
-                        className={cn("h-9 rounded-xl border text-[12px] font-semibold flex items-center justify-center gap-1 transition-colors",
-                          lead.score === s.key ? SCORE_ACTIVE[s.key] : SCORE_INACTIVE[s.key])}>
-                        {s.emoji} {s.label}
-                      </button>
-                    ))}
+                  <p id="lead-score-label" className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                    Lead score
+                    <span className="ml-1.5 font-medium normal-case tracking-normal text-slate-700">
+                      · {scoreIndex >= 0 ? scoreOptions[scoreIndex].label : "not set"}
+                    </span>
+                  </p>
+                  {/* Coldest first, so the row reads cold → warm → hot. */}
+                  <div role="group" aria-labelledby="lead-score-label" className="grid gap-2"
+                    style={{ gridTemplateColumns: `repeat(${Math.min(scoreOptions.length, 4)}, minmax(0, 1fr))` }}>
+                    {scoreOptions.map((o, i) => ({ o, tone: scoreTone(i, scoreOptions.length) })).reverse().map(({ o, tone }) => {
+                      const on = sameScore(lead.score, o.label)
+                      let mark: React.ReactNode = o.icon ? <span aria-hidden="true">{o.icon}</span> : null
+                      if (on) mark = <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      if (savingScore === o.label) mark = <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                      return (
+                        <button key={o.label} type="button" aria-pressed={on} onClick={() => void setScore(o.label)} disabled={savingScore !== null}
+                          className={cn("h-9 min-w-0 rounded-xl border px-1 text-[12px] font-semibold flex items-center justify-center gap-1 transition-colors disabled:opacity-70",
+                            on ? SCORE_ACTIVE[tone] : SCORE_INACTIVE[tone])}>
+                          {mark}
+                          <span className="truncate">{o.label}</span>
+                        </button>
+                      )
+                    })}
                   </div>
+                </div>
+                <div className="space-y-1.5">
+                  <LeadTags contactId={contactId} />
                 </div>
                 {/* Notes — same list/expand/delete UX as the Inbox contact sidebar */}
                 <div className="space-y-1.5">
@@ -943,72 +1042,78 @@ export default function LeadDetailPage() {
               </div>
             </div>
 
-            {/* The business's own funnel stage; hidden until stages are set up. */}
-            <LeadStageCard leadId={id} onChanged={loadLead} />
+            {/* One column: log the call first, then the stage it reached.
+                As tall as the Lead Details card beside it: the last card
+                stretches, so no gap is left under the column. */}
+            <div className="flex flex-col gap-4 [&>*:last-child]:flex-1">
+              {/* Log Call Outcome */}
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-4">
+                  <Phone className="h-3.5 w-3.5" /> Log Call Outcome
+                </p>
+
+                {/* Mode switch — only one of Connected / Call Not Connected is
+                    editable at a time, chosen here instead of both being
+                    simultaneously live. */}
+                <div className="mb-4 grid grid-cols-2 gap-2">
+                  <label className={cn(
+                    "flex cursor-pointer items-center gap-2 rounded-xl border-2 px-3 py-2 transition-all",
+                    callMode === "connected" ? "border-emerald-400 bg-emerald-50" : "border-slate-100 bg-white hover:border-emerald-200",
+                  )}>
+                    <input autoComplete="off" type="radio" name="call-mode" checked={callMode === "connected"}
+                      onChange={() => setCallMode("connected")} className="accent-emerald-500" />
+                    <span className={cn("text-[12.5px] font-bold", callMode === "connected" ? "text-emerald-700" : "text-slate-500")}>Connected</span>
+                  </label>
+                  <label className={cn(
+                    "flex cursor-pointer items-center gap-2 rounded-xl border-2 px-3 py-2 transition-all",
+                    callMode === "not_connected" ? "border-rose-400 bg-rose-50" : "border-slate-100 bg-white hover:border-rose-200",
+                  )}>
+                    <input autoComplete="off" type="radio" name="call-mode" checked={callMode === "not_connected"}
+                      onChange={() => setCallMode("not_connected")} className="accent-rose-500" />
+                    <span className={cn("text-[12.5px] font-bold", callMode === "not_connected" ? "text-rose-700" : "text-slate-500")}>Call Not Connected</span>
+                  </label>
+                </div>
+
+                {callMode === "connected" ? (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 space-y-2.5">
+                    <p className="flex items-center gap-2 text-[13px] font-bold text-emerald-700">
+                      <Phone className="h-4 w-4" /> Connected
+                    </p>
+                    <select value={connectedChoice} onChange={(e) => setConnectedChoice(e.target.value)}
+                      className="w-full h-9 rounded-xl border border-emerald-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-100">
+                      <option value="">Choose outcome…</option>
+                      {CONNECTED_OUTCOMES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                    </select>
+                    <button onClick={recordConnected} disabled={!connectedChoice || recording !== null}
+                      className="w-full h-10 rounded-xl bg-emerald-500 text-white text-[13px] font-bold hover:bg-emerald-600 disabled:opacity-50 flex items-center justify-center gap-2">
+                      {recording === "connected" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Record Outcome
+                    </button>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 space-y-2.5">
+                    <p className="flex items-center gap-2 text-[13px] font-bold text-rose-700">
+                      <PhoneOff className="h-4 w-4" /> Call Not Connected
+                    </p>
+                    <select value={notConnectedChoice} onChange={(e) => setNotConnectedChoice(e.target.value)}
+                      className="w-full h-9 rounded-xl border border-rose-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-100">
+                      <option value="">Choose reason…</option>
+                      {NOT_CONNECTED_REASONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                    </select>
+                    <button onClick={recordNotConnected} disabled={!notConnectedChoice || recording !== null}
+                      className="w-full h-10 rounded-xl bg-rose-500 text-white text-[13px] font-bold hover:bg-rose-600 disabled:opacity-50 flex items-center justify-center gap-2">
+                      {recording === "not_connected" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Record Outcome
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* The business's own funnel stage; hidden until stages are set up. */}
+              <LeadStageCard leadId={id} onChanged={loadLead} />
+            </div>
 
             {/* Which ad brought this lead in; hidden when none did. */}
             <LeadAdCard leadId={id} />
 
-            {/* Log Call Outcome */}
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-              <p className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-4">
-                <Phone className="h-3.5 w-3.5" /> Log Call Outcome
-              </p>
-
-              {/* Mode switch — only one of Connected / Call Not Connected is
-                  editable at a time, chosen here instead of both being
-                  simultaneously live. */}
-              <div className="mb-4 grid grid-cols-2 gap-2">
-                <label className={cn(
-                  "flex cursor-pointer items-center gap-2 rounded-xl border-2 px-3 py-2 transition-all",
-                  callMode === "connected" ? "border-emerald-400 bg-emerald-50" : "border-slate-100 bg-white hover:border-emerald-200",
-                )}>
-                  <input autoComplete="off" type="radio" name="call-mode" checked={callMode === "connected"}
-                    onChange={() => setCallMode("connected")} className="accent-emerald-500" />
-                  <span className={cn("text-[12.5px] font-bold", callMode === "connected" ? "text-emerald-700" : "text-slate-500")}>Connected</span>
-                </label>
-                <label className={cn(
-                  "flex cursor-pointer items-center gap-2 rounded-xl border-2 px-3 py-2 transition-all",
-                  callMode === "not_connected" ? "border-rose-400 bg-rose-50" : "border-slate-100 bg-white hover:border-rose-200",
-                )}>
-                  <input autoComplete="off" type="radio" name="call-mode" checked={callMode === "not_connected"}
-                    onChange={() => setCallMode("not_connected")} className="accent-rose-500" />
-                  <span className={cn("text-[12.5px] font-bold", callMode === "not_connected" ? "text-rose-700" : "text-slate-500")}>Call Not Connected</span>
-                </label>
-              </div>
-
-              {callMode === "connected" ? (
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 space-y-2.5">
-                  <p className="flex items-center gap-2 text-[13px] font-bold text-emerald-700">
-                    <Phone className="h-4 w-4" /> Connected
-                  </p>
-                  <select value={connectedChoice} onChange={(e) => setConnectedChoice(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-emerald-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-100">
-                    <option value="">Choose outcome…</option>
-                    {CONNECTED_OUTCOMES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-                  </select>
-                  <button onClick={recordConnected} disabled={!connectedChoice || recording !== null}
-                    className="w-full h-10 rounded-xl bg-emerald-500 text-white text-[13px] font-bold hover:bg-emerald-600 disabled:opacity-50 flex items-center justify-center gap-2">
-                    {recording === "connected" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Record Outcome
-                  </button>
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 space-y-2.5">
-                  <p className="flex items-center gap-2 text-[13px] font-bold text-rose-700">
-                    <PhoneOff className="h-4 w-4" /> Call Not Connected
-                  </p>
-                  <select value={notConnectedChoice} onChange={(e) => setNotConnectedChoice(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-rose-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-100">
-                    <option value="">Choose reason…</option>
-                    {NOT_CONNECTED_REASONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-                  </select>
-                  <button onClick={recordNotConnected} disabled={!notConnectedChoice || recording !== null}
-                    className="w-full h-10 rounded-xl bg-rose-500 text-white text-[13px] font-bold hover:bg-rose-600 disabled:opacity-50 flex items-center justify-center gap-2">
-                    {recording === "not_connected" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Record Outcome
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
 
           {/* Timeline — below the grid, reached by scrolling */}
