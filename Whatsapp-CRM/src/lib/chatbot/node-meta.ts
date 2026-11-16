@@ -84,6 +84,8 @@ export const CHANNEL_INCOMPATIBLE_NODES: Record<string, Set<ChatbotNodeType>> = 
   website: WEBSITE_INCOMPATIBLE,
   telegram: TELEGRAM_INCOMPATIBLE,
   instagram: INSTAGRAM_INCOMPATIBLE,
+  // Messenger has the same Send API as Instagram: same WhatsApp-only gaps.
+  facebook: INSTAGRAM_INCOMPATIBLE,
   sms: TEXT_ONLY_CHANNEL_INCOMPATIBLE,
   email: TEXT_ONLY_CHANNEL_INCOMPATIBLE,
   rcs: TEXT_ONLY_CHANNEL_INCOMPATIBLE,

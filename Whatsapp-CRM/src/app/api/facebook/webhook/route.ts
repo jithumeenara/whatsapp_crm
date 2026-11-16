@@ -261,7 +261,7 @@ async function processFacebookWebhook(body: FbWebhookBody, scope: SocialWebhookS
           accountId:         config.account_id,
           accessToken:       config.access_token ?? "",
           senderPsid,
-          messageId:         event.postback.mid ?? `fb_pb_${Date.now()}`,
+          messageId:         event.postback.mid ?? `fb_pb_${senderPsid}_${event.timestamp}`,
           text:              event.postback.title ?? null,
           attachments:       [],
           timestamp:         event.timestamp,
@@ -543,11 +543,26 @@ async function processFbMessage({
   if (!ownerProfile) return
   const ownerUserId = ownerProfile.user_id
 
-  const contact = await findOrCreateFbContact(accountId, ownerUserId, senderPsid, accessToken)
+  const existedBefore = await prisma.contact.findFirst({
+    where: { account_id: accountId, facebook_id: senderPsid },
+    select: { id: true },
+  })
+  const contact = await findOrCreateFbContact(accountId, ownerUserId, senderPsid, accessToken, !existedBefore)
   if (!contact) return
+  const wasCreated = !existedBefore
 
   const conversation = await findOrCreateFbConversation(accountId, ownerUserId, contact.id)
   if (!conversation) return
+
+  // Meta resends a notification it is not sure arrived (for up to 36
+  // hours). The same message must not be saved twice or answered twice.
+  if (messageId) {
+    const already = await prisma.message.findFirst({
+      where: { conversation_id: conversation.id, message_id: messageId },
+      select: { id: true },
+    })
+    if (already) return
+  }
 
   // Which ad brought them in (Click-to-Messenger). Never throws.
   const adReferral = referralFromMeta(referral)
@@ -630,15 +645,34 @@ async function processFbMessage({
     where: { conversation_id: conversation.id, sender_type: "customer" },
   }).catch(() => 1)
 
-  dispatchInboundToFlows({
+  const isFirstInboundMessage = msgCount <= 1
+  const flowResult = await dispatchInboundToFlows({
     accountId,
     userId:         ownerUserId,
     contactId:      contact.id,
     conversationId: conversation.id,
     channel:        "facebook",
     message:        engineMessage,
-    isFirstInboundMessage: msgCount <= 1,
-  }).catch((err) => console.error("[Facebook] dispatchInboundToFlows error:", err))
+    isFirstInboundMessage,
+  }).catch((err) => {
+    console.error("[Facebook] dispatchInboundToFlows error:", err)
+    return { consumed: false as const, outcome: "no_match" as const }
+  })
+
+  // Automations, the same way as WhatsApp and Instagram: a flow that
+  // consumed the message wins, so the customer never gets two replies.
+  const triggers: ("new_contact_created" | "first_inbound_message" | "new_message_received" | "keyword_match")[] = []
+  if (!flowResult.consumed) triggers.push("new_message_received", "keyword_match")
+  if (wasCreated) triggers.unshift("new_contact_created")
+  if (isFirstInboundMessage) triggers.unshift("first_inbound_message")
+  for (const triggerType of triggers) {
+    runAutomationsForTrigger({
+      accountId,
+      triggerType,
+      contactId: contact.id,
+      context: { message_text: contentText ?? "", conversation_id: conversation.id },
+    }).catch((err) => console.error("[automations] Messenger dispatch failed:", err))
+  }
 }
 
 async function findOrCreateFbContact(
@@ -646,14 +680,15 @@ async function findOrCreateFbContact(
   ownerUserId: string,
   psid: string,
   accessToken: string,
+  isNew: boolean,
 ) {
-  // Try to fetch the real name from Facebook Graph API.
+  // The real name, fetched once for a new contact (not on every message).
   // Requires "Business Asset User Profile Access" feature on the Meta app.
   let displayName: string | null = null
-  if (accessToken) {
+  if (accessToken && isNew && /^\d{1,30}$/.test(psid)) {
     try {
       const res = await fetch(
-        `https://graph.facebook.com/v21.0/${psid}?fields=name,first_name,last_name&access_token=${accessToken}`,
+        `https://graph.facebook.com/v21.0/${psid}?fields=name,first_name,last_name&access_token=${encodeURIComponent(accessToken)}`,
         { cache: "no-store" }
       )
       if (res.ok) {
@@ -695,8 +730,8 @@ async function findOrCreateFbContact(
         opt_in_source:    "facebook_inbound",
         opt_in_at:        new Date(),
       },
-      // Update name if we got a real name from the API (replaces old PSID or "Messenger User" default)
-      update: displayName ? { name: displayName } : {},
+      // An existing contact keeps its name: an agent may have corrected it.
+      update: {},
     })
   } catch (err) {
     console.error("[Facebook] contact upsert failed:", err)

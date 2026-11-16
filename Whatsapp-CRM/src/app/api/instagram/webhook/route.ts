@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { graphHost, messagesUrl } from "@/lib/meta/social-messaging"
 import { sameToken, scopeAllows, socialWebhookScope, type SocialWebhookScope } from "@/lib/social/webhook-secrets"
 import { prisma } from "@/lib/db"
 import { recordAdTouch, referralFromMeta } from "@/lib/ads/attribution"
@@ -249,7 +250,7 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
       const val = change.value
       const senderIgsid = val?.sender?.id
       if (!senderIgsid || senderIgsid === instagramAccountId) continue
-      const ts = typeof val.timestamp === "string" ? parseInt(val.timestamp) : (val.timestamp ?? Date.now() / 1000)
+      const ts = toMs(typeof val.timestamp === "string" ? parseInt(val.timestamp) : val.timestamp)
 
       // Regular message (text, media, quick reply tap, story reply)
       if (change.field === "messages") {
@@ -259,8 +260,10 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
         await processIgMessage({
           accountId:         config.account_id,
           accessToken:       config.access_token ?? "",
+          igAccountId:       config.instagram_account_id ?? null,
+          pageId:            config.page_id ?? null,
           senderIgsid,
-          messageId:         msg.mid ?? `ig_${Date.now()}`,
+          messageId:         msg.mid ?? `ig_${senderIgsid}_${ts}`,
           text:              msg.text ?? null,
           attachments:       msg.attachments ?? [],
           timestamp:         ts,
@@ -281,8 +284,10 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
         await processIgMessage({
           accountId:         config.account_id,
           accessToken:       config.access_token ?? "",
+          igAccountId:       config.instagram_account_id ?? null,
+          pageId:            config.page_id ?? null,
           senderIgsid,
-          messageId:         postback.mid ?? `ig_pb_${Date.now()}`,
+          messageId:         postback.mid ?? `ig_pb_${senderIgsid}_${ts}`,
           text:              postback.title ?? null,
           attachments:       [],
           timestamp:         ts,
@@ -298,7 +303,7 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
     for (const event of entry.messaging ?? []) {
       const senderIgsid = event.sender.id
       if (senderIgsid === instagramAccountId) continue
-      const ts = typeof event.timestamp === "string" ? parseInt(event.timestamp) : event.timestamp
+      const ts = toMs(typeof event.timestamp === "string" ? parseInt(event.timestamp) : event.timestamp)
 
       if (event.message) {
         const msg = event.message
@@ -306,6 +311,8 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
         await processIgMessage({
           accountId:         config.account_id,
           accessToken:       config.access_token ?? "",
+          igAccountId:       config.instagram_account_id ?? null,
+          pageId:            config.page_id ?? null,
           senderIgsid,
           messageId:         msg.mid,
           text:              msg.text ?? null,
@@ -324,8 +331,10 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
         await processIgMessage({
           accountId:         config.account_id,
           accessToken:       config.access_token ?? "",
+          igAccountId:       config.instagram_account_id ?? null,
+          pageId:            config.page_id ?? null,
           senderIgsid,
-          messageId:         postback.mid ?? `ig_pb_${Date.now()}`,
+          messageId:         postback.mid ?? `ig_pb_${senderIgsid}_${ts}`,
           text:              postback.title ?? null,
           attachments:       [],
           timestamp:         ts,
@@ -342,6 +351,8 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
 async function processIgMessage({
   accountId,
   accessToken,
+  igAccountId,
+  pageId,
   senderIgsid,
   messageId,
   text,
@@ -354,6 +365,8 @@ async function processIgMessage({
 }: {
   accountId:         string
   accessToken:       string
+  igAccountId:       string | null
+  pageId:            string | null
   senderIgsid:       string
   messageId:         string
   text:              string | null
@@ -374,7 +387,7 @@ async function processIgMessage({
   const ownerUserId = ownerProfile.user_id
 
   // --- Find or create contact ---
-  const contactOutcome = await findOrCreateIgContact(accountId, ownerUserId, senderIgsid, accessToken)
+  const contactOutcome = await findOrCreateIgContact(accountId, ownerUserId, senderIgsid, accessToken, igAccountId)
   if (!contactOutcome) return
   const { contact, wasCreated } = contactOutcome
 
@@ -408,6 +421,16 @@ async function processIgMessage({
   }
 
   if (!contentText && !mediaUrl) contentText = "[message]"
+
+  // Meta resends a notification it is not sure arrived (for up to 36
+  // hours). The same message must not be saved twice or answered twice.
+  if (messageId) {
+    const already = await prisma.message.findFirst({
+      where: { conversation_id: conversation.id, message_id: messageId },
+      select: { id: true },
+    })
+    if (already) return
+  }
 
   // --- Save message ---
   try {
@@ -452,7 +475,7 @@ async function processIgMessage({
   // --- Mark message as seen (per Meta best practices) ---
   if (accessToken) {
     fetch(
-      `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(accessToken)}`,
+      `${messagesUrl({ channel: "instagram", token: accessToken, igAccountId, pageId })}?access_token=${encodeURIComponent(accessToken)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -617,6 +640,7 @@ async function findOrCreateIgContact(
   ownerUserId: string,
   igsid: string,
   accessToken: string,
+  _igAccountId: string | null = null,
 ) {
   // Matched by exact equality on the dedicated instagram_id column — NOT
   // findExistingContact's fuzzy last-8-digit phone matching, which is meant
@@ -630,10 +654,10 @@ async function findOrCreateIgContact(
 
   // Try to fetch the user's display name from Instagram Graph API
   let displayName = igsid
-  if (accessToken) {
+  if (accessToken && /^\d{1,30}$/.test(igsid)) {
     try {
       const res = await fetch(
-        `https://graph.instagram.com/v21.0/${igsid}?fields=name,username&access_token=${accessToken}`,
+        `${graphHost("instagram", accessToken)}/${igsid}?fields=name,username&access_token=${encodeURIComponent(accessToken)}`,
         { cache: "no-store" }
       )
       if (res.ok) {
@@ -716,4 +740,10 @@ async function findOrCreateIgConversation(
     console.error("[Instagram] conversation create failed:", err)
     return null
   }
+}
+
+/** Meta sends some timestamps in seconds and some in milliseconds. */
+function toMs(ts: number | undefined | null): number {
+  if (typeof ts !== "number" || !Number.isFinite(ts) || ts <= 0) return Date.now()
+  return ts < 1e12 ? ts * 1000 : ts
 }

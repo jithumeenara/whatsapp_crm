@@ -32,6 +32,7 @@ import {
 } from '@/lib/whatsapp/phone-utils'
 import { prisma } from '@/lib/db'
 import { sendToWebsiteVisitor } from '@/lib/webchat/outbound'
+import { loadSocialTarget, socialPost, socialSenderAction, type SocialChannel, type SocialTarget } from '@/lib/meta/social-messaging'
 
 interface SendTextEngineArgs {
   accountId: string
@@ -192,88 +193,82 @@ function convertMarkdownForInstagram(text: string): string {
     .replace(/~([^~\n]+)~/g,   '$1')
 }
 
-/**
- * Instagram Sender Actions — typing_on, typing_off, mark_seen.
- * Fire-and-forget: errors are swallowed so they never block the main message send.
- */
-async function sendIgSenderAction(
-  igsid: string,
-  token: string,
-  action: 'typing_on' | 'typing_off' | 'mark_seen',
-) {
-  await fetch(
-    `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(token)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recipient: { id: igsid }, sender_action: action }),
-    }
-  ).catch((e) => console.warn('[sendIgSenderAction] non-critical error:', e?.message))
+// ── Messenger + Instagram (shared) ────────────────────────────────────
+// Where and to whom: src/lib/meta/social-messaging.ts (host by token type,
+// the contact's IGSID/PSID, plain-language Meta errors).
+
+const SOCIAL_LABEL: Record<SocialChannel, string> = { instagram: 'Instagram', facebook: 'Messenger' }
+
+function isSocial(channel: string | null | undefined): channel is SocialChannel {
+  return channel === 'instagram' || channel === 'facebook'
 }
 
-async function engineSendTextInstagram(args: SendTextEngineArgs): Promise<{ whatsapp_message_id: string }> {
-  const contact = await prisma.contact.findFirst({
-    where: { id: args.contactId, account_id: args.accountId },
-    select: { phone: true },
-  })
-  if (!contact?.phone) throw new Error('Instagram contact not found')
-
-  const rows = await prisma.$queryRaw<{ access_token: string }[]>`
-    SELECT access_token FROM instagram_config WHERE account_id = ${args.accountId}::uuid LIMIT 1
-  `
-  // Sealed on save (A8-09); older rows are plain — openStoredSecret reads both.
-  const token = openStoredSecret(rows[0]?.access_token)
-  if (!token) throw new Error('Instagram not configured for this account')
-
-  // Show typing indicator before sending (natural conversational feel)
-  await sendIgSenderAction(contact.phone, token, 'typing_on')
-
-  const igText = convertMarkdownForInstagram(args.text)
-  const body = {
-    recipient: { id: contact.phone },
-    message: { text: igText },
-    messaging_type: 'RESPONSE',  // required per Meta docs for replies within 24h window
-  }
-  console.log('[engineSendTextInstagram] sending to IGSID:', contact.phone, '| text:', igText.slice(0, 50))
-  const res = await fetch(
-    `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(token)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }
-  )
-  const data = await res.json() as { message_id?: string; recipient_id?: string; error?: { message: string; code?: number; error_subcode?: number; fbtrace_id?: string } }
-  if (!res.ok || data.error) {
-    const msg = data.error?.message ?? `Instagram send failed: ${res.status}`
-    console.error('[engineSendTextInstagram] API error:', JSON.stringify(data), '| accountId:', args.accountId, '| igsid:', contact.phone)
-    throw new Error(msg)
-  }
-  console.log('[engineSendTextInstagram] sent OK. message_id:', data.message_id, '| recipient_id:', data.recipient_id)
-
-  const igMid = data.message_id ?? `ig_bot_${Date.now()}`
+/** Saves the bot's message, touches the conversation, tells the Inbox. */
+async function persistSocialBotMessage(
+  args: { accountId: string; conversationId: string },
+  row: { contentType: string; text: string; mediaUrl?: string | null; messageId: string },
+) {
   const savedMsg = await prisma.message.create({
-    data: { conversation_id: args.conversationId, sender_type: 'bot', content_type: 'text', content_text: args.text, message_id: igMid, status: 'sent' },
+    data: {
+      conversation_id: args.conversationId, sender_type: 'bot', content_type: row.contentType,
+      content_text: row.text, ...(row.mediaUrl ? { media_url: row.mediaUrl } : {}), message_id: row.messageId, status: 'sent',
+    },
   })
   const lastMessageAt = new Date()
   await prisma.conversation.update({
     where: { id: args.conversationId },
-    data: { last_message_text: args.text, last_message_at: lastMessageAt },
+    data: { last_message_text: row.text, last_message_at: lastMessageAt },
   })
-  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: args.text, last_message_at: lastMessageAt.toISOString() })
-  return { whatsapp_message_id: igMid }
+  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: row.text, last_message_at: lastMessageAt.toISOString() })
+}
+
+async function engineSendTextSocial(args: SendTextEngineArgs, channel: SocialChannel): Promise<{ whatsapp_message_id: string }> {
+  const target = await loadSocialTarget(args.accountId, args.contactId, channel)
+  // Typing indicator first, for a natural feel (never blocks the send).
+  await socialSenderAction(target, 'typing_on')
+  const text = convertMarkdownForInstagram(args.text)
+  const { messageId } = await socialPost(target, {
+    recipient: { id: target.recipientId },
+    message: { text },
+    messaging_type: 'RESPONSE',
+  })
+  const mid = messageId ?? `${channel === 'instagram' ? 'ig' : 'fb'}_bot_${Date.now()}`
+  await persistSocialBotMessage(args, { contentType: 'text', text: args.text, messageId: mid })
+  return { whatsapp_message_id: mid }
 }
 
 /**
- * Every bot send in this file was creating its Message row + touching the
- * Conversation row completely silently — no `emitToAccount`, unlike every
- * inbound webhook and the agent-send API route, which both emit on every
- * message/conversation write. That meant a chatbot/flow reply never showed
- * up in the Inbox in real time; an agent watching the thread only saw it
- * after a manual refresh (or some unrelated event happened to trigger a
- * refetch). This is the fix, centralized so every send function below
- * calls it instead of re-deriving the same two emits 11 times over.
+ * Button template, both channels: postback buttons come back as
+ * messaging_postbacks with payload = the node's reply id; a web_url button
+ * opens the link. At most 3 buttons, 20-character titles, 640-character text.
  */
+async function engineSendButtonTemplateSocial(
+  args: { accountId: string; contactId: string; conversationId: string },
+  channel: SocialChannel,
+  text: string,
+  buttons: Array<{ type: 'postback'; title: string; payload: string } | { type: 'web_url'; title: string; url: string }>,
+): Promise<{ whatsapp_message_id: string }> {
+  const target = await loadSocialTarget(args.accountId, args.contactId, channel)
+  await socialSenderAction(target, 'typing_on')
+  const { messageId } = await socialPost(target, {
+    recipient: { id: target.recipientId },
+    message: {
+      attachment: {
+        type: 'template',
+        payload: {
+          template_type: 'button',
+          text: (text ?? '').slice(0, 640) || 'Choose an option:',
+          buttons: buttons.slice(0, 3).map((b) => ({ ...b, title: b.title.slice(0, 20) })),
+        },
+      },
+    },
+    messaging_type: 'RESPONSE',
+  })
+  const mid = messageId ?? `${channel === 'instagram' ? 'ig' : 'fb'}_btn_${Date.now()}`
+  await persistSocialBotMessage(args, { contentType: 'text', text, messageId: mid })
+  return { whatsapp_message_id: mid }
+}
+
 async function notifyBotMessage(
   accountId: string,
   message: unknown,
@@ -345,6 +340,7 @@ async function telegramSend(
 function notOnChannel(channel: string | null, what: string): void {
   if (channel === 'website') throw new Error(`${what} cannot be sent to a website chat. Use a text, buttons or list step instead.`)
   if (channel === 'telegram') throw new Error(`${what} cannot be sent on Telegram. Use a text, buttons or list step instead.`)
+  if (isSocial(channel)) throw new Error(`${what} cannot be sent on ${SOCIAL_LABEL[channel]}. Use a text, buttons or list step instead.`)
 }
 
 function withHeaderFooter(body: string, header?: string, footer?: string): string {
@@ -402,7 +398,7 @@ export async function engineSendText(
   `.catch(() => [] as { channel: string | null }[])
   const channel = convRows[0]?.channel
 
-  if (channel === 'instagram') return engineSendTextInstagram(args)
+  if (isSocial(channel)) return engineSendTextSocial(args, channel)
   if (channel === 'sms') return engineSendTextSms(args)
   if (channel === 'rcs') return engineSendTextRcs(args)
   if (channel === 'email') return engineSendTextEmail(args)
@@ -418,7 +414,7 @@ export async function engineSendText(
     })
     if (contactRow?.phone && /^\d+$/.test(contactRow.phone) && !contactRow.phone.startsWith('+')) {
       console.warn('[engineSendText] channel NULL but phone looks like IGSID — routing to Instagram')
-      return engineSendTextInstagram(args)
+      return engineSendTextSocial(args, 'instagram')
     }
   }
 
@@ -447,7 +443,8 @@ export async function engineSendMedia(
   const convRows = await prisma.$queryRaw<{ channel: string | null }[]>`
     SELECT channel FROM conversations WHERE id = ${args.conversationId}::uuid LIMIT 1
   `.catch(() => [] as { channel: string | null }[])
-  if (convRows[0]?.channel === 'instagram') return engineSendIgMedia(args)
+  const mediaChannel = convRows[0]?.channel
+  if (isSocial(mediaChannel)) return engineSendMediaSocial(args, mediaChannel)
   if (convRows[0]?.channel === 'telegram') {
     return telegramSend(args, {
       text: args.caption ?? '',
@@ -514,88 +511,54 @@ export async function engineSendMedia(
   return { whatsapp_message_id: waMessageId }
 }
 
-async function engineSendIgMedia(
+async function engineSendMediaSocial(
   args: SendMediaEngineArgs,
+  channel: SocialChannel,
 ): Promise<{ whatsapp_message_id: string }> {
-  const contact = await prisma.contact.findFirst({
-    where: { id: args.contactId, account_id: args.accountId },
-    select: { phone: true },
-  })
-  if (!contact?.phone) throw new Error('Instagram contact not found')
+  // A local upload is checked against this account before anything is read
+  // or sent (media-ref.ts uploadPathFor) — never another account's file.
+  const localPath = args.link.startsWith('http') ? null : await resolveUploadPath(args.link, args.accountId)
+  const target: SocialTarget = await loadSocialTarget(args.accountId, args.contactId, channel)
+  // Meta attachment types: image, audio, video, file.
+  const type = args.kind === 'document' ? 'file' : args.kind
+  await socialSenderAction(target, 'typing_on')
 
-  const rows = await prisma.$queryRaw<{ access_token: string }[]>`
-    SELECT access_token FROM instagram_config WHERE account_id = ${args.accountId}::uuid LIMIT 1
-  `
-  // Sealed on save (A8-09); older rows are plain — openStoredSecret reads both.
-  const token = openStoredSecret(rows[0]?.access_token)
-  if (!token) throw new Error('Instagram not configured for this account')
-
-  // Instagram media attachment types: image, audio, video, file
-  const igType = args.kind === 'document' ? 'file' : args.kind
-
-  let res: Response
-  let resolvedUrl: string
-
-  if (args.link.startsWith('http')) {
-    // Public URL — send directly (works in production with a real domain)
-    resolvedUrl = args.link
-    console.log('[engineSendIgMedia] IGSID:', contact.phone, '| type:', igType, '| url:', resolvedUrl.slice(0, 80))
-    await sendIgSenderAction(contact.phone, token, 'typing_on')
-    res = await fetch(
-      `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(token)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recipient: { id: contact.phone },
-          message: { attachment: { type: igType, payload: { url: resolvedUrl, is_reusable: true } } },
-          messaging_type: 'RESPONSE',
-        }),
-      }
-    )
+  let messageId: string | null
+  if (!localPath) {
+    ;({ messageId } = await socialPost(target, {
+      recipient: { id: target.recipientId },
+      message: { attachment: { type, payload: { url: args.link, is_reusable: true } } },
+      messaging_type: 'RESPONSE',
+    }))
   } else {
-    // Local file — read from disk and POST as multipart form-data.
-    // This bypasses the need for a publicly reachable URL (works with ngrok/localhost).
-    // This account's own uploads only (media-ref.ts uploadPathFor).
-    const filePath = await resolveUploadPath(args.link, args.accountId)
-    const fileBuffer = await readFile(filePath)
-    const filename = basename(filePath)
+    // Local file: sent as multipart so no public URL is needed.
+    const fileBuffer = await readFile(localPath)
+    const filename = basename(localPath)
     const mimeType = (mimeLookup(filename) || 'application/octet-stream') as string
-    resolvedUrl = args.link
-
-    console.log('[engineSendIgMedia] IGSID:', contact.phone, '| type:', igType, '| multipart upload:', filename, mimeType)
-    await sendIgSenderAction(contact.phone, token, 'typing_on')
-
     const form = new FormData()
-    form.append('recipient', JSON.stringify({ id: contact.phone }))
-    form.append('message', JSON.stringify({ attachment: { type: igType, payload: { is_reusable: true } } }))
+    form.append('recipient', JSON.stringify({ id: target.recipientId }))
+    form.append('message', JSON.stringify({ attachment: { type, payload: { is_reusable: true } } }))
     form.append('filedata', new Blob([fileBuffer], { type: mimeType }), filename)
     form.append('messaging_type', 'RESPONSE')
-
-    res = await fetch(
-      `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(token)}`,
-      { method: 'POST', body: form }
-    )
+    const res = await fetch(`${target.url}?access_token=${encodeURIComponent(target.token)}`, { method: 'POST', body: form })
+    const data = (await res.json().catch(() => ({}))) as { message_id?: string; error?: { message?: string; code?: number; error_subcode?: number } }
+    if (!res.ok || data.error) {
+      const { explainMetaError } = await import('@/lib/meta/social-messaging')
+      console.error(`[${channel} media] Meta error:`, res.status, data.error?.code, data.error?.message)
+      throw new Error(explainMetaError(data.error, res.status))
+    }
+    messageId = data.message_id ?? null
   }
 
-  const data = await res.json() as { message_id?: string; error?: { message: string; code?: number } }
-  if (!res.ok || data.error) {
-    console.error('[engineSendIgMedia] API error:', JSON.stringify(data))
-    throw new Error(data.error?.message ?? `Instagram media send failed: ${res.status}`)
+  // A caption travels as its own text message (attachments carry none).
+  if (args.caption?.trim()) {
+    await socialPost(target, { recipient: { id: target.recipientId }, message: { text: convertMarkdownForInstagram(args.caption) }, messaging_type: 'RESPONSE' })
+      .catch((err) => console.warn(`[${channel} media] caption not sent:`, err?.message))
   }
 
-  const igMid = data.message_id ?? `ig_media_${Date.now()}`
-  const preview = args.caption ?? `[${args.kind}]`
-  const savedMsg = await prisma.message.create({
-    data: { conversation_id: args.conversationId, sender_type: 'bot', content_type: args.kind, content_text: preview, media_url: args.link, message_id: igMid, status: 'sent' },
-  })
-  const lastMessageAt = new Date()
-  await prisma.conversation.update({
-    where: { id: args.conversationId },
-    data: { last_message_text: preview, last_message_at: lastMessageAt },
-  })
-  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: preview, last_message_at: lastMessageAt.toISOString() })
-  return { whatsapp_message_id: igMid }
+  const mid = messageId ?? `${channel === 'instagram' ? 'ig' : 'fb'}_media_${Date.now()}`
+  await persistSocialBotMessage(args, { contentType: args.kind, text: args.caption ?? `[${args.kind}]`, mediaUrl: args.link, messageId: mid })
+  return { whatsapp_message_id: mid }
 }
 
 export async function engineSendTemplate(
@@ -940,8 +903,12 @@ export async function engineSendInteractiveButtons(
   const convRows = await prisma.$queryRaw<{ channel: string | null }[]>`
     SELECT channel FROM conversations WHERE id = ${args.conversationId}::uuid LIMIT 1
   `.catch(() => [] as { channel: string | null }[])
-  if (convRows[0]?.channel === 'instagram') {
-    return engineSendIgButtonTemplate(args)
+  const btnChannel = convRows[0]?.channel
+  if (isSocial(btnChannel)) {
+    return engineSendButtonTemplateSocial(
+      args, btnChannel, withHeaderFooter(args.bodyText, args.headerText, args.footerText),
+      args.buttons.map((b) => ({ type: 'postback' as const, title: b.title, payload: b.id })),
+    )
   }
   if (convRows[0]?.channel === 'telegram') {
     return telegramSend(args, {
@@ -963,77 +930,6 @@ export async function engineSendInteractiveButtons(
   return sendInteractiveViaMeta({ ...args, kind: 'buttons' })
 }
 
-// Instagram Button Template (official Meta API for branching buttons in chatbots).
-// Uses "postback" buttons — when tapped, Instagram fires a messaging_postbacks
-// webhook event (NOT a messages event). The postback.payload = button id (reply_id).
-async function engineSendIgButtonTemplate(
-  args: SendInteractiveButtonsEngineArgs,
-): Promise<{ whatsapp_message_id: string }> {
-  const contact = await prisma.contact.findFirst({
-    where: { id: args.contactId, account_id: args.accountId },
-    select: { phone: true },
-  })
-  if (!contact?.phone) throw new Error('Instagram contact not found')
-
-  const rows = await prisma.$queryRaw<{ access_token: string }[]>`
-    SELECT access_token FROM instagram_config WHERE account_id = ${args.accountId}::uuid LIMIT 1
-  `
-  // Sealed on save (A8-09); older rows are plain — openStoredSecret reads both.
-  const token = openStoredSecret(rows[0]?.access_token)
-  if (!token) throw new Error('Instagram not configured for this account')
-
-  // Show typing indicator before sending
-  await sendIgSenderAction(contact.phone, token, 'typing_on')
-
-  // Button Template supports 1–3 postback buttons.
-  // InteractiveButton.id = the original reply_id set in the node config.
-  const buttons = args.buttons.slice(0, 3).map((b) => ({
-    type: 'postback',
-    title: b.title.slice(0, 20),
-    payload: b.id,
-  }))
-
-  const body = {
-    recipient: { id: contact.phone },
-    message: {
-      attachment: {
-        type: 'template',
-        payload: {
-          template_type: 'button',
-          text: (args.bodyText ?? '').slice(0, 640) || 'Choose an option:',
-          buttons,
-        },
-      },
-    },
-    messaging_type: 'RESPONSE',
-  }
-
-  console.log('[engineSendIgButtonTemplate] IGSID:', contact.phone, '| buttons:', buttons.length, '| text:', args.bodyText?.slice(0, 40))
-
-  const res = await fetch(
-    `https://graph.instagram.com/v21.0/me/messages?access_token=${encodeURIComponent(token)}`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-  )
-  const data = await res.json() as { message_id?: string; error?: { message: string; code?: number } }
-  if (!res.ok || data.error) {
-    console.error('[engineSendIgButtonTemplate] API error:', JSON.stringify(data))
-    throw new Error(data.error?.message ?? `Instagram button template failed: ${res.status}`)
-  }
-  console.log('[engineSendIgButtonTemplate] sent OK, mid:', data.message_id)
-
-  const igMid = data.message_id ?? `ig_btn_${Date.now()}`
-  const savedMsg = await prisma.message.create({
-    data: { conversation_id: args.conversationId, sender_type: 'bot', content_type: 'text', content_text: args.bodyText, message_id: igMid, status: 'sent' },
-  })
-  const lastMessageAt = new Date()
-  await prisma.conversation.update({
-    where: { id: args.conversationId },
-    data: { last_message_text: args.bodyText, last_message_at: lastMessageAt },
-  })
-  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: args.bodyText, last_message_at: lastMessageAt.toISOString() })
-  return { whatsapp_message_id: igMid }
-}
-
 export async function engineSendInteractiveList(
   args: SendInteractiveListEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
@@ -1041,7 +937,7 @@ export async function engineSendInteractiveList(
   const convRows = await prisma.$queryRaw<{ channel: string | null }[]>`
     SELECT channel FROM conversations WHERE id = ${args.conversationId}::uuid LIMIT 1
   `.catch(() => [] as { channel: string | null }[])
-  if (convRows[0]?.channel === 'instagram') {
+  if (isSocial(convRows[0]?.channel)) {
     const items = args.sections.flatMap((s) => s.rows).map((r, i) => `${i + 1}. ${r.title}`).join('\n')
     const fallbackText = `${args.bodyText ?? ''}\n\n${items}`.trim()
     return engineSendText({ ...args, text: fallbackText })
@@ -1100,7 +996,14 @@ export async function engineSendCtaUrlButton(
   const convRows = await prisma.$queryRaw<{ channel: string | null }[]>`
     SELECT channel FROM conversations WHERE id = ${args.conversationId}::uuid LIMIT 1
   `.catch(() => [] as { channel: string | null }[])
-  if (convRows[0]?.channel === 'instagram') {
+  const ctaChannel = convRows[0]?.channel
+  if (isSocial(ctaChannel)) {
+    if (/^https:\/\//i.test(args.url)) {
+      return engineSendButtonTemplateSocial(
+        args, ctaChannel, withHeaderFooter(args.bodyText, args.headerText, args.footerText),
+        [{ type: 'web_url', title: args.displayText || 'Open', url: args.url }],
+      )
+    }
     const fallbackText = `${args.bodyText ?? ''}\n\n${args.displayText}: ${args.url}`.trim()
     return engineSendText({ ...args, text: fallbackText })
   }
