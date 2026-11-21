@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { graphHost, messagesUrl } from "@/lib/meta/social-messaging"
+import { applySocialDelete, applySocialEdit, applySocialReaction, attachmentsToRows, noteBusinessAiHandoff, saveSocialEcho } from "@/lib/meta/social-inbound"
 import { sameToken, scopeAllows, socialWebhookScope, type SocialWebhookScope } from "@/lib/social/webhook-secrets"
 import { prisma } from "@/lib/db"
 import { recordAdTouch, referralFromMeta } from "@/lib/ads/attribution"
@@ -125,6 +126,11 @@ interface IgMessagingEvent {
     text?: string
     attachments?: Array<{ type: string; payload: { url?: string } }>
     is_echo?: boolean
+    /** The customer unsent this message. */
+    is_deleted?: boolean
+    /** Meta Business AI hand-over notice (not a customer message). */
+    admin_text?: string
+    handoff_reason?: string
     quick_reply?: { payload: string }
     // Present when the customer replied to one of the business's own
     // Stories — a normal `messages` event, not a separate subscription.
@@ -142,6 +148,10 @@ interface IgMessagingEvent {
   }
   read?:     { watermark: number }
   delivery?: { watermark: number }
+  /** messaging_reactions / message_reactions */
+  reaction?: { mid?: string; action?: string; emoji?: string; reaction?: string }
+  /** message_edit */
+  message_edit?: { mid?: string; text?: string; num_edit?: number }
   // Present ONLY on the customer's first message when the conversation
   // started from a Click-to-Instagram ad — mirrors WhatsApp's referral
   // object (src/app/api/whatsapp/webhook/route.ts). Instagram's documented
@@ -182,6 +192,8 @@ interface IgWebhookBody {
     }>
     // Messaging format (legacy, kept for compatibility)
     messaging?: IgMessagingEvent[]
+    /** Events while another app (e.g. Meta Business AI) owns the thread. */
+    standby?: IgMessagingEvent[]
   }>
 }
 
@@ -249,13 +261,21 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
 
       const val = change.value
       const senderIgsid = val?.sender?.id
-      if (!senderIgsid || senderIgsid === instagramAccountId) continue
+      if (!senderIgsid) continue
       const ts = toMs(typeof val.timestamp === "string" ? parseInt(val.timestamp) : val.timestamp)
+      if (val.message?.is_echo || senderIgsid === instagramAccountId) {
+        if (val.message?.mid && val.recipient?.id) await processIgEcho(config.account_id, val.recipient.id, val.message, ts)
+        continue
+      }
+      if (isIgSideEvent(val)) {
+        await processIgSideEvent(config.account_id, senderIgsid, val)
+        continue
+      }
 
       // Regular message (text, media, quick reply tap, story reply)
       if (change.field === "messages") {
         const msg = val.message
-        if (!msg || msg.is_echo) continue
+        if (!msg) continue
 
         await processIgMessage({
           accountId:         config.account_id,
@@ -300,14 +320,30 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
     }
 
     // ── Messaging format (legacy fallback) ───────────────────────
-    for (const event of entry.messaging ?? []) {
-      const senderIgsid = event.sender.id
-      if (senderIgsid === instagramAccountId) continue
+    // Standby: another app (Meta Business AI) owns these threads. The
+    // messages are kept so the team sees them, but nothing here replies.
+    const events: Array<{ event: IgMessagingEvent; standby: boolean }> = [
+      ...(entry.messaging ?? []).map((event) => ({ event, standby: false })),
+      ...(entry.standby ?? []).map((event) => ({ event, standby: true })),
+    ]
+    for (const { event, standby } of events) {
+      const senderIgsid = event.sender?.id
+      if (!senderIgsid) continue
       const ts = toMs(typeof event.timestamp === "string" ? parseInt(event.timestamp) : event.timestamp)
+      // A reply typed in the Instagram app (an echo): added to the chat
+      // unless this CRM sent it (same Meta id).
+      if (event.message?.is_echo || senderIgsid === instagramAccountId) {
+        if (event.message?.mid && event.recipient?.id) await processIgEcho(config.account_id, event.recipient.id, event.message, ts)
+        continue
+      }
+      if (event.read || event.delivery) continue
+      if (isIgSideEvent(event)) {
+        await processIgSideEvent(config.account_id, senderIgsid, event)
+        continue
+      }
 
       if (event.message) {
         const msg = event.message
-        if (msg.is_echo) continue
         await processIgMessage({
           accountId:         config.account_id,
           accessToken:       config.access_token ?? "",
@@ -322,6 +358,7 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
           postbackPayload:   null,
           storyReply:        msg.reply_to?.story ?? null,
           referral:          msg.referral ?? event.referral ?? null,
+          standby,
         })
       }
 
@@ -342,6 +379,7 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
           postbackPayload:   postback.payload,
           storyReply:        null,
           referral:          postback.referral ?? event.referral ?? null,
+          standby,
         })
       }
     }
@@ -362,6 +400,7 @@ async function processIgMessage({
   postbackPayload,
   storyReply,
   referral,
+  standby = false,
 }: {
   accountId:         string
   accessToken:       string
@@ -376,6 +415,8 @@ async function processIgMessage({
   postbackPayload:   string | null
   storyReply:        { url?: string; id?: string } | null
   referral:          unknown
+  /** Another app owns the thread: keep the message, do not answer it. */
+  standby?:          boolean
 }) {
   // --- Find or create owner (admin) user for this account ---
   const ownerProfile = await prisma.profile.findFirst({
@@ -402,13 +443,12 @@ async function processIgMessage({
   let storyMediaUrl: string | null = null
   let storyMediaId:  string | null = null
 
-  if (attachments.length > 0) {
-    const att = attachments[0]
-    if (att.type === "image")  { contentType = "image";    mediaUrl = att.payload.url ?? null }
-    if (att.type === "video")  { contentType = "video";    mediaUrl = att.payload.url ?? null }
-    if (att.type === "audio")  { contentType = "audio";    mediaUrl = att.payload.url ?? null }
-    if (att.type === "file")   { contentType = "document"; mediaUrl = att.payload.url ?? null }
-    if (!contentText && mediaUrl) contentText = `[${att.type}]`
+  const attachmentRows = attachmentsToRows(attachments)
+  if (attachmentRows.length > 0) {
+    const att = attachmentRows[0]
+    contentType = att.url ? att.contentType : "text"
+    mediaUrl = att.url
+    if (!contentText) contentText = att.label
   }
 
   // Story reply — takes priority over a plain-text classification since
@@ -457,6 +497,14 @@ async function processIgMessage({
     return
   }
 
+  // Several images in one message: the first is above, the rest follow.
+  for (const [i, extra] of attachmentRows.slice(1).entries()) {
+    const row = await prisma.message.create({
+      data: { conversation_id: conversation.id, sender_type: "customer", content_type: extra.url ? extra.contentType : "text", content_text: extra.label, media_url: extra.url, message_id: `${messageId}#${i + 2}`, status: "delivered", created_at: new Date(timestamp) },
+    }).catch(() => null)
+    if (row) emitToAccount(accountId, "message", { eventType: "INSERT", new: row, old: {} })
+  }
+
   // --- Update conversation ---
   try {
     const updatedConv = await prisma.conversation.update({
@@ -471,6 +519,9 @@ async function processIgMessage({
   } catch (err) {
     console.error("[Instagram] conversation update failed:", err)
   }
+
+  // While Meta Business AI owns the thread, Meta refuses our replies.
+  if (standby) return
 
   // --- Mark message as seen (per Meta best practices) ---
   if (accessToken) {
@@ -745,4 +796,47 @@ async function findOrCreateIgConversation(
 function toMs(ts: number | undefined | null): number {
   if (typeof ts !== "number" || !Number.isFinite(ts) || ts <= 0) return Date.now()
   return ts < 1e12 ? ts * 1000 : ts
+}
+
+/** Reactions, edits, unsends and Business AI hand-overs: not new customer messages. */
+function isIgSideEvent(e: IgMessagingEvent): boolean {
+  return Boolean(e.reaction || e.message_edit || e.message?.is_deleted || e.message?.admin_text)
+}
+
+/** The Instagram contact and conversation for an IGSID, if they exist (never created here). */
+async function existingIgThread(accountId: string, igsid: string): Promise<{ contactId: string; conversationId: string } | null> {
+  const contact = await prisma.contact.findFirst({ where: { account_id: accountId, instagram_id: igsid }, select: { id: true } })
+  if (!contact) return null
+  const conv = await prisma.conversation.findFirst({ where: { account_id: accountId, contact_id: contact.id, channel: "instagram" }, select: { id: true } })
+  return conv ? { contactId: contact.id, conversationId: conv.id } : null
+}
+
+/** A reply typed in the Instagram app. */
+async function processIgEcho(accountId: string, recipientIgsid: string, message: NonNullable<IgMessagingEvent["message"]>, ts: number) {
+  if (message.is_deleted) return
+  const thread = await existingIgThread(accountId, recipientIgsid)
+  if (!thread) return
+  const first = attachmentsToRows(message.attachments)[0]
+  await saveSocialEcho({
+    accountId, conversationId: thread.conversationId, mid: message.mid,
+    text: message.text ?? first?.label ?? null, mediaUrl: first?.url ?? null, contentType: first?.url ? first.contentType : "text",
+    at: Number.isFinite(ts) && ts > 0 ? new Date(ts) : new Date(),
+  })
+}
+
+async function processIgSideEvent(accountId: string, igsid: string, e: IgMessagingEvent) {
+  const thread = await existingIgThread(accountId, igsid)
+  if (!thread) return
+  if (e.reaction?.mid) {
+    await applySocialReaction({ accountId, conversationId: thread.conversationId, contactId: thread.contactId, targetMid: e.reaction.mid, emoji: e.reaction.action === "unreact" ? null : e.reaction.emoji ?? null })
+  }
+  if (e.message_edit?.mid && typeof e.message_edit.text === "string") {
+    await applySocialEdit({ accountId, conversationId: thread.conversationId, mid: e.message_edit.mid, text: e.message_edit.text })
+  }
+  if (e.message?.is_deleted && e.message.mid) {
+    await applySocialDelete({ accountId, conversationId: thread.conversationId, mid: e.message.mid })
+  }
+  if (e.message?.admin_text) {
+    await noteBusinessAiHandoff({ accountId, conversationId: thread.conversationId, reason: e.message.handoff_reason ?? null, adminText: e.message.admin_text })
+  }
 }

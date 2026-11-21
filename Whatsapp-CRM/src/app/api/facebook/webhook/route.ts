@@ -11,6 +11,7 @@ import { runAutomationsForTrigger } from "@/lib/automations/engine"
 import { isUniqueViolation } from "@/lib/contacts/dedupe"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
 import { webhookRejected, webhookWrote } from "@/lib/audit/actors"
+import { applySocialEdit, applySocialReaction, attachmentsToRows, noteBusinessAiHandoff, saveSocialEcho } from "@/lib/meta/social-inbound"
 import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
 type RawConfig = {
@@ -116,6 +117,9 @@ interface FbMessage {
   text?: string
   attachments?: Array<{ type: string; payload: { url?: string } }>
   is_echo?: boolean
+  /** Meta Business AI hand-over notice (not a customer message). */
+  admin_text?: string
+  handoff_reason?: string
   quick_reply?: { payload: string }
   /** A Click-to-Messenger ad: ad_id, ads_context_data (src/lib/ads/attribution.ts). */
   referral?: unknown
@@ -137,6 +141,10 @@ interface FbMessagingEvent {
   postback?:  FbPostback
   read?:     { watermark: number }
   delivery?: { watermark: number }
+  /** message_reactions */
+  reaction?: { mid?: string; action?: string; emoji?: string; reaction?: string }
+  /** message_edits */
+  message_edit?: { mid?: string; text?: string; num_edit?: number }
   /** messaging_referrals: someone with an existing thread came back through an ad. */
   referral?: unknown
 }
@@ -167,6 +175,8 @@ interface FbWebhookBody {
     id: string
     time?: number
     messaging?: FbMessagingEvent[]
+    /** Events while another app (e.g. Meta Business AI) owns the thread. */
+    standby?: FbMessagingEvent[]
     changes?: FbFeedChange[]
   }>
 }
@@ -227,13 +237,28 @@ async function processFacebookWebhook(body: FbWebhookBody, scope: SocialWebhookS
       }
     }
 
-    for (const event of entry.messaging ?? []) {
+    // Standby: another app (Meta Business AI) owns these threads. The
+    // messages are kept so the team sees them, but nothing here replies.
+    const events: Array<{ event: FbMessagingEvent; standby: boolean }> = [
+      ...(entry.messaging ?? []).map((event) => ({ event, standby: false })),
+      ...(entry.standby ?? []).map((event) => ({ event, standby: true })),
+    ]
+    for (const { event, standby } of events) {
       const senderPsid = event.sender.id
-      // Skip echoes (messages sent by the page itself)
-      if (senderPsid === (config.page_id ?? pageId)) continue
-      if (event.message?.is_echo) continue
+      const pageSelf = config.page_id ?? pageId
+      // A reply typed in the Messenger app or Business Suite (an echo):
+      // added to the chat unless this CRM sent it (same Meta id).
+      if (event.message?.is_echo || senderPsid === pageSelf) {
+        if (event.message?.mid && event.recipient?.id) await processFbEcho(config.account_id, event.recipient.id, event.message, event.timestamp)
+        continue
+      }
       // Skip read/delivery receipts
       if (event.read || event.delivery) continue
+
+      if (event.reaction || event.message_edit || event.message?.admin_text) {
+        await processFbSideEvent(config.account_id, senderPsid, event)
+        continue
+      }
 
       // A returning customer came back through an ad, before writing anything.
       if (event.referral && !event.message && !event.postback) {
@@ -254,6 +279,7 @@ async function processFacebookWebhook(body: FbWebhookBody, scope: SocialWebhookS
           postbackPayload:   null,
           postbackTitle:     null,
           referral:          event.message.referral ?? null,
+          standby,
         })
       }
 
@@ -270,6 +296,7 @@ async function processFacebookWebhook(body: FbWebhookBody, scope: SocialWebhookS
           postbackPayload:   event.postback.payload,
           postbackTitle:     event.postback.title ?? null,
           referral:          event.postback.referral ?? null,
+          standby,
         })
       }
     }
@@ -523,6 +550,7 @@ async function processFbMessage({
   postbackPayload,
   postbackTitle,
   referral = null,
+  standby = false,
 }: {
   accountId:         string
   accessToken:       string
@@ -535,6 +563,8 @@ async function processFbMessage({
   postbackPayload:   string | null
   postbackTitle:     string | null
   referral?:         unknown
+  /** Another app owns the thread: keep the message, do not answer it. */
+  standby?:          boolean
 }) {
   const ownerProfile = await prisma.profile.findFirst({
     where: { account_id: accountId },
@@ -614,6 +644,14 @@ async function processFbMessage({
     return
   }
 
+  // Several images in one message: the first is above, the rest follow.
+  for (const [i, extra] of attachmentsToRows(attachments).slice(1).entries()) {
+    const row = await prisma.message.create({
+      data: { conversation_id: conversation.id, sender_type: "customer", content_type: extra.contentType, content_text: extra.label, media_url: extra.url, message_id: `${messageId}#${i + 2}`, status: "delivered", created_at: new Date(timestamp) },
+    }).catch(() => null)
+    if (row) emitToAccount(accountId, "message", { eventType: "INSERT", new: row, old: {} })
+  }
+
   try {
     const updatedConv = await prisma.conversation.update({
       where: { id: conversation.id },
@@ -627,6 +665,10 @@ async function processFbMessage({
   } catch (err) {
     console.error("[Facebook] conversation update failed:", err)
   }
+
+  // While Meta Business AI owns the thread, Meta refuses our replies
+  // (and a "seen" tick from us would be wrong).
+  if (standby) return
 
   // Mark seen
   if (accessToken) {
@@ -770,5 +812,40 @@ async function findOrCreateFbConversation(
     }
     console.error("[Facebook] conversation create failed:", err)
     return null
+  }
+}
+
+/** The Messenger contact and conversation for a PSID, if they exist (never created here). */
+async function existingFbThread(accountId: string, psid: string): Promise<{ contactId: string; conversationId: string } | null> {
+  const contact = await prisma.contact.findFirst({ where: { account_id: accountId, facebook_id: psid }, select: { id: true } })
+  if (!contact) return null
+  const conv = await prisma.conversation.findFirst({ where: { account_id: accountId, contact_id: contact.id, channel: "facebook" }, select: { id: true } })
+  return conv ? { contactId: contact.id, conversationId: conv.id } : null
+}
+
+/** A reply typed in the Messenger app / Business Suite. */
+async function processFbEcho(accountId: string, recipientPsid: string, message: FbMessage, timestamp: number) {
+  const thread = await existingFbThread(accountId, recipientPsid)
+  if (!thread) return
+  const first = attachmentsToRows(message.attachments)[0]
+  await saveSocialEcho({
+    accountId, conversationId: thread.conversationId, mid: message.mid,
+    text: message.text ?? first?.label ?? null, mediaUrl: first?.url ?? null, contentType: first?.contentType ?? "text",
+    at: Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp) : new Date(),
+  })
+}
+
+/** Reactions, edits and Business AI hand-overs on an existing chat. */
+async function processFbSideEvent(accountId: string, psid: string, event: FbMessagingEvent) {
+  const thread = await existingFbThread(accountId, psid)
+  if (!thread) return
+  if (event.reaction?.mid) {
+    await applySocialReaction({ accountId, conversationId: thread.conversationId, contactId: thread.contactId, targetMid: event.reaction.mid, emoji: event.reaction.action === "unreact" ? null : event.reaction.emoji ?? null })
+  }
+  if (event.message_edit?.mid && typeof event.message_edit.text === "string") {
+    await applySocialEdit({ accountId, conversationId: thread.conversationId, mid: event.message_edit.mid, text: event.message_edit.text })
+  }
+  if (event.message?.admin_text) {
+    await noteBusinessAiHandoff({ accountId, conversationId: thread.conversationId, reason: event.message.handoff_reason ?? null, adminText: event.message.admin_text })
   }
 }
