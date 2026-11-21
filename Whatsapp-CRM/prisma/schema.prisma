@@ -4347,6 +4347,30 @@ model DealStageEvent {
 
 /// Each arrival from a Meta ad (migration 162): CTWA / Messenger / Instagram
 /// referral, or a Lead Ads form. Deduped on Meta's own id.
+/// AI chat summary on the lead page, one per lead and focus ('' = whole chat).
+/// Foreign keys live in migration 173 (lead/account cascade, created_by RESTRICT).
+model LeadSummary {
+  id              String    @id @default(uuid()) @db.Uuid
+  account_id      String    @db.Uuid
+  lead_id         String    @db.Uuid
+  focus           String    @default("")
+  text_en         String
+  /// Cached translations by language code: {"ml": "...", "hi": "..."}.
+  translations    Json      @default("{}")
+  message_count   Int       @default(0)
+  last_message_at DateTime? @db.Timestamptz(6)
+  model           String?
+  /// 'up' | 'down' | null
+  feedback        String?
+  created_by      String?   @db.Uuid
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@unique([lead_id, focus], map: "lead_summaries_lead_focus")
+  @@index([account_id], map: "lead_summaries_account")
+  @@map("lead_summaries")
+}
+
 model AdTouch {
   id              String   @id @default(uuid()) @db.Uuid
   account_id      String   @db.Uuid

@@ -29,6 +29,7 @@ import { ScheduleMenuButton } from "@/components/inbox/schedule-menu-button"
 import { TemplatePicker, type TemplateSendValues } from "@/components/inbox/template-picker"
 import { NewChatDialog } from "@/components/shared/new-chat-dialog"
 import { LeadDescription } from "@/components/leads/lead-description"
+import { LeadSummaryCard } from "@/components/leads/lead-summary-card"
 import { LeadTags } from "@/components/leads/lead-tags"
 import { LeadFollowUps, type LeadFollowUp } from "@/components/leads/lead-follow-ups"
 import { ContactForm } from "@/components/contacts/contact-form"
@@ -201,7 +202,7 @@ export default function LeadDetailPage() {
   const [drafting, setDrafting] = useState(false)
   const [sending, setSending] = useState(false)
   const [attachOpen, setAttachOpen] = useState(false)
-  const { userId, canViewAllLeads, account } = useAuth()
+  const { userId, canViewAllLeads, account, accountRole } = useAuth()
   const zone = account?.timezone ?? "Asia/Kolkata"
   const confirm = useConfirm()
   // Managers hand a lead to anyone on the team (and the chat with it).
@@ -958,6 +959,14 @@ export default function LeadDetailPage() {
             </div>
             </div>
           </div>
+
+          {/* The chat in two or three sentences, on request (a paid AI call). */}
+          <LeadSummaryCard
+            leadId={String(lead.id)}
+            hasContact={!!contactId}
+            canWork={accountRole !== "viewer"}
+            onNoteSaved={loadLead}
+          />
 
           {/* What this lead is for and what they need — right under who
               they are, so nobody has to scroll the timeline to find out. */}

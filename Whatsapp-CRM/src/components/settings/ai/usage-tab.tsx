@@ -78,6 +78,7 @@ const FEATURE_META: Record<string, { label: string; Icon: typeof MessageSquare }
   embedding: { label: 'Training', Icon: BookOpen },
   translation: { label: 'Translation', Icon: Languages },
   message_polish: { label: 'Improve message', Icon: Languages },
+  lead_summary: { label: 'Lead chat summary', Icon: BookOpen },
   validation: { label: 'Key check', Icon: ShieldCheck },
   eval_grading: { label: 'Evaluation', Icon: ShieldCheck },
   tts: { label: 'Voice — Gemini', Icon: Volume2 },

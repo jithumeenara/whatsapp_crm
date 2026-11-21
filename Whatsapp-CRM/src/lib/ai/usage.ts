@@ -30,6 +30,9 @@ export type UsageFeature =
   | 'message_polish'
   /// Sheet routing: a rule drafted from a sentence (Data Store → Sheet routing).
   | 'sheet_rule'
+  /// The lead page's "Summarise this chat" (2–3 sentences, on request).
+  /// Its translations are recorded as 'translation'.
+  | 'lead_summary'
   /// Reports → Performance guide: AI suggestions from the guide's own facts (opt-in).
   | 'report_guide'
   | 'validation'

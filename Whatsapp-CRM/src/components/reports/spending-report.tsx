@@ -49,6 +49,7 @@ const FEATURE: Record<string, string> = {
   template_kit: "Template kit",
   translation: "Translation",
   message_polish: "Improve message",
+  lead_summary: "Lead chat summary",
   judgement: "Hand-over judgement",
   lead_detect: "Lead detection",
   embedding: "Knowledge training",
