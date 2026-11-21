@@ -328,9 +328,26 @@ export function serializeSheet(sheet: SheetContent, description?: string | null)
     lines.push(pairs.map((p) => `${p.h}: ${p.v}`).join(' | '))
   }
 
+  // A blank line between rows: chunkDocument splits on blank lines, so each
+  // row becomes its own chunk, whole and labelled. Joined with single
+  // newlines the rows formed one paragraph that was cut every 800
+  // characters, splitting rows and separating values from their row.
+  const out: string[] = []
+  let size = 0
+  let cutAt: number | null = null
+  for (const [i, line] of lines.entries()) {
+    if (size + line.length + 2 > MAX_SHEET_CHARS) { cutAt = i; break }
+    if (line !== '') out.push(line)
+    size += line.length + 2
+  }
   if (sheet.truncated) {
-    lines.push('', `(Only the first ${MAX_ROWS} rows of this sheet are included.)`)
+    out.push(`(Only the first ${MAX_ROWS} rows of this sheet are included.)`)
+  } else if (cutAt !== null) {
+    out.push(`(The sheet is longer than ${MAX_SHEET_CHARS.toLocaleString('en-IN')} characters; only the first part is included.)`)
   }
 
-  return lines.join('\n')
+  return out.join('\n\n')
 }
+
+/** The same ceiling as the file and page extractors. */
+const MAX_SHEET_CHARS = 200_000

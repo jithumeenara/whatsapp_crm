@@ -333,7 +333,9 @@ export async function POST(req: Request) {
     await audit(auditCtx(req, actor), {
       action: 'record.created',
       target: { type: 'knowledge_source', id: item.id, label: item.name },
-      meta: { kind, source, audience: resolvedAudience, content },
+      // Knowledge text is never copied into the audit log (same rule as
+      // PATCH): its size, not its words.
+      meta: { kind, source, audience: resolvedAudience, chars: typeof content === 'string' ? content.length : 0 },
     })
     return NextResponse.json({ item }, { status: 201 })
   } catch (err) {

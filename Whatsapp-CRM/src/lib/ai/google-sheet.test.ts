@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { parseSheetUrl, parseCsv, serializeSheet, fetchSheet, SheetError } from "./google-sheet";
+import { chunkDocument } from "./knowledge";
 
 describe("parseSheetUrl", () => {
   it("takes the id and tab out of a normal browser URL", () => {
@@ -114,6 +115,21 @@ describe("serializeSheet", () => {
       "2026 fee structure",
     );
     expect(text.startsWith("2026 fee structure")).toBe(true);
+  });
+
+  // Bug: rows were joined with single newlines, so chunkDocument saw one
+  // long paragraph and cut it every 800 characters — rows split in half,
+  // a value separated from the rest of its row. Each row must be its own
+  // chunk, whole.
+  it("keeps every row whole in its own chunk", () => {
+    const rows = Array.from({ length: 40 }, (_, i) => [`Programme ${i}`, "September 2026", `${3000 + i}`, "Ministerial cadre, Thiruvananthapuram campus"]);
+    const text = serializeSheet({ title: "Fees", headers: ["Programme", "Month", "Fee", "Target group"], rows, truncated: false }, "2026 fees");
+    const chunks = chunkDocument({ id: "K1", title: "Fees", content: text });
+    const rowChunks = chunks.filter((c) => c.text.startsWith("Programme: "));
+    expect(rowChunks).toHaveLength(40);
+    for (const [i, c] of rowChunks.entries()) {
+      expect(c.text).toBe(`Programme: Programme ${i} | Month: September 2026 | Fee: ${3000 + i} | Target group: Ministerial cadre, Thiruvananthapuram campus`);
+    }
   });
 
   it("admits when rows were cut", () => {
