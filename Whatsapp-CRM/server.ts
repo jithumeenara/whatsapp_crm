@@ -15,6 +15,7 @@ import { sweepScheduledReports } from "./src/lib/reports/schedule/sweep";
 import { sweepReportAlerts } from "./src/lib/reports/alerts/sweep";
 import { sweepSocialConnections } from "./src/lib/meta/social-health-sweep";
 import { takeFollowerSnapshots } from "./src/lib/meta/social-insights";
+import { sweepScheduledPosts } from "./src/lib/meta/social-publish";
 import { sweepAutoTags } from "./src/lib/ai/auto-tag";
 import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
 import { sweepTwoWaySheets } from "./src/lib/google/sheet-two-way";
@@ -225,6 +226,15 @@ app.prepare().then(() => {
   const trainOnce = singleFlight(trainPendingKnowledge);
   const staleOffersOnce = singleFlight(sweepStaleOffers);
   const broadcastsOnce = singleFlight(sweepScheduledBroadcasts);
+
+  // Scheduled Instagram / Facebook posts: claimed with SKIP LOCKED, so a
+  // post is never published twice (src/lib/meta/social-publish.ts).
+  const socialPostsOnce = singleFlight(sweepScheduledPosts);
+  every(() => {
+    socialPostsOnce().catch((err) => {
+      console.error("[social-publish] sweep failed:", err);
+    });
+  }, 60_000);
 
   // Scheduled/recurring conversation messages -- sends run from right here,
   // in this always-on process (PM2 keeps it alive), instead of depending on

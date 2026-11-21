@@ -52,6 +52,11 @@ const PUBLIC_PREFIXES = [
   '/api/instagram/webhook',   // Meta Instagram webhook — server-to-server, no session cookie
   '/api/telegram/webhook/',   // Telegram bot updates — server-to-server, checked by its secret header
   '/api/facebook/webhook',    // Meta Facebook Messenger webhook — server-to-server, no session cookie
+  // One picture/video for Instagram to fetch while publishing (Meta's
+  // servers have no session). GET only; the route checks a signed,
+  // 30-minute token naming one file in that workspace's own upload folder,
+  // and the real file type from its bytes (src/lib/meta/social-media-token.ts).
+  '/api/social/media/',
   '/api/flows/data-exchange/', // Meta WhatsApp Flows data-exchange (server-to-server, RSA-encrypted)
   // Microsoft Graph new-mail notifications. Checked in the route by a
   // per-mailbox clientState; POST only, and GET is not handled there.

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { InstagramTab } from "./instagram-tab"
 import { FacebookTab } from "./facebook-tab"
+import { PublishTab } from "./publish-tab"
 
 // Instagram gradient SVG icon
 function IgIcon({ className }: { className?: string }) {
@@ -34,7 +35,7 @@ function FbIcon({ className }: { className?: string }) {
   )
 }
 
-type Tab = "instagram" | "facebook"
+type Tab = "instagram" | "facebook" | "publish"
 
 export function SocialMediaShell() {
   const [activeTab, setActiveTab] = useState<Tab>("instagram")
@@ -74,6 +75,16 @@ export function SocialMediaShell() {
             <FbIcon className="h-5 w-5" />
             Facebook
           </button>
+          <button
+            onClick={() => setActiveTab("publish")}
+            className={`flex items-center gap-2.5 px-5 py-3 text-[13px] font-semibold border-b-2 transition-colors ${
+              activeTab === "publish"
+                ? "border-primary text-primary"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Publish
+          </button>
         </div>
       </div>
 
@@ -81,6 +92,7 @@ export function SocialMediaShell() {
       <div className="flex-1 overflow-y-auto">
         {activeTab === "instagram" && <InstagramTab />}
         {activeTab === "facebook"  && <FacebookTab />}
+        {activeTab === "publish"   && <PublishTab />}
       </div>
     </div>
   )
