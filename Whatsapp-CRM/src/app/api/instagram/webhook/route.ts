@@ -256,18 +256,17 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
         // The business's own replies come back as comments too: never treat
         // the account itself as a customer (automations would answer themselves).
         if (comment?.from?.id && (comment.from.id === instagramAccountId || comment.from.id === config.page_id)) continue
-        if (typeof comment?.id === "string") {
-          // Kept for the Comments screen (once per comment; a resend only refreshes the text).
-          const saved = await saveIncomingComment({
-            accountId: config.account_id, channel: "instagram", commentId: comment.id, parentId: comment.parent_id ?? null,
-            postId: comment.media?.id ?? null, fromId: comment.from?.id ?? null, fromName: comment.from?.username ?? null, text: comment.text ?? null,
-          })
-          if (saved) {
-            emitToAccount(config.account_id, "social_comment", { id: saved })
-            fillPostDetails(config.account_id, "instagram", comment.media?.id, config.access_token).catch(() => {})
-          }
-        }
-        if (change.field === "comments") await processIgComment(config.account_id, config.access_token ?? "", comment)
+        if (typeof comment?.id !== "string") continue
+        // Kept for the Comments screen (once per comment; a resend only refreshes the text).
+        const saved = await saveIncomingComment({
+          accountId: config.account_id, channel: "instagram", commentId: comment.id, parentId: comment.parent_id ?? null,
+          postId: comment.media?.id ?? null, fromId: comment.from?.id ?? null, fromName: comment.from?.username ?? null, text: comment.text ?? null,
+        })
+        if (!saved) continue
+        emitToAccount(config.account_id, "social_comment", { id: saved.id })
+        fillPostDetails(config.account_id, "instagram", comment.media?.id, config.access_token).catch(() => {})
+        // Comment automations run once per comment, never again on Meta's resend.
+        if (change.field === "comments" && saved.created) await processIgComment(config.account_id, config.access_token ?? "", comment, saved.id)
         continue
       }
       if (change.field === "mentions") {
@@ -670,28 +669,25 @@ async function processIgMessage({
  * route (bypassing Meta's real delivery gate) to prove the logic itself
  * is correct.
  */
-async function processIgComment(accountId: string, accessToken: string, comment: IgCommentValue) {
+async function processIgComment(accountId: string, _accessToken: string, comment: IgCommentValue, socialCommentId: string | null) {
   if (!comment?.id || !comment.from?.id) return
 
-  const ownerProfile = await prisma.profile.findFirst({
-    where: { account_id: accountId },
-    orderBy: { created_at: "asc" },
-    select: { user_id: true },
-  })
-  if (!ownerProfile) return
-
-  // Comments and DMs share the same IGSID namespace per Meta's docs — the
-  // commenter can be found/created exactly like a DM sender.
-  const contactOutcome = await findOrCreateIgContact(accountId, ownerProfile.user_id, comment.from.id, accessToken)
-  if (!contactOutcome) return
+  // A comment alone does not make someone a contact (anyone could flood the
+  // contact list by commenting). A known person is linked; a private reply
+  // creates the contact once there is a real conversation.
+  const known = await prisma.contact.findFirst({
+    where: { account_id: accountId, instagram_id: comment.from.id },
+    select: { id: true },
+  }).catch(() => null)
 
   runAutomationsForTrigger({
     accountId,
     triggerType: "comment_keyword_match",
-    contactId: contactOutcome.contact.id,
+    contactId: known?.id ?? null,
     context: {
       message_text: comment.text ?? "",
-      vars: { comment_id: comment.id, media_id: comment.media?.id ?? null },
+      // social_comment_id: our row — a "send message" step answers it by private reply.
+      vars: { comment_id: comment.id, media_id: comment.media?.id ?? null, social_comment_id: socialCommentId, channel: "instagram" },
     },
   }).catch((err) => console.error("[Instagram] comment_keyword_match dispatch failed:", err))
 }

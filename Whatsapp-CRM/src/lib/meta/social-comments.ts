@@ -100,10 +100,11 @@ export interface IncomingComment {
 }
 
 /**
- * Save (or, for an edit, update) one comment. Returns the row id, or null
- * when the ids are not Meta ids. A resent webhook only refreshes the text.
+ * Save (or, for an edit, update) one comment. Returns the row id and whether
+ * it is new (a resent webhook only refreshes the text, and must not run the
+ * comment automations again), or null when the ids are not Meta ids.
  */
-export async function saveIncomingComment(c: IncomingComment): Promise<string | null> {
+export async function saveIncomingComment(c: IncomingComment): Promise<{ id: string; created: boolean } | null> {
   if (!META_ID.test(c.commentId)) return null
   const parentId = c.parentId && META_ID.test(c.parentId) ? c.parentId : null
   const postId = c.postId && META_ID.test(c.postId) ? c.postId : null
@@ -124,16 +125,17 @@ export async function saveIncomingComment(c: IncomingComment): Promise<string | 
   }
 
   await ensureSocialCommentsTable()
-  const rows = await prisma.$queryRaw<{ id: string }[]>`
+  const rows = await prisma.$queryRaw<{ id: string; created: boolean }[]>`
     INSERT INTO social_comments (account_id, channel, comment_id, parent_id, post_id, from_id, from_name, contact_id, text, commented_at)
     VALUES (${c.accountId}::uuid, ${c.channel}, ${c.commentId}, ${parentId}, ${postId}, ${fromId}, ${name}, ${contactId}::uuid, ${text}, ${at})
     ON CONFLICT (account_id, channel, comment_id) DO UPDATE
       SET text = COALESCE(EXCLUDED.text, social_comments.text), updated_at = now()
-    RETURNING id::text AS id`.catch((e: unknown) => {
+    RETURNING id::text AS id, (xmax = 0) AS created`.catch((e: unknown) => {
     console.error('[social comments] save failed:', e instanceof Error ? e.message : e)
-    return [] as { id: string }[]
+    return [] as { id: string; created: boolean }[]
   })
-  return rows[0]?.id ?? null
+  const row = rows[0]
+  return row?.id ? { id: row.id, created: row.created === true } : null
 }
 
 /** Removed or hidden at Meta (by anyone): reflect it, keep the row. */
@@ -343,4 +345,67 @@ export async function recordPrivateReplyInInbox(input: {
   })
   await prisma.conversation.update({ where: { id: conv.id }, data: { last_message_text: input.text, last_message_at: new Date() } }).catch(() => null)
   return { conversationId: conv.id, contactId: contact.id }
+}
+
+// ── Comment-to-DM automation ───────────────────────────────────────────────
+
+/**
+ * An automation's private reply to a comment (the "send message" step of a
+ * comment trigger). Same one-per-comment claim as the Comments screen, plus
+ * a guard against being used to flood someone: at most one automatic
+ * private reply per person per day in this workspace.
+ */
+export async function automatedPrivateReply(input: {
+  accountId: string; socialCommentId: string; text: string; userId: string
+}): Promise<{ ok: true; contactId: string | null } | { ok: false; error: string }> {
+  const c = await loadComment(input.accountId, input.socialCommentId)
+  if (!c) return { ok: false, error: 'comment not found' }
+  if (!privateReplyOpen(c, new Date())) return { ok: false, error: 'private reply already sent or older than 7 days' }
+  const t = cleanText(input.text, PRIVATE_REPLY_MAX[c.channel])
+  if (!t.ok) return { ok: false, error: 'empty or too long message' }
+  if (c.from_id) {
+    const recent = await prisma.$queryRaw<{ n: number }[]>`
+      SELECT 1 AS n FROM social_comments
+      WHERE account_id = ${input.accountId}::uuid AND channel = ${c.channel} AND from_id = ${c.from_id}
+        AND private_reply_at > now() - interval '1 day' LIMIT 1`.catch(() => [])
+    if (recent.length > 0) return { ok: false, error: 'this person already got an automatic reply today' }
+  }
+  const auth = await channelAuth(input.accountId, c.channel)
+  if (!auth) return { ok: false, error: 'channel not connected' }
+  if (!(await claimPrivateReply(input.accountId, c.id, input.userId))) return { ok: false, error: 'private reply already sent' }
+  const sent = await sendPrivateReply(c, auth, t.text)
+  if (!sent.ok) {
+    await releasePrivateReply(input.accountId, c.id, input.userId)
+    return { ok: false, error: sent.error }
+  }
+  let contactId: string | null = null
+  if (sent.recipientId) {
+    const thread = await recordPrivateReplyInInbox({
+      accountId: input.accountId, channel: c.channel, recipientId: sent.recipientId, name: c.from_name,
+      userId: input.userId, text: t.text, messageId: sent.messageId,
+    }).catch(() => null)
+    contactId = thread?.contactId ?? null
+    if (contactId) {
+      await prisma.$executeRaw`UPDATE social_comments SET contact_id = ${contactId}::uuid WHERE id = ${c.id}::uuid AND account_id = ${input.accountId}::uuid AND contact_id IS NULL`.catch(() => 0)
+    }
+  }
+  await prisma.$executeRaw`UPDATE social_comments SET status = 'done', updated_at = now() WHERE id = ${c.id}::uuid AND account_id = ${input.accountId}::uuid`.catch(() => 0)
+  return { ok: true, contactId }
+}
+
+/**
+ * Can comment automations be switched on? Yes once Meta has delivered a
+ * comment to this workspace, or the connection's permissions include
+ * comment access. Before that the trigger could never fire.
+ */
+export async function commentsReady(accountId: string): Promise<boolean> {
+  const seen = await prisma.$queryRaw<{ n: number }[]>`
+    SELECT 1 AS n FROM social_comments WHERE account_id = ${accountId}::uuid LIMIT 1`.catch(() => [])
+  if (seen.length > 0) return true
+  const perms = await prisma.$queryRaw<{ p: unknown }[]>`
+    SELECT granted_permissions AS p FROM instagram_config WHERE account_id = ${accountId}::uuid
+    UNION ALL
+    SELECT granted_permissions AS p FROM facebook_config WHERE account_id = ${accountId}::uuid`.catch(() => [])
+  const COMMENT_SCOPES = ['instagram_manage_comments', 'instagram_business_manage_comments', 'pages_manage_engagement']
+  return perms.some((r) => Array.isArray(r.p) && r.p.some((s) => typeof s === 'string' && COMMENT_SCOPES.includes(s)))
 }

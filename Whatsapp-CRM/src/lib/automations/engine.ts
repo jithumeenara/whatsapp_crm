@@ -22,6 +22,7 @@ import { createLeadFromAutomation } from '@/lib/leads/create-from-automation'
 import { engineSendText, engineSendTemplate, engineSendCatalogItem } from './meta-send'
 import { postAutomationWebhook } from './send-webhook'
 import { agentRecordWritten } from '@/lib/audit/actors'
+import { automatedPrivateReply } from '@/lib/meta/social-comments'
 
 /** The audit log's record of what an automation step wrote: actor
  *  agent:automation, correlation id = this run's log id. */
@@ -277,6 +278,18 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
   switch (step.step_type) {
     case 'send_message': {
       const cfg = step.step_config as SendMessageStepConfig
+      // A comment trigger answers by private reply to that comment — the
+      // only message Meta allows to someone who has not written to you.
+      const commentRow = args.context.vars?.social_comment_id
+      if (args.triggerEvent === 'comment_keyword_match' && typeof commentRow === 'string') {
+        const text = interpolate(cfg.text, args)
+        if (!text.trim()) throw new Error('send_message has empty text')
+        const r = await automatedPrivateReply({ accountId: args.automation.account_id, socialCommentId: commentRow, text, userId: args.automation.user_id })
+        if (!r.ok) throw new Error(`private reply not sent: ${r.error}`)
+        // Later steps (tag, assign, lead) now have the person's contact.
+        if (r.contactId && !args.contactId) args.contactId = r.contactId
+        return 'private reply sent to the comment'
+      }
       if (!args.contactId) throw new Error('send_message needs a contact')
       const text = interpolate(cfg.text, args)
       if (!text.trim()) throw new Error('send_message has empty text')

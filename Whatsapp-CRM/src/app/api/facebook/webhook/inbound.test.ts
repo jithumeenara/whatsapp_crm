@@ -38,7 +38,7 @@ vi.mock('@/lib/db', () => ({
     $executeRaw: () => ({ catch: () => Promise.resolve() }),
     $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const sql = strings.join('?')
-      if (sql.includes('INSERT INTO social_comments')) { h.comments.push(values); return [{ id: 'sc-1' }] }
+      if (sql.includes('INSERT INTO social_comments')) { const created = !h.comments.some((v) => v[2] === values[2]); h.comments.push(values); return [{ id: 'sc-1', created }] }
       if (sql.includes('social_comments')) return []
       return [{ account_id: 'acc-1', access_token: 'EAApage', verify_token: 'v', page_id: '1029' }]
     },

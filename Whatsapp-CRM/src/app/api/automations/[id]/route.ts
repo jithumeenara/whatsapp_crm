@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { commentsReady } from '@/lib/meta/social-comments'
 import { automationsMember } from '@/lib/automations/access'
 import { prisma } from '@/lib/db'
 import { audit, auditCtx } from '@/lib/audit'
@@ -74,26 +75,10 @@ export async function PATCH(
     if (willBeActive) {
       const mergedTriggerType = (update.trigger_type ?? existing.trigger_type) as string
 
-      // IG·01 gated scaffolding — comment_keyword_match is fully built end
-      // to end, but Meta will never actually deliver the comments webhook
-      // field to this app until instagram_business_manage_comments is
-      // approved via App Review. Nothing in this codebase can flip that
-      // approval itself, so activation stays blocked with a clear message
-      // rather than silently accepting a trigger that will never fire.
-      if (mergedTriggerType === 'comment_keyword_match') {
-        const igRows = accountId
-          ? await prisma.$queryRaw<{ comment_dm_status: string | null }[]>`
-              SELECT comment_dm_status FROM instagram_config WHERE account_id = ${accountId}::uuid LIMIT 1
-            `.catch(() => [] as { comment_dm_status: string | null }[])
-          : []
-        if ((igRows[0]?.comment_dm_status ?? 'pending_meta_approval') !== 'approved') {
-          return NextResponse.json(
-            {
-              error: 'Comment-to-DM requires Meta App Review approval for instagram_business_manage_comments — this automation can be saved, but not activated, until that approval lands.',
-            },
-            { status: 400 },
-          )
-        }
+      // Comment automations can only fire once Meta delivers comments to
+      // this workspace (comment permission approved): see commentsReady.
+      if (mergedTriggerType === 'comment_keyword_match' && (!accountId || !(await commentsReady(accountId)))) {
+        return NextResponse.json({ error: 'Comment automations start once Meta delivers comments to this workspace. Your Meta app needs comment access approved (Instagram: instagram_manage_comments; Facebook: pages_manage_engagement). You can save this automation now and switch it on later.' }, { status: 400 })
       }
 
       const mergedTriggerConfig = update.trigger_config ?? existing.trigger_config

@@ -40,7 +40,7 @@ export const TRIGGER_META: Record<AutomationTriggerType, TriggerMeta> = {
     pillClass: 'border-gray-300 bg-gray-100 text-gray-600',
   },
   comment_keyword_match: {
-    label: 'IG Comment (pending approval)',
+    label: 'Comment (Instagram / Facebook)',
     pillClass: 'border-pink-500/30 bg-pink-500/10 text-pink-400',
   },
 }

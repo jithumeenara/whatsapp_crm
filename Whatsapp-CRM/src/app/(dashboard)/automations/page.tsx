@@ -21,7 +21,7 @@ const TRIGGER_LABELS: Record<string, string> = {
   tag_added: "Tag added",
   tag_removed: "Tag removed",
   time_based: "Scheduled",
-  comment_keyword_match: "IG comment (pending approval)",
+  comment_keyword_match: "Comment (Instagram / Facebook)",
 }
 
 interface LastErrorData { reason: string | null; at: string }

@@ -135,8 +135,8 @@ const TRIGGER_OPTIONS: { value: AutomationTriggerType; label: string; hint: stri
   { value: "time_based", label: "Time-Based", hint: "On a recurring schedule" },
   {
     value: "comment_keyword_match",
-    label: "Instagram Comment Keyword (pending Meta approval)",
-    hint: "Someone comments a keyword on your Instagram post/reel. Fully built, but requires Meta App Review approval for instagram_business_manage_comments — can be saved now, won't activate until that approval lands.",
+    label: "Comment keyword (Instagram / Facebook)",
+    hint: "Someone comments a keyword on your Instagram or Facebook post. A \"Send message\" step replies to them privately (once per comment, at most one automatic reply per person a day).",
   },
 ]
 
@@ -827,9 +827,9 @@ function TriggerCard({
             {type === "comment_keyword_match" && (
               <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11.5px] text-amber-800">
                 <span>
-                  This trigger is fully built and will start working automatically once Meta approves this app&apos;s
-                  request for the <code className="font-mono">instagram_business_manage_comments</code> permission.
-                  You can save this automation now — activating it stays blocked until that approval lands.
+                  A <strong>Send message</strong> step goes to the commenter as a private reply (Meta allows one per
+                  comment, within 7 days). You can switch this on once Meta delivers comments to this workspace — your
+                  Meta app needs comment access approved.
                 </span>
               </div>
             )}

@@ -241,8 +241,18 @@ async function processFacebookWebhook(body: FbWebhookBody, scope: SocialWebhookS
           at: typeof v.created_time === "number" ? new Date(v.created_time < 1e12 ? v.created_time * 1000 : v.created_time) : null,
         })
         if (saved) {
-          emitToAccount(config.account_id, "social_comment", { id: saved })
+          emitToAccount(config.account_id, "social_comment", { id: saved.id })
           fillPostDetails(config.account_id, "facebook", v.post_id, config.access_token).catch(() => {})
+          // Comment automations: once per new comment (not an edit, not a resend).
+          if (v.verb === "add" && saved.created) {
+            const known = fromId ? await prisma.contact.findFirst({ where: { account_id: config.account_id, facebook_id: fromId }, select: { id: true } }).catch(() => null) : null
+            runAutomationsForTrigger({
+              accountId: config.account_id,
+              triggerType: "comment_keyword_match",
+              contactId: known?.id ?? null,
+              context: { message_text: v.message ?? "", vars: { comment_id: v.comment_id, media_id: v.post_id ?? null, social_comment_id: saved.id, channel: "facebook" } },
+            }).catch((err) => console.error("[Facebook] comment automation failed:", err))
+          }
         }
       }
       if (feedChanges.length > 0 && config) {

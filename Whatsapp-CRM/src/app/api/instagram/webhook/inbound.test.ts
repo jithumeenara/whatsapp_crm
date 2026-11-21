@@ -32,7 +32,7 @@ vi.mock('@/lib/db', () => ({
     $executeRaw: () => ({ catch: () => Promise.resolve() }),
     $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const sql = strings.join('?')
-      if (sql.includes('INSERT INTO social_comments')) { h.comments.push(values); return [{ id: 'sc-1' }] }
+      if (sql.includes('INSERT INTO social_comments')) { const created = !h.comments.some((v) => v[2] === values[2]); h.comments.push(values); return [{ id: 'sc-1', created }] }
       if (sql.includes('social_comments')) return []
       return [{ account_id: 'acc-1', access_token: h.token, verify_token: 'v', instagram_account_id: '17841400000000', page_id: '1029' }]
     },
@@ -112,7 +112,7 @@ describe('Instagram inbound', () => {
   })
 
   it("the business's own comment reply is not treated as a customer (no automation answers itself)", async () => {
-    const comment = (fromId: string) => ({ object: 'instagram', entry: [{ id: '17841400000000', changes: [{ field: 'comments', value: { id: `c_${fromId}`, text: 'price?', from: { id: fromId }, media: { id: 'media1' } } }] }] })
+    const comment = (fromId: string) => ({ object: 'instagram', entry: [{ id: '17841400000000', changes: [{ field: 'comments', value: { id: `1789000${fromId}`, text: 'price?', from: { id: fromId }, media: { id: 'media1' } } }] }] })
     await post(comment('17841400000000'))
     await new Promise((r) => setTimeout(r, 30))
     expect(h.automations).toEqual([])
@@ -129,5 +129,15 @@ describe('Instagram inbound', () => {
     await post(comment('1/../../me', '555444'))
     await new Promise((r) => setTimeout(r, 30))
     expect(h.comments).toHaveLength(1)
+  })
+
+  it('Meta resending the same comment runs the comment automation once', async () => {
+    const comment = { object: 'instagram', entry: [{ id: '17841400000000', changes: [{ field: 'comments', value: { id: '17895695668009999', text: 'PRICE', from: { id: '555444', username: 'meera' }, media: { id: '1790000001' } } }] }] }
+    await post(comment)
+    await vi.waitFor(() => expect(h.automations).toHaveLength(1))
+    await post(comment)
+    await vi.waitFor(() => expect(h.comments).toHaveLength(2))
+    await new Promise((r) => setTimeout(r, 30))
+    expect(h.automations).toHaveLength(1)
   })
 })
