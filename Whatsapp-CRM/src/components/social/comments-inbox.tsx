@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { EyeOff, Eye, Trash2, Send, MessageCircle, Check, RotateCcw, ExternalLink, Loader2, MessagesSquare, Sparkles } from "lucide-react"
+import { EyeOff, Eye, Trash2, Send, MessageCircle, Check, RotateCcw, ExternalLink, Loader2, MessagesSquare, Sparkles, AtSign, UserPlus, MessageSquareOff } from "lucide-react"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import { everyWhileVisible } from "@/lib/visible-interval"
 import { useAuth } from "@/hooks/use-auth"
@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 interface CommentItem {
   id: string
   channel: "instagram" | "facebook"
+  kind: "comment" | "mention"
   is_reply: boolean
   post_caption: string | null
   post_link: string | null
@@ -141,6 +142,7 @@ function CommentCard({ c, canReply, canModerate, onChanged }: { c: CommentItem; 
   const [text, setText] = useState("")
   const [busy, setBusy] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmCommentsOff, setConfirmCommentsOff] = useState(false)
   const router = useRouter()
   const max = mode === "private" ? (c.channel === "instagram" ? 1000 : 2000) : 2200
 
@@ -187,6 +189,7 @@ function CommentCard({ c, canReply, canModerate, onChanged }: { c: CommentItem; 
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-slate-500">
         <span className={`rounded-full px-2 py-0.5 font-medium ${c.channel === "instagram" ? "bg-pink-50 text-pink-700" : "bg-blue-50 text-blue-700"}`}>{CHANNEL_LABEL[c.channel]}</span>
         <span>{when(c.commented_at)}</span>
+        {c.kind === "mention" && <span className="inline-flex items-center gap-0.5 font-medium text-violet-700"><AtSign className="h-3 w-3" aria-hidden /> mentioned you</span>}
         {c.is_reply && <span>· reply in a thread</span>}
         {c.is_hidden && <span className="font-medium text-amber-700">· hidden</span>}
         {c.private_replied && <span className="font-medium text-emerald-700">· private reply sent</span>}
@@ -194,7 +197,7 @@ function CommentCard({ c, canReply, canModerate, onChanged }: { c: CommentItem; 
 
       {(c.post_caption || c.post_link) && (
         <p className="mt-2 line-clamp-2 break-words text-[12px] text-slate-500">
-          On post: {c.post_caption ?? "(no caption)"}{" "}
+          {c.kind === "mention" ? "Their post" : "On post"}: {c.post_caption ?? "(no caption)"}{" "}
           {c.post_link && (
             <a href={c.post_link} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex items-center gap-0.5 font-medium text-slate-700 underline">
               open <ExternalLink className="h-3 w-3" aria-hidden />
@@ -249,13 +252,24 @@ function CommentCard({ c, canReply, canModerate, onChanged }: { c: CommentItem; 
               {c.status === "done" ? <><RotateCcw className="h-3.5 w-3.5" aria-hidden /> To answer</> : <><Check className="h-3.5 w-3.5" aria-hidden /> Done</>}
             </Button>
           )}
-          {canModerate && (
+          {canReply && c.contact_id && (
+            <Button size="sm" variant="ghost" disabled={busy !== null}
+              onClick={() => void act("lead", `/api/social/comments/${c.id}/lead`, { method: "POST" }, "Lead created in the lead pool.")}>
+              <UserPlus className="h-3.5 w-3.5" aria-hidden /> Make lead
+            </Button>
+          )}
+          {canModerate && c.kind === "comment" && c.channel === "instagram" && (
+            <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => setConfirmCommentsOff(true)}>
+              <MessageSquareOff className="h-3.5 w-3.5" aria-hidden /> Comments off
+            </Button>
+          )}
+          {canModerate && c.kind === "comment" && (
             <Button size="sm" variant="ghost" disabled={busy !== null}
               onClick={() => void act("hide", `/api/social/comments/${c.id}/hide`, json({ hidden: !c.is_hidden }), c.is_hidden ? "Comment shown again." : "Comment hidden.")}>
               {c.is_hidden ? <><Eye className="h-3.5 w-3.5" aria-hidden /> Show</> : <><EyeOff className="h-3.5 w-3.5" aria-hidden /> Hide</>}
             </Button>
           )}
-          {canModerate && (
+          {canModerate && c.kind === "comment" && (
             <Button size="sm" variant="ghost" className="text-rose-600 hover:text-rose-700" disabled={busy !== null} onClick={() => setConfirmDelete(true)}>
               <Trash2 className="h-3.5 w-3.5" aria-hidden /> Delete
             </Button>
@@ -263,6 +277,14 @@ function CommentCard({ c, canReply, canModerate, onChanged }: { c: CommentItem; 
         </div>
       )}
 
+      <ConfirmDialog
+        open={confirmCommentsOff}
+        title="Turn off comments on this post?"
+        description="Nobody can add new comments to this Instagram post until you turn them on again in Instagram."
+        confirmLabel="Turn off"
+        onCancel={() => setConfirmCommentsOff(false)}
+        onConfirm={() => { setConfirmCommentsOff(false); void act("comments-off", `/api/social/comments/${c.id}/post-comments`, json({ enabled: false }), "Comments turned off on this post.") }}
+      />
       <ConfirmDialog
         open={confirmDelete}
         title="Delete this comment?"

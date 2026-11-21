@@ -56,6 +56,9 @@ export async function ensureSocialCommentsTable(): Promise<void> {
       updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
       CONSTRAINT social_comments_one_per_account UNIQUE (account_id, channel, comment_id)
     )`.catch((e: unknown) => console.warn('[social comments] table not created:', e instanceof Error ? e.message : e))
+  // Migration 172: 'comment' on our post, or 'mention' of us elsewhere.
+  await prisma.$executeRaw`ALTER TABLE social_comments ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'comment'`
+    .catch((e: unknown) => console.warn('[social comments] kind column not added:', e instanceof Error ? e.message : e))
 }
 
 /** Plain text from the browser or a webhook: a string, trimmed, no hidden characters. */
@@ -97,6 +100,8 @@ export interface IncomingComment {
   fromName?: string | null
   text?: string | null
   at?: Date | null
+  /** 'mention': someone mentioned the account on their own post. */
+  kind?: 'comment' | 'mention'
 }
 
 /**
@@ -126,8 +131,8 @@ export async function saveIncomingComment(c: IncomingComment): Promise<{ id: str
 
   await ensureSocialCommentsTable()
   const rows = await prisma.$queryRaw<{ id: string; created: boolean }[]>`
-    INSERT INTO social_comments (account_id, channel, comment_id, parent_id, post_id, from_id, from_name, contact_id, text, commented_at)
-    VALUES (${c.accountId}::uuid, ${c.channel}, ${c.commentId}, ${parentId}, ${postId}, ${fromId}, ${name}, ${contactId}::uuid, ${text}, ${at})
+    INSERT INTO social_comments (account_id, channel, comment_id, parent_id, post_id, from_id, from_name, contact_id, text, commented_at, kind)
+    VALUES (${c.accountId}::uuid, ${c.channel}, ${c.commentId}, ${parentId}, ${postId}, ${fromId}, ${name}, ${contactId}::uuid, ${text}, ${at}, ${c.kind === 'mention' ? 'mention' : 'comment'})
     ON CONFLICT (account_id, channel, comment_id) DO UPDATE
       SET text = COALESCE(EXCLUDED.text, social_comments.text), updated_at = now()
     RETURNING id::text AS id, (xmax = 0) AS created`.catch((e: unknown) => {
@@ -180,6 +185,8 @@ export async function fillPostDetails(accountId: string, channel: SocialChannel,
 export interface CommentRow {
   id: string
   channel: SocialChannel
+  kind: 'comment' | 'mention'
+  post_id: string | null
   comment_id: string
   from_id: string | null
   from_name: string | null
@@ -195,10 +202,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export async function loadComment(accountId: string, id: string): Promise<CommentRow | null> {
   if (!UUID.test(id)) return null
   const rows = await prisma.$queryRaw<CommentRow[]>`
-    SELECT id::text AS id, channel, comment_id, from_id, from_name, commented_at, private_reply_at, deleted_at, is_hidden
+    SELECT id::text AS id, channel, COALESCE(kind, 'comment') AS kind, post_id, comment_id, from_id, from_name, commented_at, private_reply_at, deleted_at, is_hidden
     FROM social_comments WHERE id = ${id}::uuid AND account_id = ${accountId}::uuid LIMIT 1`.catch(() => [] as CommentRow[])
   const row = rows[0]
   if (!row || !META_ID.test(row.comment_id)) return null
+  if (row.post_id && !META_ID.test(row.post_id)) row.post_id = null
   return row
 }
 
@@ -238,6 +246,18 @@ async function graphCall(method: 'POST' | 'DELETE', url: string, token: string, 
 
 /** A public reply under the comment. Returns Meta's id for the reply. */
 export async function replyPublicly(c: CommentRow, auth: ChannelAuth, text: string): Promise<{ ok: true; replyId: string | null } | { ok: false; error: string }> {
+  if (c.kind === 'mention') {
+    // Someone else's post: answered through our account's /mentions edge
+    // (Facebook-login connections only; graph.instagram.com has no such edge).
+    if (!auth.igAccountId || !auth.token.startsWith('EAA') || !c.post_id) {
+      return { ok: false, error: 'Replying to a mention needs the "Connect Facebook & Instagram" connection.' }
+    }
+    const body: Record<string, string> = { media_id: c.post_id, message: text }
+    if (c.comment_id !== c.post_id) body.comment_id = c.comment_id
+    const r = await graphCall('POST', `https://graph.facebook.com/${GRAPH_API_VERSION}/${auth.igAccountId}/mentions`, auth.token, body)
+    if (!r.ok) return r
+    return { ok: true, replyId: typeof r.data.id === 'string' && META_ID.test(r.data.id) ? r.data.id : null }
+  }
   const url = c.channel === 'instagram'
     ? `${graphHost('instagram', auth.token)}/${c.comment_id}/replies`
     : `https://graph.facebook.com/${GRAPH_API_VERSION}/${c.comment_id}/comments`
@@ -360,6 +380,7 @@ export async function automatedPrivateReply(input: {
 }): Promise<{ ok: true; contactId: string | null } | { ok: false; error: string }> {
   const c = await loadComment(input.accountId, input.socialCommentId)
   if (!c) return { ok: false, error: 'comment not found' }
+  if (c.kind === 'mention') return { ok: false, error: 'mentions cannot be answered privately' }
   if (!privateReplyOpen(c, new Date())) return { ok: false, error: 'private reply already sent or older than 7 days' }
   const t = cleanText(input.text, PRIVATE_REPLY_MAX[c.channel])
   if (!t.ok) return { ok: false, error: 'empty or too long message' }
@@ -408,4 +429,62 @@ export async function commentsReady(accountId: string): Promise<boolean> {
     SELECT granted_permissions AS p FROM facebook_config WHERE account_id = ${accountId}::uuid`.catch(() => [])
   const COMMENT_SCOPES = ['instagram_manage_comments', 'instagram_business_manage_comments', 'pages_manage_engagement']
   return perms.some((r) => Array.isArray(r.p) && r.p.some((s) => typeof s === 'string' && COMMENT_SCOPES.includes(s)))
+}
+
+// ── Mentions, comments off, leads ──────────────────────────────────────────
+
+/**
+ * An @mention of the account (webhook carries only ids): the words and the
+ * post are fetched with our own token, from our own account's node, so
+ * nothing is read that Meta did not show this account.
+ */
+export async function fetchMention(auth: ChannelAuth, ids: { mediaId: string; commentId?: string | null }): Promise<{
+  text: string | null; username: string | null; caption: string | null; permalink: string | null; at: Date | null
+} | null> {
+  if (!auth.igAccountId || !auth.token.startsWith('EAA') || !META_ID.test(ids.mediaId)) return null
+  const commentId = ids.commentId && META_ID.test(ids.commentId) ? ids.commentId : null
+  const field = commentId
+    ? `mentioned_comment.comment_id(${commentId}){text,timestamp,username,media{caption,permalink}}`
+    : `mentioned_media.media_id(${ids.mediaId}){caption,permalink,timestamp,username}`
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${auth.igAccountId}?fields=${encodeURIComponent(field)}&access_token=${encodeURIComponent(auth.token)}`
+  const res = await fetch(url, { cache: 'no-store' }).catch(() => null)
+  if (!res?.ok) return null
+  type M = { text?: string; caption?: string; timestamp?: string; username?: string; permalink?: string; media?: { caption?: string; permalink?: string } }
+  const data = (await res.json().catch(() => ({}))) as { mentioned_comment?: M; mentioned_media?: M }
+  const m = data.mentioned_comment ?? data.mentioned_media
+  if (!m) return null
+  const at = m.timestamp ? new Date(m.timestamp) : null
+  return {
+    text: clip(m.text ?? m.caption, 2200),
+    username: clip(m.username, 100),
+    caption: clip(m.media?.caption ?? m.caption, 300),
+    permalink: safePermalink(m.media?.permalink ?? m.permalink),
+    at: at && Number.isFinite(at.getTime()) ? at : null,
+  }
+}
+
+/** Save a mention row (once), with the fetched words and post link. */
+export async function saveMention(accountId: string, auth: ChannelAuth | null, ids: { mediaId: string; commentId?: string | null }): Promise<{ id: string; created: boolean } | null> {
+  if (!META_ID.test(ids.mediaId)) return null
+  const commentId = ids.commentId && META_ID.test(ids.commentId) ? ids.commentId : ids.mediaId
+  const details = auth ? await fetchMention(auth, ids) : null
+  const saved = await saveIncomingComment({
+    accountId, channel: 'instagram', kind: 'mention', commentId, postId: ids.mediaId,
+    fromName: details?.username ?? null, text: details?.text ?? '[mentioned you]', at: details?.at ?? null,
+  })
+  if (saved && details) {
+    await prisma.$executeRaw`
+      UPDATE social_comments SET post_caption = ${details.caption}, post_permalink = ${details.permalink}
+      WHERE id = ${saved.id}::uuid AND account_id = ${accountId}::uuid`.catch(() => 0)
+  }
+  return saved
+}
+
+/** Turn comments on or off for an Instagram post of this account. */
+export async function setPostComments(c: CommentRow, auth: ChannelAuth, enabled: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (c.channel !== 'instagram' || c.kind !== 'comment' || !c.post_id) {
+    return { ok: false, error: 'Comments can be turned off only on your own Instagram posts.' }
+  }
+  const r = await graphCall('POST', `${graphHost('instagram', auth.token)}/${c.post_id}`, auth.token, { comment_enabled: String(enabled) })
+  return r.ok ? { ok: true } : r
 }

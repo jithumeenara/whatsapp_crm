@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { graphHost, messagesUrl } from "@/lib/meta/social-messaging"
-import { fillPostDetails, saveIncomingComment } from "@/lib/meta/social-comments"
+import { channelAuth, fillPostDetails, saveIncomingComment, saveMention } from "@/lib/meta/social-comments"
 import { applySocialDelete, applySocialEdit, applySocialReaction, attachmentsToRows, noteBusinessAiHandoff, replyTargetId, saveSocialEcho } from "@/lib/meta/social-inbound"
 import { sameToken, scopeAllows, socialWebhookScope, type SocialWebhookScope } from "@/lib/social/webhook-secrets"
 import { prisma } from "@/lib/db"
@@ -179,6 +179,8 @@ interface IgCommentValue {
 // mention content. Same permission gate as comments.
 interface IgMentionValue {
   media_id: string
+  /** Present when the mention is in a comment rather than a caption. */
+  comment_id?: string
 }
 
 interface IgWebhookBody {
@@ -270,7 +272,13 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
         continue
       }
       if (change.field === "mentions") {
-        await processIgStoryMention(config.account_id, config.access_token ?? "", change.value as unknown as IgMentionValue)
+        const mention = change.value as unknown as IgMentionValue
+        if (typeof mention?.media_id === "string") {
+          // Kept on the Comments screen as a mention (public reply only).
+          const auth = await channelAuth(config.account_id, "instagram")
+          const saved = await saveMention(config.account_id, auth, { mediaId: mention.media_id, commentId: typeof mention.comment_id === "string" ? mention.comment_id : null })
+          if (saved) emitToAccount(config.account_id, "social_comment", { id: saved.id })
+        }
         continue
       }
 
@@ -692,19 +700,6 @@ async function processIgComment(accountId: string, _accessToken: string, comment
   }).catch((err) => console.error("[Instagram] comment_keyword_match dispatch failed:", err))
 }
 
-/**
- * IG·02 — Story mentions, GATED scaffolding. Same Meta App Review gate as
- * comments above (instagram_manage_mentions). Meta's mentions webhook is
- * deliberately minimal (just a media ID) — the actual mention content
- * would need a follow-up Graph API call (GET /{media-id}) once approved;
- * not implemented here since it cannot be tested against real data before
- * that approval exists, and Meta's exact response shape for that call
- * should be re-verified live at implementation time rather than assumed.
- */
-async function processIgStoryMention(accountId: string, _accessToken: string, mention: IgMentionValue) {
-  if (!mention?.media_id) return
-  console.log(`[Instagram] story mention received (media_id=${mention.media_id}) — scaffolding only, not yet processed into a Message/Contact (requires Meta App Review approval + a follow-up media-fetch call not yet built).`)
-}
 
 async function findOrCreateIgContact(
   accountId: string,

@@ -140,4 +140,16 @@ describe('Instagram inbound', () => {
     await new Promise((r) => setTimeout(r, 30))
     expect(h.automations).toHaveLength(1)
   })
+
+  it('an @mention is kept as a mention (public reply only); a forged media id is not', async () => {
+    const mention = (mediaId: string) => ({ object: 'instagram', entry: [{ id: '17841400000000', changes: [{ field: 'mentions', value: { media_id: mediaId, comment_id: '17880000000000001' } }] }] })
+    await post(mention('17900000000000001'))
+    await vi.waitFor(() => expect(h.comments).toHaveLength(1))
+    expect(h.comments[0]).toEqual(expect.arrayContaining(['acc-1', 'instagram', '17880000000000001', '17900000000000001', 'mention']))
+    // The words are fetched from our own account's node with our token.
+    expect(h.fetches.some((u) => u.startsWith('https://graph.facebook.com/v27.0/17841400000000?fields=mentioned_comment'))).toBe(true)
+    await post(mention('1/../me/accounts'))
+    await new Promise((r) => setTimeout(r, 30))
+    expect(h.comments).toHaveLength(1)
+  })
 })

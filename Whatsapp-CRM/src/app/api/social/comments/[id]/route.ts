@@ -40,6 +40,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     const { id } = await params
     const c = await loadComment(ctx.accountId, id)
     if (!c || c.deleted_at) return NextResponse.json({ error: 'Comment not found.' }, { status: 404 })
+    if (c.kind === 'mention') return NextResponse.json({ error: 'This is a mention on someone else\'s post: you can reply to it, but not hide, delete or message privately.' }, { status: 400 })
     const auth = await channelAuth(ctx.accountId, c.channel)
     if (!auth) return NextResponse.json({ error: `${c.channel === 'instagram' ? 'Instagram' : 'Messenger'} is not connected.` }, { status: 400 })
     const r = await deleteAtMeta(c, auth)

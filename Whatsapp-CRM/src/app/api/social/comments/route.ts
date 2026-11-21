@@ -14,7 +14,7 @@ import { ensureSocialCommentsTable, privateReplyOpen, safePermalink } from '@/li
 type Row = {
   id: string; channel: 'instagram' | 'facebook'; parent_id: string | null; post_caption: string | null; post_permalink: string | null
   from_name: string | null; contact_id: string | null; text: string | null; commented_at: Date; is_hidden: boolean
-  deleted_at: Date | null; status: string; private_reply_at: Date | null; replies: unknown
+  deleted_at: Date | null; status: string; private_reply_at: Date | null; replies: unknown; kind: string
 }
 
 const PAGE = 50
@@ -33,7 +33,7 @@ export async function GET(req: Request) {
     await ensureSocialCommentsTable()
     const rows = await prisma.$queryRaw<Row[]>`
       SELECT id::text AS id, channel, parent_id, post_caption, post_permalink, from_name, contact_id::text AS contact_id,
-             text, commented_at, is_hidden, deleted_at, status, private_reply_at, replies
+             text, commented_at, is_hidden, deleted_at, status, private_reply_at, replies, COALESCE(kind, 'comment') AS kind
       FROM social_comments
       WHERE account_id = ${ctx.accountId}::uuid
         AND deleted_at IS NULL
@@ -48,6 +48,7 @@ export async function GET(req: Request) {
       comments: page.map((r) => ({
         id: r.id,
         channel: r.channel,
+        kind: r.kind === 'mention' ? 'mention' : 'comment',
         is_reply: Boolean(r.parent_id),
         post_caption: r.post_caption,
         post_link: safePermalink(r.post_permalink),
@@ -58,7 +59,7 @@ export async function GET(req: Request) {
         is_hidden: r.is_hidden,
         status: r.status,
         private_replied: Boolean(r.private_reply_at),
-        can_private_reply: privateReplyOpen(r, now),
+        can_private_reply: r.kind !== 'mention' && privateReplyOpen(r, now),
         replies: (Array.isArray(r.replies) ? r.replies : []).slice(-20).map((x) => {
           const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>
           return { text: typeof o.text === 'string' ? o.text : '', at: typeof o.at === 'string' ? o.at : null }

@@ -13,9 +13,15 @@ const h = vi.hoisted(() => ({
   listAccount: '' as unknown,
   calls: [] as Array<{ url: string; method: string; body: string }>,
   updates: [] as string[],
+  channel: 'facebook' as string,
+  kind: 'comment' as string,
+  contactId: null as string | null,
+  leads: 0,
 }))
+vi.mock('@/lib/leads/create-from-automation', () => ({ createLeadFromAutomation: async () => { h.leads++; return { created: true, detail: 'ok', leadId: 'lead-1' } } }))
 
 vi.mock('@/lib/auth/account', () => ({
+  assertPageAccess: () => {},
   requirePageAccess: async (_page: string, min: string) => {
     const rank = ['viewer', 'agent', 'supervisor', 'admin', 'owner']
     if (rank.indexOf(h.role) < rank.indexOf(min)) throw Object.assign(new Error('forbidden'), { status: 403 })
@@ -31,7 +37,8 @@ vi.mock('@/lib/db', () => ({
   prisma: {
     $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const sql = strings.join('?')
-      if (sql.includes('FROM social_comments WHERE id')) return [{ id: ID, channel: 'facebook', comment_id: '123_456', from_id: '1', from_name: 'A', commented_at: new Date(), private_reply_at: null, deleted_at: null, is_hidden: false }]
+      if (sql.includes('FROM social_comments WHERE id')) return [{ id: ID, channel: h.channel, kind: h.kind, post_id: '17900000000000001', comment_id: '123_456', from_id: '1', from_name: 'A', contact_id: h.contactId, text: 'hi', commented_at: new Date(), private_reply_at: null, deleted_at: null, is_hidden: false }]
+      if (sql.includes('FROM instagram_config')) return [{ access_token: 'EAAsys', instagram_account_id: '17841400000000', page_id: null }]
       if (sql.includes('FROM facebook_config')) return [{ access_token: 'EAApage', instagram_account_id: null, page_id: '1029' }]
       if (sql.includes('FROM social_comments')) { h.listAccount = values[0]; return h.listRows }
       return []
@@ -43,11 +50,14 @@ vi.mock('@/lib/db', () => ({
 import { GET } from './route'
 import { DELETE, PATCH } from './[id]/route'
 import { POST as HIDE } from './[id]/hide/route'
+import { POST as COMMENTS_OFF } from './[id]/post-comments/route'
+import { POST as LEAD } from './[id]/lead/route'
+import { POST as PRIVATE } from './[id]/private-reply/route'
 
 const params = { params: Promise.resolve({ id: ID }) }
 
 beforeEach(() => {
-  h.role = 'agent'; h.calls = []; h.updates = []; h.listRows = []
+  h.role = 'agent'; h.calls = []; h.updates = []; h.listRows = []; h.channel = 'facebook'; h.kind = 'comment'; h.contactId = null; h.leads = 0
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
     h.calls.push({ url: String(url), method: init.method ?? 'GET', body: String(init.body ?? '') })
     return new Response(JSON.stringify({ success: true }), { status: 200 })
@@ -92,5 +102,33 @@ describe('the list', () => {
     expect(body.comments[0].post_link).toBeNull()
     expect(body.comments[0].replies).toEqual([])
     expect(body.comments[0].can_private_reply).toBe(true)
+  })
+})
+
+describe('mentions, comments off and leads', () => {
+  it("a mention (someone else's post) cannot be hidden, deleted or answered privately", async () => {
+    h.role = 'owner'; h.kind = 'mention'; h.channel = 'instagram'
+    expect((await HIDE(new Request('http://x', { method: 'POST', body: JSON.stringify({ hidden: true }) }), params)).status).toBe(400)
+    expect((await DELETE(new Request('http://x', { method: 'DELETE' }), params)).status).toBe(400)
+    expect((await PRIVATE(new Request('http://x', { method: 'POST', body: JSON.stringify({ text: 'hi' }) }), params)).status).toBe(400)
+    expect(h.calls).toEqual([])
+  })
+  it('comments off: supervisor+, Instagram own post only, post id from our row', async () => {
+    const off = () => COMMENTS_OFF(new Request('http://x', { method: 'POST', body: JSON.stringify({ enabled: false, post_id: '666' }) }), params)
+    expect((await off()).status).toBe(403)
+    h.role = 'supervisor'
+    expect((await off()).status).toBe(400) // a Facebook comment
+    h.channel = 'instagram'
+    expect((await off()).status).toBe(200)
+    expect(h.calls[0].url.startsWith('https://graph.facebook.com/v27.0/17900000000000001?')).toBe(true)
+    expect(h.calls[0].body).toBe('comment_enabled=false')
+  })
+  it('make lead: only for a comment linked to a contact', async () => {
+    const lead = () => LEAD(new Request('http://x', { method: 'POST' }), params)
+    expect((await lead()).status).toBe(409)
+    expect(h.leads).toBe(0)
+    h.contactId = 'contact-1'
+    expect((await lead()).status).toBe(200)
+    expect(h.leads).toBe(1)
   })
 })

@@ -25,6 +25,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const { id } = await params
     const c = await loadComment(ctx.accountId, id)
     if (!c) return NextResponse.json({ error: 'Comment not found.' }, { status: 404 })
+    if (c.kind === 'mention') return NextResponse.json({ error: 'This is a mention on someone else\'s post: you can reply to it, but not hide, delete or message privately.' }, { status: 400 })
     if (!privateReplyOpen(c, new Date())) {
       return NextResponse.json({ error: c.private_reply_at ? 'A private reply was already sent for this comment.' : `Private replies are possible only within ${PRIVATE_REPLY_DAYS} days of the comment.` }, { status: 409 })
     }
