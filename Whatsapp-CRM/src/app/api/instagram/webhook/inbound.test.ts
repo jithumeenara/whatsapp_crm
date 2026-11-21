@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   saved: [] as Array<Record<string, unknown>>,
   flows: 0,
   fetches: [] as string[],
+  automations: [] as string[],
 }))
 
 vi.mock('@/lib/social/webhook-secrets', () => ({ socialWebhookScope: async () => ({ all: true }), scopeAllows: () => true, sameToken: () => false }))
@@ -23,7 +24,7 @@ vi.mock('@/lib/socket', () => ({ emitToAccount: () => {} }))
 vi.mock('@/lib/audit/actors', () => ({ webhookRejected: () => {} }))
 vi.mock('@/lib/ads/attribution', () => ({ recordAdTouch: async () => {}, referralFromMeta: () => null }))
 vi.mock('@/lib/flows/engine', () => ({ dispatchInboundToFlows: async () => { h.flows++; return { consumed: true, outcome: 'matched' } } }))
-vi.mock('@/lib/automations/engine', () => ({ runAutomationsForTrigger: async () => {} }))
+vi.mock('@/lib/automations/engine', () => ({ runAutomationsForTrigger: async (a: { triggerType: string }) => { h.automations.push(a.triggerType) } }))
 vi.mock('@/lib/whatsapp/encryption', () => ({ openStoredSecret: (v: string | null) => v }))
 vi.mock('@/lib/db', () => ({
   prisma: {
@@ -34,7 +35,7 @@ vi.mock('@/lib/db', () => ({
     conversation: { findFirst: async () => ({ id: 'conv-1' }), update: async () => ({ id: 'conv-1' }), create: async () => ({ id: 'conv-1' }) },
     message: {
       findFirst: async (a: { where: { message_id: string } }) => h.saved.find((m) => m.message_id === a.where.message_id) ?? null,
-      create: async (a: { data: Record<string, unknown> }) => { h.saved.push(a.data); return { id: `m${h.saved.length}`, ...a.data } },
+      create: async (a: { data: Record<string, unknown> }) => { const row = { id: `m${h.saved.length + 1}`, ...a.data }; h.saved.push(row); return row },
       count: async () => h.saved.length,
     },
   },
@@ -52,6 +53,7 @@ beforeEach(() => {
   h.saved = []
   h.flows = 0
   h.fetches = []
+  h.automations = []
   h.token = 'EAAsystem'
   vi.stubGlobal('fetch', vi.fn(async (url: string) => { h.fetches.push(String(url)); return new Response('{"name":"Meera"}', { status: 200 }) }))
 })
@@ -85,5 +87,29 @@ describe('Instagram inbound', () => {
     await post(event('mid.4', 1763290000000))
     await vi.waitFor(() => expect(h.flows).toBe(1))
     for (const u of h.fetches) expect(u.startsWith('https://graph.instagram.com/')).toBe(true)
+  })
+
+  it('a reply to an earlier message is linked to it; an unknown message id links to nothing', async () => {
+    await post(event('mid.10', 1763290000))
+    await vi.waitFor(() => expect(h.saved).toHaveLength(1))
+    const reply = (mid: string, to: string) => ({
+      object: 'instagram',
+      entry: [{ id: '17841400000000', changes: [{ field: 'messages', value: { sender: { id: '998877' }, recipient: { id: '17841400000000' }, timestamp: 1763290100, message: { mid, text: 'yes this', reply_to: { mid: to } } } }] }],
+    })
+    await post(reply('mid.11', 'mid.10'))
+    await vi.waitFor(() => expect(h.saved).toHaveLength(2))
+    expect(h.saved[1].reply_to_message_id).toBe('m1')
+    await post(reply('mid.12', 'mid.not-here'))
+    await vi.waitFor(() => expect(h.saved).toHaveLength(3))
+    expect(h.saved[2].reply_to_message_id ?? null).toBeNull()
+  })
+
+  it("the business's own comment reply is not treated as a customer (no automation answers itself)", async () => {
+    const comment = (fromId: string) => ({ object: 'instagram', entry: [{ id: '17841400000000', changes: [{ field: 'comments', value: { id: `c_${fromId}`, text: 'price?', from: { id: fromId }, media: { id: 'media1' } } }] }] })
+    await post(comment('17841400000000'))
+    await new Promise((r) => setTimeout(r, 30))
+    expect(h.automations).toEqual([])
+    await post(comment('555444'))
+    await vi.waitFor(() => expect(h.automations).toEqual(['comment_keyword_match']))
   })
 })

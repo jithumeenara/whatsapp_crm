@@ -95,4 +95,15 @@ describe('Messenger inbound', () => {
     expect(h.upsertUpdate).toEqual({})
     expect(h.fetches.filter((u) => u.includes('fields=name'))).toHaveLength(0)
   })
+
+  it('an event with no sender does not stop the rest of the batch', async () => {
+    await post({
+      object: 'page',
+      entry: [{ id: '1029', messaging: [
+        { recipient: { id: '1029' }, timestamp: 1763290000000, message: { mid: 'mid.broken', text: 'x' } },
+        { sender: { id: '7654321' }, recipient: { id: '1029' }, timestamp: 1763290000001, message: { mid: 'mid.good', text: 'hello' } },
+      ] }],
+    })
+    await vi.waitFor(() => expect(h.saved.map((m) => m.message_id)).toEqual(['mid.good']))
+  })
 })

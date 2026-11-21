@@ -32,7 +32,7 @@ import {
 } from '@/lib/whatsapp/phone-utils'
 import { prisma } from '@/lib/db'
 import { sendToWebsiteVisitor } from '@/lib/webchat/outbound'
-import { loadSocialTarget, socialPost, socialSenderAction, type SocialChannel, type SocialTarget } from '@/lib/meta/social-messaging'
+import { loadSocialTarget, socialPost, socialSendAttachment, socialSenderAction, type SocialChannel, type SocialTarget } from '@/lib/meta/social-messaging'
 
 interface SendTextEngineArgs {
   accountId: string
@@ -258,7 +258,10 @@ async function engineSendButtonTemplateSocial(
         payload: {
           template_type: 'button',
           text: (text ?? '').slice(0, 640) || 'Choose an option:',
-          buttons: buttons.slice(0, 3).map((b) => ({ ...b, title: b.title.slice(0, 20) })),
+          buttons: buttons
+            .filter((b) => (b.type === 'web_url' ? /^https:\/\//i.test(b.url) : String(b.payload ?? '').length > 0 && String(b.payload).length <= 1000))
+            .slice(0, 3)
+            .map((b) => ({ ...b, title: cutChars((b.title ?? '').trim() || 'Open', 20) })),
         },
       },
     },
@@ -267,6 +270,68 @@ async function engineSendButtonTemplateSocial(
   const mid = messageId ?? `${channel === 'instagram' ? 'ig' : 'fb'}_btn_${Date.now()}`
   await persistSocialBotMessage(args, { contentType: 'text', text, messageId: mid })
   return { whatsapp_message_id: mid }
+}
+
+/** Meta's quick-reply limits (same on Instagram and Messenger). */
+const QUICK_REPLY_MAX = 13
+const QUICK_REPLY_TITLE = 20
+const QUICK_REPLY_PAYLOAD = 1000
+
+/** Cut to a number of characters without splitting an emoji. */
+function cutChars(text: string, max: number): string {
+  return [...text].slice(0, max).join('')
+}
+
+/**
+ * Text with tappable quick replies. Each payload is the option id, so a tap
+ * comes back (message.quick_reply.payload) as the same reply a WhatsApp
+ * list or button gives. Options without a title, or with an id Meta would
+ * refuse, are left out rather than sent broken. Returns null when nothing
+ * usable is left (the caller then sends plain text).
+ */
+async function engineSendQuickRepliesSocial(
+  args: { accountId: string; contactId: string; conversationId: string },
+  channel: SocialChannel,
+  text: string,
+  options: Array<{ id: string; title: string }>,
+): Promise<{ whatsapp_message_id: string } | null> {
+  const quick = options
+    .map((o) => ({ title: cutChars((o.title ?? '').trim(), QUICK_REPLY_TITLE), payload: String(o.id ?? '') }))
+    .filter((o) => o.title && o.payload && o.payload.length <= QUICK_REPLY_PAYLOAD)
+    .slice(0, QUICK_REPLY_MAX)
+  if (quick.length === 0) return null
+  const target = await loadSocialTarget(args.accountId, args.contactId, channel)
+  await socialSenderAction(target, 'typing_on')
+  const body = cutChars(convertMarkdownForInstagram(text || 'Choose an option:'), channel === 'instagram' ? 1000 : 2000)
+  const { messageId } = await socialPost(target, {
+    recipient: { id: target.recipientId },
+    message: { text: body, quick_replies: quick.map((q) => ({ content_type: 'text', title: q.title, payload: q.payload })) },
+    messaging_type: 'RESPONSE',
+  })
+  const mid = messageId ?? `${channel === 'instagram' ? 'ig' : 'fb'}_qr_${Date.now()}`
+  await persistSocialBotMessage(args, { contentType: 'text', text, messageId: mid })
+  return { whatsapp_message_id: mid }
+}
+
+/**
+ * A header picture before a button message (Meta's button template has no
+ * picture). Only an https link (Meta fetches it) or this workspace's own
+ * upload (resolveUploadPath refuses any other) — never a plain http link.
+ * A picture that fails is logged and skipped: the choices still go out.
+ */
+async function sendSocialHeaderImage(
+  args: { accountId: string; contactId: string; conversationId: string },
+  channel: SocialChannel,
+  url: string | null | undefined,
+): Promise<void> {
+  if (!url || /^http:\/\//i.test(url) || (/^[a-z]+:/i.test(url) && !/^https:\/\//i.test(url))) return
+  try {
+    const target = await loadSocialTarget(args.accountId, args.contactId, channel)
+    const { messageId } = await socialSendAttachment(target, args.accountId, 'image', url)
+    await persistSocialBotMessage(args, { contentType: 'image', text: '[image]', mediaUrl: url, messageId: messageId ?? `${channel === 'instagram' ? 'ig' : 'fb'}_img_${Date.now()}` })
+  } catch (err) {
+    console.warn(`[${channel} header image] skipped:`, err instanceof Error ? err.message : err)
+  }
 }
 
 async function notifyBotMessage(
@@ -905,6 +970,7 @@ export async function engineSendInteractiveButtons(
   `.catch(() => [] as { channel: string | null }[])
   const btnChannel = convRows[0]?.channel
   if (isSocial(btnChannel)) {
+    if (args.headerMediaType === 'image') await sendSocialHeaderImage(args, btnChannel, args.headerMediaUrl)
     return engineSendButtonTemplateSocial(
       args, btnChannel, withHeaderFooter(args.bodyText, args.headerText, args.footerText),
       args.buttons.map((b) => ({ type: 'postback' as const, title: b.title, payload: b.id })),
@@ -937,8 +1003,14 @@ export async function engineSendInteractiveList(
   const convRows = await prisma.$queryRaw<{ channel: string | null }[]>`
     SELECT channel FROM conversations WHERE id = ${args.conversationId}::uuid LIMIT 1
   `.catch(() => [] as { channel: string | null }[])
-  if (isSocial(convRows[0]?.channel)) {
-    const items = args.sections.flatMap((s) => s.rows).map((r, i) => `${i + 1}. ${r.title}`).join('\n')
+  const listChannel = convRows[0]?.channel
+  if (isSocial(listChannel)) {
+    const allRows = (args.sections ?? []).flatMap((s) => s.rows ?? [])
+    if (allRows.length > 0 && allRows.length <= QUICK_REPLY_MAX) {
+      const sent = await engineSendQuickRepliesSocial(args, listChannel, withHeaderFooter(args.bodyText, args.headerText, args.footerText), allRows)
+      if (sent) return sent
+    }
+    const items = allRows.map((r, i) => `${i + 1}. ${r.title}`).join('\n')
     const fallbackText = `${args.bodyText ?? ''}\n\n${items}`.trim()
     return engineSendText({ ...args, text: fallbackText })
   }

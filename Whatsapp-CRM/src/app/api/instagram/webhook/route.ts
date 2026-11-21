@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { graphHost, messagesUrl } from "@/lib/meta/social-messaging"
-import { applySocialDelete, applySocialEdit, applySocialReaction, attachmentsToRows, noteBusinessAiHandoff, saveSocialEcho } from "@/lib/meta/social-inbound"
+import { applySocialDelete, applySocialEdit, applySocialReaction, attachmentsToRows, noteBusinessAiHandoff, replyTargetId, saveSocialEcho } from "@/lib/meta/social-inbound"
 import { sameToken, scopeAllows, socialWebhookScope, type SocialWebhookScope } from "@/lib/social/webhook-secrets"
 import { prisma } from "@/lib/db"
 import { recordAdTouch, referralFromMeta } from "@/lib/ads/attribution"
@@ -294,6 +294,7 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
           quickReplyPayload: msg.quick_reply?.payload ?? null,
           postbackPayload:   null,
           storyReply:        msg.reply_to?.story ?? null,
+          replyToMid:        msg.reply_to?.mid ?? null,
           referral:          msg.referral ?? val.referral ?? null,
         })
       }
@@ -361,6 +362,7 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
           quickReplyPayload: msg.quick_reply?.payload ?? null,
           postbackPayload:   null,
           storyReply:        msg.reply_to?.story ?? null,
+          replyToMid:        msg.reply_to?.mid ?? null,
           referral:          msg.referral ?? event.referral ?? null,
           standby,
         })
@@ -405,6 +407,7 @@ async function processIgMessage({
   storyReply,
   referral,
   standby = false,
+  replyToMid = null,
 }: {
   accountId:         string
   accessToken:       string
@@ -421,6 +424,8 @@ async function processIgMessage({
   referral:          unknown
   /** Another app owns the thread: keep the message, do not answer it. */
   standby?:          boolean
+  /** The Meta id of the message the customer replied to. */
+  replyToMid?:       string | null
 }) {
   // --- Find or create owner (admin) user for this account ---
   const ownerProfile = await prisma.profile.findFirst({
@@ -476,6 +481,8 @@ async function processIgMessage({
     if (already) return
   }
 
+  const replyToId = storyReply ? null : await replyTargetId(conversation.id, replyToMid)
+
   // --- Save message ---
   try {
     const savedMsg = await prisma.message.create({
@@ -487,6 +494,7 @@ async function processIgMessage({
         media_url:       mediaUrl,
         story_media_url: storyMediaUrl,
         story_media_id:  storyMediaId,
+        ...(replyToId ? { reply_to_message_id: replyToId } : {}),
         message_id:      messageId,
         status:          "delivered",
         created_at:      new Date(timestamp),

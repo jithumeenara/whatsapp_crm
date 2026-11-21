@@ -11,7 +11,7 @@ import { runAutomationsForTrigger } from "@/lib/automations/engine"
 import { isUniqueViolation } from "@/lib/contacts/dedupe"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
 import { webhookRejected, webhookWrote } from "@/lib/audit/actors"
-import { applySocialEdit, applySocialReaction, attachmentsToRows, noteBusinessAiHandoff, saveSocialEcho } from "@/lib/meta/social-inbound"
+import { applySocialEdit, applySocialReaction, attachmentsToRows, noteBusinessAiHandoff, replyTargetId, saveSocialEcho } from "@/lib/meta/social-inbound"
 import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
 type RawConfig = {
@@ -117,6 +117,8 @@ interface FbMessage {
   text?: string
   attachments?: Array<{ type: string; payload: { url?: string } }>
   is_echo?: boolean
+  /** The message the customer replied to. */
+  reply_to?: { mid?: string }
   /** Meta Business AI hand-over notice (not a customer message). */
   admin_text?: string
   handoff_reason?: string
@@ -282,6 +284,7 @@ async function processFacebookWebhook(body: FbWebhookBody, scope: SocialWebhookS
           postbackTitle:     null,
           referral:          event.message.referral ?? null,
           standby,
+          replyToMid:        event.message.reply_to?.mid ?? null,
         })
       }
 
@@ -553,6 +556,7 @@ async function processFbMessage({
   postbackTitle,
   referral = null,
   standby = false,
+  replyToMid = null,
 }: {
   accountId:         string
   accessToken:       string
@@ -567,6 +571,8 @@ async function processFbMessage({
   referral?:         unknown
   /** Another app owns the thread: keep the message, do not answer it. */
   standby?:          boolean
+  /** The Meta id of the message the customer replied to. */
+  replyToMid?:       string | null
 }) {
   const ownerProfile = await prisma.profile.findFirst({
     where: { account_id: accountId },
@@ -627,6 +633,7 @@ async function processFbMessage({
   if (!contentText && !mediaUrl) contentText = "[message]"
 
   try {
+    const replyToId = await replyTargetId(conversation.id, replyToMid)
     const savedMsg = await prisma.message.create({
       data: {
         conversation_id: conversation.id,
@@ -637,6 +644,7 @@ async function processFbMessage({
         message_id:      messageId,
         status:          "delivered",
         created_at:      new Date(timestamp),
+        ...(replyToId ? { reply_to_message_id: replyToId } : {}),
       },
     })
     emitToAccount(accountId, "message", { eventType: "INSERT", new: savedMsg, old: {} })

@@ -17,6 +17,17 @@ async function rowFor(conversationId: string, mid: string): Promise<{ id: string
   return prisma.message.findFirst({ where: { conversation_id: conversationId, message_id: mid }, select: { id: true } })
 }
 
+/**
+ * The message a customer replied to (Meta's reply_to.mid), as our row id —
+ * looked up in this conversation only, so a reply can never point at a
+ * message in someone else's chat. Null when unknown.
+ */
+export async function replyTargetId(conversationId: string, mid: unknown): Promise<string | null> {
+  if (typeof mid !== 'string' || !mid || mid.length > 300) return null
+  const row = await rowFor(conversationId, mid).catch(() => null)
+  return row?.id ?? null
+}
+
 /** A customer reacted (or removed a reaction) to one of the messages. */
 export async function applySocialReaction(input: {
   accountId: string; conversationId: string; contactId: string; targetMid: string; emoji: string | null
