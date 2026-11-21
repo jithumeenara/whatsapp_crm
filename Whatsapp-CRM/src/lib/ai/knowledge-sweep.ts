@@ -55,7 +55,28 @@ const SHEET_RESYNC_AFTER_MS = 55 * 60 * 1000
 /** A connected Data Store table, same clock as a sheet: it is a live
  *  source in the same way, and re-reading it costs one local query. */
 const TABLE_RESYNC_AFTER_MS = 55 * 60 * 1000
-const MAX_PER_PASS = 20
+/** Entries re-read per hourly pass, all accounts together. */
+const MAX_PER_PASS = 60
+/** No one account may take more than this per pass, so a big backlog in
+ *  one business never delays every other business's sheets. */
+const MAX_PER_ACCOUNT = 10
+/** Oldest-first candidates looked at before the per-account cap. */
+const CANDIDATES = 400
+
+/** Oldest first, at most `perKey` per key, at most `total` overall. */
+export function fairPick<T>(rows: readonly T[], keyOf: (row: T) => string, perKey: number, total: number): T[] {
+  const taken = new Map<string, number>()
+  const out: T[] = []
+  for (const row of rows) {
+    if (out.length >= total) break
+    const k = keyOf(row)
+    const n = taken.get(k) ?? 0
+    if (n >= perKey) continue
+    taken.set(k, n + 1)
+    out.push(row)
+  }
+  return out
+}
 
 export interface KnowledgeSweepResult {
   checked: number
@@ -130,7 +151,7 @@ async function sweepWebsiteKnowledgeRun(): Promise<KnowledgeSweepResult> {
       ],
     },
     orderBy: { last_synced_at: { sort: 'asc', nulls: 'first' } },
-    take: MAX_PER_PASS,
+    take: CANDIDATES,
     select: {
       id: true,
       kind: true,
@@ -143,9 +164,10 @@ async function sweepWebsiteKnowledgeRun(): Promise<KnowledgeSweepResult> {
     },
   })
 
-  result.checked = due.length
+  const picked = fairPick(due, (r) => r.account_id, MAX_PER_ACCOUNT, MAX_PER_PASS)
+  result.checked = picked.length
 
-  for (const item of due) {
+  for (const item of picked) {
     try {
       let fresh: string
       if (item.kind === 'database') {
