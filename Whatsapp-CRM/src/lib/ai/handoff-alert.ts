@@ -17,6 +17,7 @@
 import { prisma } from '@/lib/db'
 import { sendStaffAlert, cleanNumbers, templateSafe, alertExtras } from '@/lib/whatsapp/staff-alert'
 import { mappingFor } from '@/lib/whatsapp/alert-fields'
+import { sendTelegramStaffAlert } from './staff-telegram'
 
 export interface HandoffAlertInput {
   accountId: string
@@ -31,6 +32,8 @@ export interface HandoffAlertResult {
   sent: number
   failed: Array<{ to: string; error: string }>
   skipped: 'disabled' | 'no_numbers' | 'reason_filtered' | null
+  /** Admins told on Telegram (free, no 24-hour window). */
+  telegram?: number
 }
 
 function asStringArray(value: unknown): string[] {
@@ -58,15 +61,10 @@ export async function sendHandoffAlert(input: HandoffAlertInput): Promise<Handof
         handoff_alert_params: true,
       },
     })
-    if (!aiConfig?.handoff_alert_enabled) return { ...empty, skipped: 'disabled' }
-    if (cleanNumbers(aiConfig.handoff_alert_numbers).length === 0) {
-      return { ...empty, skipped: 'no_numbers' }
-    }
-
     // An empty list means every reason. Anything else is an opt-in, so a
     // business that only wants to hear about refusals is not woken by
-    // every unanswered opening-hours question.
-    const wanted = asStringArray(aiConfig.handoff_alert_reasons)
+    // every unanswered opening-hours question. Applies to both channels.
+    const wanted = asStringArray(aiConfig?.handoff_alert_reasons)
     if (wanted.length > 0 && !wanted.includes(input.reason)) {
       return { ...empty, skipped: 'reason_filtered' }
     }
@@ -75,6 +73,25 @@ export async function sendHandoffAlert(input: HandoffAlertInput): Promise<Handof
     const phone = input.contact?.phone ?? 'unknown'
     const quote = templateSafe(input.customerMessage)
     const reason = input.reason.replace(/_/g, ' ')
+    const plain = [
+      '🔔 A customer needs a person.',
+      '',
+      `From: ${who}`,
+      `Number: ${phone}`,
+      `Reason: ${reason}`,
+      '',
+      `They said: "${quote}"`,
+    ].join('\n')
+
+    // Telegram first and regardless of the WhatsApp settings: it is free
+    // and has no 24-hour window, so admins who opted in hear of it even
+    // when WhatsApp would need an approved template.
+    const telegram = await sendTelegramStaffAlert(input.accountId, plain)
+
+    if (!aiConfig?.handoff_alert_enabled) return { ...empty, skipped: 'disabled', telegram }
+    if (cleanNumbers(aiConfig.handoff_alert_numbers).length === 0) {
+      return { ...empty, skipped: 'no_numbers', telegram }
+    }
 
     const extras = aiConfig.handoff_alert_template ? await alertExtras(input.accountId, input.conversationId) : {}
     const { sent, failed } = await sendStaffAlert({
@@ -86,18 +103,10 @@ export async function sendHandoffAlert(input: HandoffAlertInput): Promise<Handof
       mapping: mappingFor(aiConfig.handoff_alert_params, aiConfig.handoff_alert_template),
       values: { ...extras, customer_name: who, customer_phone: phone, customer_message: quote, reason },
       label: 'handoff-alert',
-      text: [
-        '🔔 A customer needs a person.',
-        '',
-        `From: ${who}`,
-        `Number: ${phone}`,
-        `Reason: ${reason}`,
-        '',
-        `They said: "${quote}"`,
-      ].join('\n'),
+      text: plain,
     })
 
-    return { sent, failed, skipped: null }
+    return { sent, failed, skipped: null, telegram }
   } catch (err) {
     console.error('[handoff-alert] failed:', err instanceof Error ? err.message : err)
     return { ...empty, failed: [{ to: '(all)', error: err instanceof Error ? err.message : String(err) }] }

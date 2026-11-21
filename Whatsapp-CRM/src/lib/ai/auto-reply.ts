@@ -41,6 +41,7 @@ import { speak } from './speech'
 import { hasUnspeakableDetail } from './tts'
 import { getProviderKeys } from './providers/registry'
 import { sendHandoffAlert } from './handoff-alert'
+import { CLARIFY_SOURCE, makeClarifyingQuestion, shouldAskToClarify } from './clarify'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { engineSendText, engineSendVoiceNote } from '@/lib/flows/meta-send'
 import type { RegistrationExtract } from './image-reading'
@@ -108,6 +109,14 @@ async function markAsAssistantReply(providerMessageId: string | undefined): Prom
     .catch((err) =>
       console.error('[auto-reply] could not tag the reply:', err instanceof Error ? err.message : err),
     )
+}
+
+/** Tags a sent clarifying question, so the next turn knows it already asked. */
+async function markAsClarify(providerMessageId: string | undefined): Promise<void> {
+  if (!providerMessageId) return
+  await prisma.message
+    .updateMany({ where: { message_id: providerMessageId }, data: { bot_source: CLARIFY_SOURCE } })
+    .catch((err) => console.error('[auto-reply] could not tag the question:', err instanceof Error ? err.message : err))
 }
 
 export type AutoReplyOutcome =
@@ -543,6 +552,48 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
 
   if (turn.decision.action === 'handoff') {
     const reason = turn.decision.reason
+
+    // ── Ask before giving up (clarify.ts) ────────────────────────────
+    //
+    // "Not sure I understood" gets ONE clarifying question in the
+    // customer's own language first. If the next message is still not
+    // understood, the code below hands over and alerts the team.
+    const lastAssistant = await prisma.message
+      .findFirst({
+        where: { conversation_id: args.conversationId, sender_type: 'bot' },
+        orderBy: { created_at: 'desc' },
+        select: { bot_source: true, created_at: true },
+      })
+      .catch(() => null)
+    if (shouldAskToClarify({ reason, conversationStatus: conversation?.status, lastAssistant, now: new Date() })) {
+      const started = Date.now()
+      const question = await makeClarifyingQuestion(aiConfig as unknown as Parameters<typeof makeClarifyingQuestion>[0], text, history)
+      if (question.provider) {
+        void recordAiUsage({
+          accountId: args.accountId,
+          provider: question.provider,
+          model: question.model ?? 'unknown',
+          feature: 'chat_customer',
+          conversationId: args.conversationId,
+          tokens: question.usage as Parameters<typeof recordAiUsage>[0]['tokens'],
+          latencyMs: Date.now() - started,
+        })
+      }
+      try {
+        const sent = await engineSendText({
+          accountId: args.accountId,
+          userId: args.userId,
+          conversationId: args.conversationId,
+          contactId: args.contactId,
+          text: question.text,
+        })
+        await markAsClarify(sent.whatsapp_message_id)
+        return 'replied'
+      } catch (err) {
+        // Could not ask: hand over as before rather than leave them unanswered.
+        console.error('[auto-reply] clarifying question failed:', err instanceof Error ? err.message : err)
+      }
+    }
 
     // ── Ask first (handover-consent.ts) ──────────────────────────────
     //
