@@ -1569,6 +1569,31 @@ function LeadsV2() {
     }
   }
 
+  /** One tag added to, or removed from, the people behind the selected leads. */
+  async function applyBulkTag(op: "add" | "remove", tagId: string) {
+    if (selectedIds.size === 0 || bulkBusy) return
+    const tag = tags.find((t) => t.id === tagId)
+    setBulkBusy(true)
+    try {
+      const res = await apiFetch("/api/leads/bulk-tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [...selectedIds], tag_id: tagId, op }),
+      })
+      const data = (await res.json().catch(() => ({}))) as { changed?: number; people?: number; skippedNoContact?: number; skippedNotYours?: number }
+      const skipped = (data.skippedNoContact ?? 0) + (data.skippedNotYours ?? 0)
+      const did = op === "add" ? `“${tag?.name ?? "Tag"}” added` : `“${tag?.name ?? "Tag"}” removed`
+      toast.success(`${did} for ${data.people ?? 0} ${data.people === 1 ? "person" : "people"}${skipped > 0 ? ` — ${skipped} skipped (no contact, or not yours)` : ""}`)
+      setSelectedIds(new Set())
+      await loadData()
+    } catch (err) {
+      console.error("[leads] bulk tag failed:", err)
+      toast.error(errorText(err, "Could not change the tag."))
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
   async function handleHide(id: string, hide: boolean) {
     try {
       await apiFetch(`/api/leads/${id}`, {
@@ -1765,6 +1790,17 @@ function LeadsV2() {
                     {tag.name}
                   </button>
                 ))}
+                {/* Leads nobody has tagged yet — the ones to sort next. */}
+                <button type="button" aria-pressed={activeTagId === "__none"}
+                  onClick={() => setActiveTagId((prev) => prev === "__none" ? "" : "__none")}
+                  className={cn(
+                    "shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+                    activeTagId === "__none"
+                      ? "border-slate-800 bg-slate-800 text-white"
+                      : "border-dashed border-slate-300 text-slate-500 hover:bg-slate-50",
+                  )}>
+                  No tags
+                </button>
               </>
             )}
           </div>
@@ -1913,6 +1949,29 @@ function LeadsV2() {
                   with their chats
                 </label>
               </>
+            )}
+
+            {/* One tag on or off the selected leads' people. Never a
+                replace: tags other people added stay. */}
+            {tags.length > 0 && (
+              <select
+                aria-label="Add or remove a tag on the selected leads"
+                disabled={bulkBusy}
+                value=""
+                onChange={(e) => {
+                  const [op, id] = e.target.value.split(":")
+                  if ((op === "add" || op === "remove") && id) void applyBulkTag(op, id)
+                }}
+                className="h-7 max-w-[10rem] rounded-md border border-indigo-200 bg-white px-1.5 text-[11.5px] text-slate-700"
+              >
+                <option value="">Tag…</option>
+                <optgroup label="Add tag">
+                  {tags.map((t) => <option key={`a-${t.id}`} value={`add:${t.id}`}>{t.name}</option>)}
+                </optgroup>
+                <optgroup label="Remove tag">
+                  {tags.map((t) => <option key={`r-${t.id}`} value={`remove:${t.id}`}>{t.name}</option>)}
+                </optgroup>
+              </select>
             )}
 
             {/* Answering the assistant, on the tab where its guesses

@@ -14,6 +14,9 @@ import { cleanContactDetails, hasContactDetails, saveContactDetails } from '@/li
 
 const PAGE_SIZE = 25
 
+/** tag_id value meaning "leads with no tags at all". */
+const NO_TAGS = '__none'
+
 /** Statuses an unassigned lead can have and still be in New Pool. */
 const POOL_STATUSES = ['new', 'follow_up']
 
@@ -172,7 +175,12 @@ export async function GET(req: NextRequest) {
     if (score) where.score = score
     if (district) where.district = district
 
-    if (tagId) {
+    // "__none": leads nobody has tagged yet. A lead with no contact has no
+    // tags either. Added to AND so the agent/pool rule above still holds.
+    if (tagId === NO_TAGS) {
+      const and = Array.isArray(where.AND) ? (where.AND as unknown[]) : []
+      where.AND = [...and, { OR: [{ contact_id: null }, { contact: { tags: { none: {} } } }] }]
+    } else if (tagId) {
       where.contact = { tags: { some: { tag_id: tagId } } }
     }
 
