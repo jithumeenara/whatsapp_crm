@@ -24,7 +24,7 @@ export interface SessionWindowInfo {
  * so the new 72-hour Free Entry Point badge (useFepWindow, same file) has
  * one shared home to sit next to.
  */
-export function useSessionWindow(messages: SessionWindowMessage[]): SessionWindowInfo {
+export function useSessionWindow(messages: SessionWindowMessage[], windowHours = 24): SessionWindowInfo {
   return useMemo(() => {
     if (!messages.length) return { expired: false, remaining: "" };
 
@@ -32,15 +32,17 @@ export function useSessionWindow(messages: SessionWindowMessage[]): SessionWindo
     if (!lastCustomerMsg) return { expired: false, remaining: "" };
 
     const hoursSince = differenceInHours(new Date(), new Date(lastCustomerMsg.created_at));
-    const expired = hoursSince >= 24;
+    const expired = hoursSince >= windowHours;
     if (expired) return { expired: true, remaining: "Expired" };
 
-    const hoursLeft = 24 - hoursSince;
-    const remaining =
-      hoursLeft >= 1 ? `${Math.floor(hoursLeft)}h remaining` : `${Math.floor(hoursLeft * 60)}m remaining`;
+    const hoursLeft = windowHours - hoursSince;
+    let remaining: string;
+    if (hoursLeft >= 48) remaining = `${Math.floor(hoursLeft / 24)}d remaining`;
+    else if (hoursLeft >= 1) remaining = `${Math.floor(hoursLeft)}h remaining`;
+    else remaining = `${Math.floor(hoursLeft * 60)}m remaining`;
 
     return { expired, remaining };
-  }, [messages]);
+  }, [messages, windowHours]);
 }
 
 export interface FepWindowInfo {

@@ -311,8 +311,25 @@ export function MessageThread({
     };
   }, []);
 
-  // 24-hour session timer — shared with leads/[id]/page.tsx via useSessionWindow
-  const sessionInfo = useSessionWindow(messages);
+  // Instagram / Messenger: 7 days instead of 24 hours when the owner has
+  // turned on Human agent replies (the send route checks the same rule).
+  const socialChannel = (conversation as { channel?: string } | null)?.channel;
+  const [socialWindow, setSocialWindow] = useState<{ channel: string; hours: number } | null>(null);
+  useEffect(() => {
+    if (socialChannel !== "instagram" && socialChannel !== "facebook") return;
+    let cancelled = false;
+    apiFetch(`/api/meta/social-connect/reply-window?channel=${socialChannel}`)
+      .then((res) => res.json())
+      .then((body: { hours?: unknown }) => {
+        if (!cancelled && typeof body.hours === "number") setSocialWindow({ channel: socialChannel, hours: body.hours });
+      })
+      .catch((err) => console.error("Failed to load the reply window:", err));
+    return () => { cancelled = true; };
+  }, [socialChannel]);
+  const windowHours = socialWindow && socialWindow.channel === socialChannel ? socialWindow.hours : 24;
+
+  // 24-hour session timer (7 days for Human agent replies) — shared with leads/[id]/page.tsx via useSessionWindow
+  const sessionInfo = useSessionWindow(messages, windowHours);
   // 72-hour Free Entry Point window (MA·02) — distinct from the 24h session above.
   const fepInfo = useFepWindow(conversation?.fep_expires_at);
 

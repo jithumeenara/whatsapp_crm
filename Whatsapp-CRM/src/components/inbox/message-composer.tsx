@@ -570,7 +570,7 @@ export function MessageComposer({
           the box is closed instead of just greying it out. */}
       {sessionExpired && (channel === 'instagram' || channel === 'facebook') && (
         <div role="status" className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          Meta allows replies only within 24 hours of the customer&rsquo;s last message on {channel === 'instagram' ? 'Instagram' : 'Messenger'}.
+          Meta allows replies on {channel === 'instagram' ? 'Instagram' : 'Messenger'} only for 24 hours after the customer&rsquo;s last message (7 days when Human agent replies are on).
           This chat opens again when they message you.
         </div>
       )}

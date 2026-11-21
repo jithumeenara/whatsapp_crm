@@ -11,6 +11,7 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit';
+import { loadSocialTarget, socialPost } from '@/lib/meta/social-messaging';
 
 /**
  * POST /api/whatsapp/react
@@ -69,11 +70,15 @@ export async function POST(request: Request) {
       emoji?: string;
     };
 
-    if (!message_id || typeof emoji !== 'string') {
+    if (!message_id || typeof message_id !== 'string' || typeof emoji !== 'string') {
       return NextResponse.json(
         { error: 'message_id and emoji are required' },
         { status: 400 },
       );
+    }
+    // One emoji (a few code points for skin tones / flags), never free text.
+    if ([...emoji].length > 8 || /[\p{L}\p{N}<>]/u.test(emoji)) {
+      return NextResponse.json({ error: 'Pick one emoji.' }, { status: 400 });
     }
 
     // Resolve target message + its conversation; verify ownership.
@@ -102,6 +107,8 @@ export async function POST(request: Request) {
       select: {
         id: true,
         account_id: true,
+        channel: true,
+        contact_id: true,
         contact: { select: { phone: true } },
       },
     });
@@ -111,6 +118,33 @@ export async function POST(request: Request) {
         { error: 'Conversation not found' },
         { status: 404 },
       );
+    }
+
+    // Instagram / Messenger: the reaction goes through that channel's Send
+    // API — never through WhatsApp to the contact's phone.
+    const channel = conversation.channel;
+    if (channel === 'instagram' || channel === 'facebook') {
+      // Instagram accepts only a heart; Messenger takes any emoji.
+      if (channel === 'instagram' && emoji !== '' && emoji !== '❤️' && emoji !== '❤') {
+        return NextResponse.json({ error: 'Instagram only allows a ❤️ reaction.' }, { status: 400 });
+      }
+      try {
+        const target = await loadSocialTarget(accountId, conversation.contact_id, channel);
+        await socialPost(target, emoji === ''
+          ? { recipient: { id: target.recipientId }, sender_action: 'unreact', payload: { message_id: targetMessage.message_id } }
+          : { recipient: { id: target.recipientId }, sender_action: 'react', payload: { message_id: targetMessage.message_id, reaction: channel === 'instagram' ? 'love' : emoji } });
+      } catch (err) {
+        console.error(`[${channel}/react] send failed:`, err instanceof Error ? err.message : err);
+        return NextResponse.json(
+          { error: err instanceof Error ? err.message : 'The reaction could not be sent.' },
+          { status: 502 },
+        );
+      }
+      const saved = await mirrorReaction(targetMessage, userId, emoji);
+      return saved ?? NextResponse.json({ success: true });
+    }
+    if (channel && channel !== 'whatsapp') {
+      return NextResponse.json({ error: 'Reactions are not available on this channel.' }, { status: 400 });
     }
 
     const contactPhone = conversation.contact?.phone;
@@ -152,57 +186,13 @@ export async function POST(request: Request) {
         err instanceof Error ? err.message : 'Unknown Meta API error';
       console.error('[whatsapp/react] Meta send failed:', message);
       return NextResponse.json(
-        { error: `Meta API error: ${message}` },
+        { error: 'WhatsApp did not accept the reaction. Please try again.' },
         { status: 502 },
       );
     }
 
-    // Mirror into DB. Empty emoji = removal.
-    if (emoji === '') {
-      try {
-        await prisma.messageReaction.deleteMany({
-          where: {
-            message_id: targetMessage.id,
-            actor_type: 'agent',
-            actor_id: userId,
-          },
-        });
-      } catch (err) {
-        console.error('[whatsapp/react] DB delete failed:', err instanceof Error ? err.message : err);
-        return NextResponse.json(
-          { error: 'Reaction sent to Meta but DB delete failed' },
-          { status: 500 },
-        );
-      }
-    } else {
-      // Upsert. The unique constraint (message_id, actor_type, actor_id)
-      // lets us swap emoji in a single statement.
-      try {
-        await prisma.messageReaction.upsert({
-          where: {
-            message_id_actor_type_actor_id: {
-              message_id: targetMessage.id,
-              actor_type: 'agent',
-              actor_id: userId,
-            },
-          },
-          create: {
-            message_id: targetMessage.id,
-            conversation_id: targetMessage.conversation_id,
-            actor_type: 'agent',
-            actor_id: userId,
-            emoji,
-          },
-          update: { emoji },
-        });
-      } catch (err) {
-        console.error('[whatsapp/react] DB upsert failed:', err instanceof Error ? err.message : err);
-        return NextResponse.json(
-          { error: 'Reaction sent to Meta but DB upsert failed' },
-          { status: 500 },
-        );
-      }
-    }
+    const saved = await mirrorReaction(targetMessage, userId, emoji);
+    if (saved) return saved;
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -212,4 +202,60 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+/** Mirror an agent reaction into message_reactions. Returns an error response, or null when saved. */
+async function mirrorReaction(
+  targetMessage: { id: string; conversation_id: string },
+  userId: string,
+  emoji: string,
+): Promise<NextResponse | null> {
+  // Mirror into DB. Empty emoji = removal.
+  if (emoji === '') {
+    try {
+      await prisma.messageReaction.deleteMany({
+        where: {
+          message_id: targetMessage.id,
+          actor_type: 'agent',
+          actor_id: userId,
+        },
+      });
+    } catch (err) {
+      console.error('[whatsapp/react] DB delete failed:', err instanceof Error ? err.message : err);
+      return NextResponse.json(
+        { error: 'Reaction sent to Meta but DB delete failed' },
+        { status: 500 },
+      );
+    }
+  } else {
+    // Upsert. The unique constraint (message_id, actor_type, actor_id)
+    // lets us swap emoji in a single statement.
+    try {
+      await prisma.messageReaction.upsert({
+        where: {
+          message_id_actor_type_actor_id: {
+            message_id: targetMessage.id,
+            actor_type: 'agent',
+            actor_id: userId,
+          },
+        },
+        create: {
+          message_id: targetMessage.id,
+          conversation_id: targetMessage.conversation_id,
+          actor_type: 'agent',
+          actor_id: userId,
+          emoji,
+        },
+        update: { emoji },
+      });
+    } catch (err) {
+      console.error('[whatsapp/react] DB upsert failed:', err instanceof Error ? err.message : err);
+      return NextResponse.json(
+        { error: 'Reaction sent to Meta but DB upsert failed' },
+        { status: 500 },
+      );
+    }
+  }
+
+  return null;
 }
