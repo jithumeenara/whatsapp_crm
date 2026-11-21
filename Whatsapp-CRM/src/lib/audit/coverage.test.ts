@@ -34,6 +34,7 @@ const EXEMPT: Record<string, string> = {
   'integrations/test/route.ts': 'test only: fetches sample rows without saving anything',
   'leads/views/route.ts': "a person's own saved lead filter, no business data",
   'messages/ai-suggest/route.ts': 'AI suggestion shown in the composer; nothing is sent or saved',
+  'social/comments/[id]/suggest/route.ts': 'AI suggestion for a comment reply shown to staff; nothing is sent or saved',
   'messages/translate/route.ts': 'caches a translation and detected language on the message; no business data changed',
   'meta-ads/track/route.ts': 'public pixel relay: forwards a web event to Meta, writes nothing',
   'presence/leave/route.ts': 'presence: marks the person offline',

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { EyeOff, Eye, Trash2, Send, MessageCircle, Check, RotateCcw, ExternalLink, Loader2, MessagesSquare } from "lucide-react"
+import { EyeOff, Eye, Trash2, Send, MessageCircle, Check, RotateCcw, ExternalLink, Loader2, MessagesSquare, Sparkles } from "lucide-react"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import { everyWhileVisible } from "@/lib/visible-interval"
 import { useAuth } from "@/hooks/use-auth"
@@ -164,6 +164,24 @@ function CommentCard({ c, canReply, canModerate, onChanged }: { c: CommentItem; 
 
   const json = (body: unknown): RequestInit => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
 
+  // A suggestion only fills the box: a person reads and sends it.
+  async function suggest() {
+    if (busy || !mode) return
+    setBusy("suggest")
+    try {
+      const res = await apiFetch(`/api/social/comments/${c.id}/suggest`, json({ mode: mode === "private" ? "private" : "public" }))
+      const body = (await res.json()) as { draft?: unknown; warnings?: unknown }
+      if (typeof body.draft === "string") setText(body.draft.slice(0, max))
+      const warnings = Array.isArray(body.warnings) ? body.warnings.filter((w): w is string => typeof w === "string") : []
+      if (warnings.length) toast.warning(warnings.join(" "))
+    } catch (err) {
+      console.error("[comments] suggest failed:", err)
+      toast.error(errorText(err, "Could not suggest a reply."))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <article className={`rounded-xl border bg-white p-4 shadow-sm ${c.is_hidden ? "border-amber-200" : "border-slate-200"}`}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-slate-500">
@@ -211,6 +229,10 @@ function CommentCard({ c, canReply, canModerate, onChanged }: { c: CommentItem; 
               onClick={() => void act(mode, `/api/social/comments/${c.id}/${mode === "private" ? "private-reply" : "reply"}`, json({ text }), mode === "private" ? "Private message sent." : "Reply posted.")}>
               {busy === mode ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Send className="h-3.5 w-3.5" aria-hidden />}
               {mode === "private" ? "Send privately" : "Post reply"}
+            </Button>
+            <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void suggest()}>
+              {busy === "suggest" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Sparkles className="h-3.5 w-3.5" aria-hidden />}
+              Suggest
             </Button>
             <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => { setMode(null); setText("") }}>Cancel</Button>
           </div>
