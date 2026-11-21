@@ -128,7 +128,8 @@ export function explainMetaError(err: { message?: string; code?: number; error_s
   if (code === 100 && sub === 2534037) return 'Meta Business AI owns this chat. Turn on "Take control of conversations with your Business AI" or wait for the handover.'
   if (code === 551) return 'This person is not available on Messenger/Instagram right now.'
   if (code === 613 || code === 4) return 'Meta is limiting how fast messages can be sent. Try again in a minute.'
-  return err?.message ? `Meta refused the message: ${err.message}` : `Meta refused the message (${status}).`
+  // Meta's own wording (with trace ids) stays in the server log; callers log it.
+  return typeof code === 'number' ? `Meta refused the request (code ${code}${sub ? `/${sub}` : ''}). Check the connection in Settings → Channels.` : `Meta refused the message (${status}).`
 }
 
 export interface SocialTarget {

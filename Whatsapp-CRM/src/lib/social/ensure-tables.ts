@@ -75,6 +75,9 @@ async function addConnectionColumns(table: "facebook_config" | "instagram_config
         prisma.$executeRaw`ALTER TABLE facebook_config ADD COLUMN IF NOT EXISTS token_kind TEXT`,
         prisma.$executeRaw`ALTER TABLE facebook_config ADD COLUMN IF NOT EXISTS token_expires_at TIMESTAMPTZ`,
         prisma.$executeRaw`ALTER TABLE facebook_config ADD COLUMN IF NOT EXISTS granted_permissions JSONB`,
+        // Migration 170: Messenger greeting / Get Started / ice breakers / menu
+        prisma.$executeRaw`ALTER TABLE facebook_config ADD COLUMN IF NOT EXISTS messenger_profile JSONB`,
+        prisma.$executeRaw`ALTER TABLE facebook_config ADD COLUMN IF NOT EXISTS profile_synced_at TIMESTAMPTZ`,
       ]
     : [
         prisma.$executeRaw`ALTER TABLE instagram_config ADD COLUMN IF NOT EXISTS human_agent_enabled BOOLEAN NOT NULL DEFAULT false`,

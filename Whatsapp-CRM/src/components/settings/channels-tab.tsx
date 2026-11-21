@@ -112,6 +112,13 @@ const InstagramIceBreakers = dynamic(
     ),
   { ssr: false, loading: () => <PanelLoader /> }
 );
+const MessengerProfileSettings = dynamic(
+  () =>
+    import('@/components/settings/instagram-ice-breakers').then(
+      (m) => m.MessengerProfileSettings
+    ),
+  { ssr: false, loading: () => <PanelLoader /> }
+);
 const InstagramGatedFeatures = dynamic(
   () =>
     import('@/components/settings/instagram-gated-features').then(
@@ -450,6 +457,7 @@ export function ChannelsTab() {
         {(channel === 'instagram' || channel === 'facebook') && <MetaSocialHealth channel={channel} />}
         <Config defaultConnectMethod={preferredConnectMethod} />
         {channel === 'instagram' && <InstagramIceBreakers />}
+        {channel === 'facebook' && <MessengerProfileSettings />}
         {channel === 'instagram' && <InstagramGatedFeatures />}
       </div>
     );
