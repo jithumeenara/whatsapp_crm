@@ -244,7 +244,9 @@ async function processFacebookWebhook(body: FbWebhookBody, scope: SocialWebhookS
       ...(entry.standby ?? []).map((event) => ({ event, standby: true })),
     ]
     for (const { event, standby } of events) {
-      const senderPsid = event.sender.id
+      const senderPsid = event.sender?.id
+      // A malformed event must not stop the rest of the batch.
+      if (!senderPsid) continue
       const pageSelf = config.page_id ?? pageId
       // A reply typed in the Messenger app or Business Suite (an echo):
       // added to the chat unless this CRM sent it (same Meta id).
@@ -737,7 +739,7 @@ async function findOrCreateFbContact(
       if (res.ok) {
         const data = await res.json() as { name?: string; first_name?: string; last_name?: string }
         const full = data.name ?? [data.first_name, data.last_name].filter(Boolean).join(" ")
-        if (full) displayName = full
+        if (full) displayName = full.slice(0, 100)
       }
     } catch { /* non-critical */ }
   }

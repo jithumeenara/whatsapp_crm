@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
+import { contentMatchesType } from "@/lib/files/account-files"
+import { explainMetaError } from "@/lib/meta/social-messaging"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
@@ -27,6 +29,9 @@ export async function POST(req: NextRequest) {
     if (!row?.access_token || !row?.page_id) {
       return NextResponse.json({ error: "Facebook Page is not connected yet. Set it up above first." }, { status: 400 })
     }
+    if (!/^\d{1,25}$/.test(row.page_id)) {
+      return NextResponse.json({ error: "Run Test Connection first so the Page is known." }, { status: 400 })
+    }
 
     const formData = await req.formData().catch(() => null)
     const file = formData?.get("photo")
@@ -40,16 +45,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Maximum 5 MB" }, { status: 400 })
     }
 
+    // The real type, from the bytes — the browser's label is not trusted.
+    const bytes = Buffer.from(await file.arrayBuffer())
+    if (!contentMatchesType(file.type, bytes)) {
+      return NextResponse.json({ error: "This file is not a real PNG, JPG or WebP picture." }, { status: 400 })
+    }
+
     const metaForm = new FormData()
-    metaForm.append("source", file, file.name)
+    metaForm.append("source", new Blob([bytes], { type: file.type }), "page-photo")
 
     const res = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${row.page_id}/picture?access_token=${encodeURIComponent(openStoredSecret(row.access_token))}`, {
       method: "POST",
       body: metaForm,
     })
-    const data = await res.json() as { success?: boolean; error?: { message: string } }
+    const data = (await res.json().catch(() => ({}))) as { success?: boolean; error?: { message?: string; code?: number; error_subcode?: number } }
     if (!res.ok || data.error) {
-      return NextResponse.json({ error: data.error?.message ?? "Failed to update the Page photo" }, { status: 502 })
+      console.error("[facebook photo] Meta error:", res.status, data.error?.code, data.error?.message)
+      return NextResponse.json({ error: explainMetaError(data.error, res.status) }, { status: 502 })
     }
 
     await audit(auditCtx(req, ctx), {

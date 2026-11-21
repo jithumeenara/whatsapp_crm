@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { igNodeUrl } from "@/lib/meta/social-messaging"
+import { explainMetaError, igNodeUrl } from "@/lib/meta/social-messaging"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
@@ -7,7 +7,7 @@ import { openStoredSecret } from "@/lib/whatsapp/encryption"
 type IgData = {
   id?: string; username?: string; name?: string; biography?: string
   profile_picture_url?: string; followers_count?: number
-  error?: { message: string }
+  error?: { message?: string; code?: number; error_subcode?: number }
 }
 
 const FIELDS = "id,username,name,biography,profile_picture_url,followers_count"
@@ -37,7 +37,8 @@ export async function GET() {
     const igRes = await fetch(`${url}&access_token=${encodeURIComponent(token)}`, { cache: "no-store" })
     const data = await igRes.json().catch(() => ({})) as IgData
     if (!igRes.ok || data.error) {
-      return NextResponse.json({ error: data.error?.message ?? "Failed to load Instagram profile" }, { status: 502 })
+      console.error("[instagram profile] Meta error:", igRes.status, data.error?.code, data.error?.message)
+      return NextResponse.json({ error: explainMetaError(data.error, igRes.status) }, { status: 502 })
     }
 
     return NextResponse.json({

@@ -114,7 +114,8 @@ export async function subscribeWebhooks(kind: 'page' | 'instagram', id: string, 
   const r = await graph('POST', `/${id}/subscribed_apps`, token, app, { subscribed_fields: fields })
   if (r.ok) return { ok: true }
   console.error(`[meta connect] ${kind} subscription failed:`, r.error?.code, r.error?.message)
-  return { ok: false, error: r.error?.message ?? 'Meta refused the webhook subscription.' }
+  // Meta's wording stays in the log above; the owner gets plain words.
+  return { ok: false, error: r.error?.code === 190 ? 'the connection expired — press Reconnect' : 'Meta refused the webhook subscription — check the app has the Messenger / Instagram webhook product added' }
 }
 
 export async function unsubscribeWebhooks(id: string, token: string, app: MetaApp): Promise<void> {

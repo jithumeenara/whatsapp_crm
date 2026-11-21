@@ -40,9 +40,15 @@ export async function applySocialReaction(input: {
   }
 }
 
+/** One of the customer's own messages (edits / unsends never touch staff or bot replies). */
+async function customerRowFor(conversationId: string, mid: string): Promise<{ id: string } | null> {
+  if (!mid) return null
+  return prisma.message.findFirst({ where: { conversation_id: conversationId, message_id: mid, sender_type: 'customer' }, select: { id: true } })
+}
+
 /** The customer edited a message: the new text replaces the old one. */
 export async function applySocialEdit(input: { accountId: string; conversationId: string; mid: string; text: string }): Promise<void> {
-  const target = await rowFor(input.conversationId, input.mid)
+  const target = await customerRowFor(input.conversationId, input.mid)
   if (!target) return
   const updated = await prisma.message.update({
     where: { id: target.id },
@@ -53,7 +59,7 @@ export async function applySocialEdit(input: { accountId: string; conversationId
 
 /** The customer unsent a message: kept for the record, shown as deleted. */
 export async function applySocialDelete(input: { accountId: string; conversationId: string; mid: string }): Promise<void> {
-  const target = await rowFor(input.conversationId, input.mid)
+  const target = await customerRowFor(input.conversationId, input.mid)
   if (!target) return
   const updated = await prisma.message.update({ where: { id: target.id }, data: { deleted_at: new Date() } }).catch(() => null)
   if (updated) emitToAccount(input.accountId, 'message', { eventType: 'UPDATE', new: updated, old: {} })

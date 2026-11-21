@@ -34,6 +34,8 @@ import { stampFirstResponse } from '@/lib/leads/first-response'
 // ── Messenger + Instagram (an agent's reply) ─────────────────────────────────
 // Host, recipient and Meta's window: src/lib/meta/social-messaging.ts.
 
+const SOCIAL_MESSAGE_TYPES = new Set(['text', 'image', 'video', 'audio', 'document'])
+
 async function handleSocialSend({
   channel,
   accountId,
@@ -54,6 +56,21 @@ async function handleSocialSend({
   mediaUrl:       string | null
 }): Promise<NextResponse> {
   const label = channel === 'instagram' ? 'Instagram' : 'Messenger'
+  // Checked here, not trusted from the browser or an API key: plain text
+  // within Meta's limit, a known type, and a media link that is a string.
+  if (!SOCIAL_MESSAGE_TYPES.has(messageType)) {
+    return NextResponse.json({ error: `${label} messages can be text, image, video, audio or document.` }, { status: 400 })
+  }
+  if (contentText !== null && typeof contentText !== 'string') {
+    return NextResponse.json({ error: 'The message text must be plain text.' }, { status: 400 })
+  }
+  if (mediaUrl !== null && (typeof mediaUrl !== 'string' || mediaUrl.length > 2048)) {
+    return NextResponse.json({ error: 'The attachment link is not valid.' }, { status: 400 })
+  }
+  const maxText = channel === 'instagram' ? 1000 : 2000
+  if (contentText && contentText.length > maxText) {
+    return NextResponse.json({ error: `${label} allows at most ${maxText} characters in one message.` }, { status: 400 })
+  }
   let target: SocialTarget
   try {
     target = await loadSocialTarget(accountId, contactId, channel)

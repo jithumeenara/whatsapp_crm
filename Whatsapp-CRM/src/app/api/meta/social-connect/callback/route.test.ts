@@ -10,6 +10,7 @@ import { NextRequest } from 'next/server'
 const h = vi.hoisted(() => ({
   ctx: { accountId: 'acc-1', userId: 'owner-1' } as { accountId: string; userId: string } | null,
   exchanged: 0,
+  exchangeError: null as string | null,
   saved: [] as unknown[],
   sessions: 0,
   pages: [{ id: '1029', name: 'ACSTI', token: 'EAApage', igId: '1784' }] as unknown[],
@@ -22,7 +23,7 @@ vi.mock('@/lib/auth/account', () => ({
 vi.mock('@/lib/audit', () => ({ auditCtx: () => ({}) }))
 vi.mock('@/lib/audit/config-change', () => ({ auditConfigChange: async () => {} }))
 vi.mock('@/lib/meta/social-connect', () => ({
-  exchangeCode: async () => { h.exchanged++; return 'EAAbisu' },
+  exchangeCode: async () => { h.exchanged++; if (h.exchangeError) throw new Error(h.exchangeError); return 'EAAbisu' },
   tokenInfo: async () => ({ valid: true, scopes: ['pages_messaging'], expiresAt: null }),
   discoverAssets: async () => ({ pages: h.pages, instagram: h.instagram }),
   saveSocialConnection: async (a: unknown) => { h.saved.push(a); return { facebook: { connected: true }, instagram: { connected: true } } },
@@ -44,6 +45,7 @@ beforeAll(() => { process.env.NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || '
 beforeEach(() => {
   h.ctx = { accountId: 'acc-1', userId: 'owner-1' }
   h.exchanged = 0
+  h.exchangeError = null
   h.saved = []
   h.sessions = 0
   h.pages = [{ id: '1029', name: 'ACSTI', token: 'EAApage', igId: '1784' }]
@@ -108,5 +110,16 @@ describe('Meta redirect back to the CRM', () => {
     expect(h.saved).toHaveLength(0)
     expect(h.sessions).toBe(1)
     expect(loc(res).toString()).not.toMatch(/EAA/)
+  })
+
+  it('the redirect carries only a fixed code, never free text (no phishing text, no raw Meta error)', async () => {
+    h.exchangeError = '(#100) Invalid verification code format. fbtrace_id=AbC123 call +91 90000 00000'
+    const nonce = newNonce()
+    const res = await call({ code: 'AQDvalidcode123', state: signConnectState({ accountId: 'acc-1', userId: 'owner-1', nonce }) }, nonce)
+    const u = loc(res)
+    expect(u.searchParams.get('meta_connect')).toBe('error')
+    expect(u.searchParams.has('reason')).toBe(false)
+    expect(u.searchParams.get('code')).toMatch(/^[a-z_]+$/)
+    expect(u.toString()).not.toMatch(/fbtrace|90000/)
   })
 })

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { graphHost } from "@/lib/meta/social-messaging"
+import { explainMetaError, graphHost } from "@/lib/meta/social-messaging"
 import { requireRole } from "@/lib/auth/account"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
 
@@ -43,8 +43,9 @@ export async function GET() {
     ])
 
     if (!profileRes.ok) {
-      const err = await profileRes.json().catch(() => ({})) as { error?: { message: string } }
-      return NextResponse.json({ error: err.error?.message ?? "Failed to fetch Instagram profile" }, { status: 502 })
+      const err = await profileRes.json().catch(() => ({})) as { error?: { message?: string; code?: number; error_subcode?: number } }
+      console.error("[instagram insights] Meta error:", profileRes.status, err.error?.code, err.error?.message)
+      return NextResponse.json({ error: explainMetaError(err.error, profileRes.status) }, { status: 502 })
     }
 
     const profile = await profileRes.json()

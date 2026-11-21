@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  */
 
 const h = vi.hoisted(() => ({
-  rows: [] as Array<{ id: string; conversation_id: string; message_id: string }>,
+  rows: [] as Array<{ id: string; conversation_id: string; message_id: string; sender_type: string }>,
   created: [] as Array<Record<string, unknown>>,
   updated: [] as Array<Record<string, unknown>>,
   reactions: [] as Array<Record<string, unknown>>,
@@ -20,8 +20,8 @@ vi.mock('@/lib/socket', () => ({ emitToAccount: (_a: string, ev: string) => { h.
 vi.mock('@/lib/db', () => ({
   prisma: {
     message: {
-      findFirst: async ({ where }: { where: { conversation_id: string; message_id: string } }) =>
-        h.rows.find((r) => r.conversation_id === where.conversation_id && r.message_id === where.message_id) ?? null,
+      findFirst: async ({ where }: { where: { conversation_id: string; message_id: string; sender_type?: string } }) =>
+        h.rows.find((r) => r.conversation_id === where.conversation_id && r.message_id === where.message_id && (!where.sender_type || r.sender_type === where.sender_type)) ?? null,
       create: async ({ data }: { data: Record<string, unknown> }) => { h.created.push(data); return { id: 'new', ...data } },
       update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => { h.updated.push({ id: where.id, ...data }); return { id: where.id, ...data } },
     },
@@ -35,7 +35,7 @@ vi.mock('@/lib/db', () => ({
 import { applySocialDelete, applySocialEdit, applySocialReaction, attachmentsToRows, noteBusinessAiHandoff, saveSocialEcho } from './social-inbound'
 
 beforeEach(() => {
-  h.rows = [{ id: 'row-1', conversation_id: 'conv-1', message_id: 'mid.1' }]
+  h.rows = [{ id: 'row-1', conversation_id: 'conv-1', message_id: 'mid.1', sender_type: 'customer' }, { id: 'row-2', conversation_id: 'conv-1', message_id: 'mid.staff', sender_type: 'agent' }]
   h.created = []; h.updated = []; h.reactions = []; h.removed = []; h.emitted = []
 })
 
@@ -63,6 +63,11 @@ describe('edits and unsends', () => {
   it('an unsent message is kept and marked deleted', async () => {
     await applySocialDelete({ accountId: 'a', conversationId: 'conv-1', mid: 'mid.1' })
     expect(h.updated[0].deleted_at).toBeInstanceOf(Date)
+  })
+  it('an edit or unsend can never change a staff or bot reply', async () => {
+    await applySocialEdit({ accountId: 'a', conversationId: 'conv-1', mid: 'mid.staff', text: 'pay to this account instead' })
+    await applySocialDelete({ accountId: 'a', conversationId: 'conv-1', mid: 'mid.staff' })
+    expect(h.updated).toEqual([])
   })
   it('nothing changes for an unknown or foreign message', async () => {
     await applySocialEdit({ accountId: 'a', conversationId: 'conv-9', mid: 'mid.1', text: 'hi' })

@@ -106,3 +106,29 @@ describe('agent reply on Messenger / Instagram', () => {
     expect(h.calls[0].body.recipient).toEqual({ id: '998877' })
   })
 })
+
+describe('what an agent may send on Messenger / Instagram', () => {
+  const post = (body: Record<string, unknown>) =>
+    POST(new NextRequest('http://x/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ conversation_id: 'c1', ...body }) }))
+
+  it('text that is not text is refused, nothing sent or saved', async () => {
+    const res = await post({ message_type: 'text', content_text: { attachment: { type: 'template' } } })
+    expect(res.status).toBe(400)
+    expect(h.calls).toHaveLength(0)
+    expect(h.saved).toHaveLength(0)
+  })
+
+  it('text longer than Meta allows is refused with the limit', async () => {
+    h.channel = 'instagram'
+    const res = await post({ message_type: 'text', content_text: 'x'.repeat(1001) })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/1000/)
+    expect(h.calls).toHaveLength(0)
+  })
+
+  it('an unknown message type is refused, not stored as a content type', async () => {
+    const res = await post({ message_type: '<img onerror=x>', content_text: 'hi' })
+    expect(res.status).toBe(400)
+    expect(h.saved).toHaveLength(0)
+  })
+})

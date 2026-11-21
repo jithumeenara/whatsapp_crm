@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { identifyPageToken } from "@/lib/meta/identify"
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { cleanConfigFields } from "@/lib/meta/config-fields"
 import { auditCtx } from "@/lib/audit"
 import { auditConfigChange } from "@/lib/audit/config-change"
 import { prisma } from "@/lib/db"
@@ -96,7 +97,10 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    const { access_token, verify_token, page_id, app_secret } = body as Record<string, string>
+    // Each field checked on its own (type, length, digits-only ids).
+    const fields = cleanConfigFields(body as Record<string, unknown>, { access_token: "token", verify_token: "verify_token", page_id: "id", app_secret: "app_secret" })
+    if (!fields.ok) return NextResponse.json({ error: fields.error }, { status: 400 })
+    const { access_token, verify_token, page_id, app_secret } = fields.value
     // A Page belongs to one CRM account. The webhook finds the account by
     // page_id, so a second claim would let one business read another's
     // Messenger conversations.

@@ -65,13 +65,28 @@ export function MetaSocialConnectButton({ className }: Readonly<{ className?: st
   );
 }
 
+/**
+ * What each ?code=… from the connect redirect means. Only these fixed
+ * texts are ever shown: free text in the URL is ignored, so a crafted
+ * link cannot put its own words on this screen.
+ */
+const CONNECT_ERRORS: Record<string, string> = {
+  not_owner: 'Sign in as the workspace owner, then press Connect again.',
+  expired: 'This connection link is not valid or has expired. Press Connect again.',
+  no_code: 'Meta did not finish the sign-in. Press Connect again.',
+  no_app: 'The Meta App is not set up on this server yet.',
+  bad_token: 'Meta returned a sign-in that is not valid. Press Connect again.',
+  nothing_shared: 'No Facebook Page or Instagram professional account was shared. Press Connect again and tick your Page and Instagram account.',
+  failed: 'The connection did not finish. Press Connect again.',
+};
+
 /** Reads ?meta_connect=… after Meta's redirect: a message, or the chooser. */
 export function MetaConnectReturn({ onDone }: Readonly<{ onDone: () => void }>) {
   const params = useSearchParams();
   const router = useRouter();
   const result = params.get('meta_connect');
   const session = params.get('session');
-  const reason = params.get('reason');
+  const code = params.get('code');
   const shown = useRef(false);
   const [choices, setChoices] = useState<{ pages: Array<{ id: string; name: string; igId: string | null }>; instagram: Array<{ id: string; username: string | null; name: string | null }> } | null>(null);
   const [pageId, setPageId] = useState<string>('');
@@ -84,9 +99,9 @@ export function MetaConnectReturn({ onDone }: Readonly<{ onDone: () => void }>) 
     if (!result || shown.current) return;
     shown.current = true;
     if (result === 'connected') { toast.success('Facebook & Instagram connected.'); onDone(); clearQuery(); }
-    else if (result === 'partial') { toast.warning(reason ?? 'Connected, but something needs attention.'); onDone(); clearQuery(); }
+    else if (result === 'partial') { toast.warning('Connected, but something needs attention — see the status below.'); onDone(); clearQuery(); }
     else if (result === 'cancelled') { toast.info('Connection cancelled — nothing was changed.'); clearQuery(); }
-    else if (result === 'error') { toast.error(reason ?? 'The connection did not finish. Press Connect again.'); clearQuery(); }
+    else if (result === 'error') { toast.error((code && Object.hasOwn(CONNECT_ERRORS, code) ? CONNECT_ERRORS[code] : null) ?? CONNECT_ERRORS.failed); clearQuery(); }
     else if (result === 'choose' && session && /^[0-9a-f-]{36}$/i.test(session)) {
       apiFetch(`/api/meta/social-connect/finish?session=${encodeURIComponent(session)}`)
         .then((r) => r.json())
@@ -99,7 +114,7 @@ export function MetaConnectReturn({ onDone }: Readonly<{ onDone: () => void }>) 
         })
         .catch((err) => { console.error('[meta connect] choices failed:', err); toast.error(errorText(err, 'This choice has expired. Press Connect again.')); clearQuery(); });
     }
-  }, [result, session, reason, onDone, clearQuery]);
+  }, [result, session, code, onDone, clearQuery]);
 
   if (!choices) return null;
   async function save() {

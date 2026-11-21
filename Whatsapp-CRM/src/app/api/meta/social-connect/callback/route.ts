@@ -29,30 +29,30 @@ export async function GET(req: NextRequest) {
   try {
     ctx = await requireRole('owner')
   } catch {
-    return done({ meta_connect: 'error', reason: 'Sign in as the workspace owner, then press Connect again.' })
+    return done({ meta_connect: 'error', code: 'not_owner' })
   }
 
   const q = req.nextUrl.searchParams
   const state = verifyConnectState(q.get('state'), req.cookies.get(CONNECT_NONCE_COOKIE)?.value)
   if (!state || state.accountId !== ctx.accountId || state.userId !== ctx.userId) {
-    return done({ meta_connect: 'error', reason: 'This connection link is not valid or has expired. Press Connect again.' })
+    return done({ meta_connect: 'error', code: 'expired' })
   }
   if (q.get('error')) {
     return done({ meta_connect: 'cancelled' })
   }
   const code = q.get('code')
-  if (!code) return done({ meta_connect: 'error', reason: 'Meta did not return a code. Press Connect again.' })
+  if (!code) return done({ meta_connect: 'error', code: 'no_code' })
 
   const app = await loadSocialApp()
-  if (!app) return done({ meta_connect: 'error', reason: 'The Meta App is not set up on this server.' })
+  if (!app) return done({ meta_connect: 'error', code: 'no_app' })
 
   try {
     const token = await exchangeCode(code, `${origin}${CONNECT_CALLBACK_PATH}`, app)
     const info = await tokenInfo(token, app)
-    if (!info.valid) return done({ meta_connect: 'error', reason: 'Meta returned a token that is not valid. Press Connect again.' })
+    if (!info.valid) return done({ meta_connect: 'error', code: 'bad_token' })
     const { pages, instagram } = await discoverAssets(token, app)
     if (pages.length === 0 && instagram.length === 0) {
-      return done({ meta_connect: 'error', reason: 'No Facebook Page or Instagram professional account was shared. Press Connect again and tick your Page and Instagram account.' })
+      return done({ meta_connect: 'error', code: 'nothing_shared' })
     }
 
     // One Page and at most one Instagram account (or one Instagram account
@@ -66,8 +66,11 @@ export async function GET(req: NextRequest) {
         fields: [...(saved.facebook?.connected ? ['facebook'] : []), ...(saved.instagram?.connected ? ['instagram'] : [])],
         meta: { step: 'connected', via: 'login', page_id: page?.id ?? null, instagram_id: ig?.id ?? null },
       })
+      // The details stay on the server: the status panel shows each channel's
+      // state. The URL carries only a fixed word the screen turns into text.
       const problems = [saved.facebook?.error, saved.instagram?.error, saved.facebook?.webhook && `Messenger webhooks: ${saved.facebook.webhook}`, saved.instagram?.webhook && `Instagram webhooks: ${saved.instagram.webhook}`].filter(Boolean)
-      return done({ meta_connect: problems.length ? 'partial' : 'connected', ...(problems.length ? { reason: problems.join(' · ').slice(0, 400) } : {}) })
+      if (problems.length) console.warn('[meta connect] connected with problems:', problems.join(' · ').slice(0, 400))
+      return done({ meta_connect: problems.length ? 'partial' : 'connected' })
     }
 
     // Several: keep the choices (sealed) for 15 minutes and let the owner pick.
@@ -75,6 +78,6 @@ export async function GET(req: NextRequest) {
     return done({ meta_connect: 'choose', session })
   } catch (err) {
     console.error('[meta connect] callback failed:', err instanceof Error ? err.message : err)
-    return done({ meta_connect: 'error', reason: err instanceof Error ? err.message.slice(0, 300) : 'The connection did not finish. Press Connect again.' })
+    return done({ meta_connect: 'error', code: 'failed' })
   }
 }

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { identifyInstagramToken } from "@/lib/meta/identify"
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { cleanConfigFields } from "@/lib/meta/config-fields"
 import { auditCtx } from "@/lib/audit"
 import { auditConfigChange } from "@/lib/audit/config-change"
 import { prisma } from "@/lib/db"
@@ -122,7 +123,10 @@ export async function PATCH(req: NextRequest) {
     }
 
     // ── Save config ──────────────────────────────────────────────
-    const { access_token, verify_token, instagram_account_id, page_id } = body as Record<string, string>
+    // Each field checked on its own (type, length, digits-only ids).
+    const fields = cleanConfigFields(body as Record<string, unknown>, { access_token: "token", verify_token: "verify_token", instagram_account_id: "id", page_id: "id" })
+    if (!fields.ok) return NextResponse.json({ error: fields.error }, { status: 400 })
+    const { access_token, verify_token, instagram_account_id, page_id } = fields.value
 
     // An Instagram account (or its Page) belongs to one CRM account. The
     // webhook finds the account by these ids, so a second claim would let

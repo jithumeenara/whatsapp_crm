@@ -251,7 +251,11 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
       // before the messaging-only sender extraction below would otherwise
       // silently skip them.
       if (change.field === "comments") {
-        await processIgComment(config.account_id, config.access_token ?? "", change.value as unknown as IgCommentValue)
+        const comment = change.value as unknown as IgCommentValue
+        // The business's own replies come back as comments too: never treat
+        // the account itself as a customer (automations would answer themselves).
+        if (comment?.from?.id && (comment.from.id === instagramAccountId || comment.from.id === config.page_id)) continue
+        await processIgComment(config.account_id, config.access_token ?? "", comment)
         continue
       }
       if (change.field === "mentions") {
@@ -712,7 +716,7 @@ async function findOrCreateIgContact(
       )
       if (res.ok) {
         const data = await res.json() as { name?: string; username?: string }
-        displayName = data.name ?? data.username ?? igsid
+        displayName = (data.name ?? data.username ?? igsid).slice(0, 100)
       }
     } catch { /* name is non-critical */ }
   }
