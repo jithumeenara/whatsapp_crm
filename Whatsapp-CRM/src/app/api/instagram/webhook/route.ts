@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { graphHost, messagesUrl } from "@/lib/meta/social-messaging"
+import { fillPostDetails, saveIncomingComment } from "@/lib/meta/social-comments"
 import { applySocialDelete, applySocialEdit, applySocialReaction, attachmentsToRows, noteBusinessAiHandoff, replyTargetId, saveSocialEcho } from "@/lib/meta/social-inbound"
 import { sameToken, scopeAllows, socialWebhookScope, type SocialWebhookScope } from "@/lib/social/webhook-secrets"
 import { prisma } from "@/lib/db"
@@ -250,12 +251,23 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
       // messaging events (no sender/recipient/timestamp) — handled first,
       // before the messaging-only sender extraction below would otherwise
       // silently skip them.
-      if (change.field === "comments") {
+      if (change.field === "comments" || change.field === "live_comments") {
         const comment = change.value as unknown as IgCommentValue
         // The business's own replies come back as comments too: never treat
         // the account itself as a customer (automations would answer themselves).
         if (comment?.from?.id && (comment.from.id === instagramAccountId || comment.from.id === config.page_id)) continue
-        await processIgComment(config.account_id, config.access_token ?? "", comment)
+        if (typeof comment?.id === "string") {
+          // Kept for the Comments screen (once per comment; a resend only refreshes the text).
+          const saved = await saveIncomingComment({
+            accountId: config.account_id, channel: "instagram", commentId: comment.id, parentId: comment.parent_id ?? null,
+            postId: comment.media?.id ?? null, fromId: comment.from?.id ?? null, fromName: comment.from?.username ?? null, text: comment.text ?? null,
+          })
+          if (saved) {
+            emitToAccount(config.account_id, "social_comment", { id: saved })
+            fillPostDetails(config.account_id, "instagram", comment.media?.id, config.access_token).catch(() => {})
+          }
+        }
+        if (change.field === "comments") await processIgComment(config.account_id, config.access_token ?? "", comment)
         continue
       }
       if (change.field === "mentions") {

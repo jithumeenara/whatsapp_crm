@@ -63,6 +63,8 @@ export const PAGE_SECTIONS: PageSection[] = [
     label: 'Messaging',
     items: [
       { href: '/inbox', label: 'Inbox', agentAllowed: true },
+      // Comments on the Instagram / Facebook posts: reply, private reply, hide.
+      { href: '/comments', label: 'Comments', agentAllowed: true },
       { href: '/calls', label: 'Calls', agentAllowed: true },
       { href: '/broadcasts', label: 'Broadcasts', agentAllowed: false },
       { href: '/templates', label: 'Templates', agentAllowed: false },

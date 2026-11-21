@@ -12,6 +12,7 @@ import { NextRequest } from 'next/server'
  */
 
 const h = vi.hoisted(() => ({
+  comments: [] as unknown[][],
   saved: [] as Array<Record<string, unknown>>,
   contactExists: false,
   automations: [] as string[],
@@ -35,7 +36,12 @@ vi.mock('@/lib/whatsapp/encryption', () => ({ openStoredSecret: (v: string | nul
 vi.mock('@/lib/db', () => ({
   prisma: {
     $executeRaw: () => ({ catch: () => Promise.resolve() }),
-    $queryRaw: async () => [{ account_id: 'acc-1', access_token: 'EAApage', verify_token: 'v', page_id: '1029' }],
+    $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sql = strings.join('?')
+      if (sql.includes('INSERT INTO social_comments')) { h.comments.push(values); return [{ id: 'sc-1' }] }
+      if (sql.includes('social_comments')) return []
+      return [{ account_id: 'acc-1', access_token: 'EAApage', verify_token: 'v', page_id: '1029' }]
+    },
     profile: { findFirst: async () => ({ user_id: 'owner' }) },
     contact: {
       findFirst: async () => (h.contactExists ? { id: 'c1' } : null),
@@ -62,6 +68,7 @@ const event = (mid: string) => ({
 const post = (body: unknown) => POST(new NextRequest('http://x/api/facebook/webhook', { method: 'POST', body: JSON.stringify(body) }))
 
 beforeEach(() => {
+  h.comments = []
   h.saved = []
   h.contactExists = false
   h.automations = []
@@ -105,5 +112,15 @@ describe('Messenger inbound', () => {
       ] }],
     })
     await vi.waitFor(() => expect(h.saved.map((m) => m.message_id)).toEqual(['mid.good']))
+  })
+
+  it("a comment on the Page's post is kept; the Page's own reply is not", async () => {
+    const feed = (commentId: string, fromId: string, verb = 'add') => ({ object: 'page', entry: [{ id: '1029', changes: [{ field: 'feed', value: { item: 'comment', verb, comment_id: commentId, post_id: '1029_77', parent_id: '1029_77', from: { id: fromId, name: 'Asha' }, message: 'price?', created_time: 1763290000 } }] }] })
+    await post(feed('77_1001', '4455'))
+    await vi.waitFor(() => expect(h.comments).toHaveLength(1))
+    expect(h.comments[0]).toEqual(expect.arrayContaining(['acc-1', 'facebook', '77_1001', '1029_77', '4455', 'Asha', 'price?']))
+    await post(feed('77_1002', '1029'))
+    await new Promise((r) => setTimeout(r, 30))
+    expect(h.comments).toHaveLength(1)
   })
 })

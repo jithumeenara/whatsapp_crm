@@ -11,6 +11,7 @@ import { runAutomationsForTrigger } from "@/lib/automations/engine"
 import { isUniqueViolation } from "@/lib/contacts/dedupe"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
 import { webhookRejected, webhookWrote } from "@/lib/audit/actors"
+import { fillPostDetails, markCommentAtMeta, saveIncomingComment } from "@/lib/meta/social-comments"
 import { applySocialEdit, applySocialReaction, attachmentsToRows, noteBusinessAiHandoff, replyTargetId, saveSocialEcho } from "@/lib/meta/social-inbound"
 import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
@@ -160,6 +161,8 @@ interface FbFeedChange {
     comment_id?: string
     sender_id?: string
     message?: string
+    parent_id?: string
+    from?: { id?: string; name?: string }
     // Present when field === "leadgen" — a new Lead Ads / Instant Form
     // submission. Meta's own documented shape: the webhook only carries
     // the ID, a follow-up Graph API call (fetchLead) gets the answers.
@@ -221,6 +224,27 @@ async function processFacebookWebhook(body: FbWebhookBody, scope: SocialWebhookS
     // Handle feed changes (post likes, comments, reactions)
     if (entry.changes?.length) {
       const feedChanges = entry.changes.filter((c) => c.field === "feed")
+      // Comments on the Page's posts, kept for the Comments screen. The Page's
+      // own replies come back here too and are skipped.
+      for (const change of feedChanges) {
+        const v = change.value
+        if (v.item !== "comment" || typeof v.comment_id !== "string") continue
+        const fromId = v.from?.id ?? v.sender_id ?? null
+        if (fromId && fromId === (config.page_id ?? pageId)) continue
+        if (v.verb === "remove") { await markCommentAtMeta(config.account_id, "facebook", v.comment_id, "removed"); continue }
+        if (v.verb === "hide" || v.verb === "unhide") { await markCommentAtMeta(config.account_id, "facebook", v.comment_id, v.verb === "hide" ? "hidden" : "unhidden"); continue }
+        if (v.verb !== "add" && v.verb !== "edited" && v.verb !== "edit") continue
+        const saved = await saveIncomingComment({
+          accountId: config.account_id, channel: "facebook", commentId: v.comment_id,
+          parentId: v.parent_id && v.parent_id !== v.post_id ? v.parent_id : null, postId: v.post_id ?? null,
+          fromId, fromName: v.from?.name ?? null, text: v.message ?? null,
+          at: typeof v.created_time === "number" ? new Date(v.created_time < 1e12 ? v.created_time * 1000 : v.created_time) : null,
+        })
+        if (saved) {
+          emitToAccount(config.account_id, "social_comment", { id: saved })
+          fillPostDetails(config.account_id, "facebook", v.post_id, config.access_token).catch(() => {})
+        }
+      }
       if (feedChanges.length > 0 && config) {
         emitToAccount(config.account_id, "facebook_feed_update", {
           pageId,

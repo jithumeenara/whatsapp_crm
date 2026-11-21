@@ -12,6 +12,7 @@ import { NextRequest } from 'next/server'
  */
 
 const h = vi.hoisted(() => ({
+  comments: [] as unknown[][],
   token: 'EAAsystem',
   saved: [] as Array<Record<string, unknown>>,
   flows: 0,
@@ -29,7 +30,12 @@ vi.mock('@/lib/whatsapp/encryption', () => ({ openStoredSecret: (v: string | nul
 vi.mock('@/lib/db', () => ({
   prisma: {
     $executeRaw: () => ({ catch: () => Promise.resolve() }),
-    $queryRaw: async () => [{ account_id: 'acc-1', access_token: h.token, verify_token: 'v', instagram_account_id: '17841400000000', page_id: '1029' }],
+    $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sql = strings.join('?')
+      if (sql.includes('INSERT INTO social_comments')) { h.comments.push(values); return [{ id: 'sc-1' }] }
+      if (sql.includes('social_comments')) return []
+      return [{ account_id: 'acc-1', access_token: h.token, verify_token: 'v', instagram_account_id: '17841400000000', page_id: '1029' }]
+    },
     profile: { findFirst: async () => ({ user_id: 'owner' }) },
     contact: { findFirst: async () => null, create: async () => ({ id: 'c1' }), update: async () => ({}) },
     conversation: { findFirst: async () => ({ id: 'conv-1' }), update: async () => ({ id: 'conv-1' }), create: async () => ({ id: 'conv-1' }) },
@@ -50,6 +56,7 @@ const event = (mid: string, timestamp: number) => ({
 const post = (body: unknown) => POST(new NextRequest('http://x/api/instagram/webhook', { method: 'POST', body: JSON.stringify(body) }))
 
 beforeEach(() => {
+  h.comments = []
   h.saved = []
   h.flows = 0
   h.fetches = []
@@ -111,5 +118,16 @@ describe('Instagram inbound', () => {
     expect(h.automations).toEqual([])
     await post(comment('555444'))
     await vi.waitFor(() => expect(h.automations).toEqual(['comment_keyword_match']))
+  })
+
+  it("a customer comment is kept for the Comments screen; the account's own and a forged id are not", async () => {
+    const comment = (id: string, fromId: string) => ({ object: 'instagram', entry: [{ id: '17841400000000', changes: [{ field: 'comments', value: { id, text: 'fees?', from: { id: fromId, username: 'meera' }, media: { id: '1790000001' } } }] }] })
+    await post(comment('17895695668004550', '555444'))
+    await vi.waitFor(() => expect(h.comments).toHaveLength(1))
+    expect(h.comments[0]).toEqual(expect.arrayContaining(['acc-1', 'instagram', '17895695668004550', '1790000001', '555444', 'meera', 'fees?']))
+    await post(comment('17895695668004551', '17841400000000'))
+    await post(comment('1/../../me', '555444'))
+    await new Promise((r) => setTimeout(r, 30))
+    expect(h.comments).toHaveLength(1)
   })
 })

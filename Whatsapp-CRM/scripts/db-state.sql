@@ -131,7 +131,8 @@ FROM (VALUES
   ('167_lead_districts',               EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'lead_settings' AND column_name = 'districts')),
   ('168_meta_channel_connection',      to_regclass('messages_conversation_message_id_idx') IS NOT NULL),
   ('169_meta_social_connect',          to_regclass('meta_connect_sessions') IS NOT NULL),
-  ('170_messenger_profile',            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'facebook_config' AND column_name = 'messenger_profile'))
+  ('170_messenger_profile',            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'facebook_config' AND column_name = 'messenger_profile')),
+  ('171_social_comments',              to_regclass('social_comments') IS NOT NULL)
 ) AS m(migration, present)
 ORDER BY m.migration;
 
