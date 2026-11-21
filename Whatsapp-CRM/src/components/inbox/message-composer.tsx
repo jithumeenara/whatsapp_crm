@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, KeyboardEvent } from "react";
+import { MessengerTemplateSender } from "@/components/settings/messenger-templates";
 import { VoicePreview } from "./voice-preview";
 import { Waveform } from "./waveform";
 import { composerButton } from "./composer-button";
@@ -566,12 +567,13 @@ export function MessageComposer({
         </div>
       )}
 
-      {/* Instagram / Messenger have no templates to reopen a chat: say why
-          the box is closed instead of just greying it out. */}
+      {/* Instagram / Messenger: say why the box is closed instead of just
+          greying it out. Messenger can still send an approved update template. */}
       {sessionExpired && (channel === 'instagram' || channel === 'facebook') && (
         <div role="status" className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
           Meta allows replies on {channel === 'instagram' ? 'Instagram' : 'Messenger'} only for 24 hours after the customer&rsquo;s last message (7 days when Human agent replies are on).
           This chat opens again when they message you.
+          {channel === 'facebook' && !readOnly && <MessengerTemplateSender conversationId={conversationId} />}
         </div>
       )}
 

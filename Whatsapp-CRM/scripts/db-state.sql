@@ -135,7 +135,8 @@ FROM (VALUES
   ('171_social_comments',              to_regclass('social_comments') IS NOT NULL),
   ('172_social_comment_kind',          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'social_comments' AND column_name = 'kind')),
   ('174_social_account_snapshots',     to_regclass('social_account_snapshots') IS NOT NULL),
-  ('175_social_posts',                 to_regclass('social_posts') IS NOT NULL)
+  ('175_social_posts',                 to_regclass('social_posts') IS NOT NULL),
+  ('176_messenger_templates',          to_regclass('messenger_templates') IS NOT NULL)
 ) AS m(migration, present)
 ORDER BY m.migration;
 

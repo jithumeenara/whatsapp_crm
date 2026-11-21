@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
   humanAgent: false,
   calls: [] as Array<{ url: string; body: Record<string, unknown> }>,
   saved: [] as Array<Record<string, unknown>>,
+  template: null as Record<string, unknown> | null,
 }))
 
 vi.mock('@/auth', () => ({ auth: async () => ({ user: { id: 'agent-1' } }) }))
@@ -48,6 +49,7 @@ vi.mock('@/lib/db', () => ({
     },
     $queryRaw: async (strings: TemplateStringsArray) => {
       const sql = strings.join('?')
+      if (sql.includes('FROM messenger_templates')) return h.template ? [h.template] : []
       if (sql.includes('human_agent_enabled')) return [{ human_agent_enabled: h.humanAgent }]
       if (sql.includes('facebook_config')) return [{ access_token: 'EAApage', page_id: '1029' }]
       if (sql.includes('instagram_config')) return [{ access_token: 'EAAsystem', instagram_account_id: '17841400000000', page_id: null }]
@@ -67,6 +69,7 @@ beforeEach(() => {
   h.humanAgent = false
   h.calls = []
   h.saved = []
+  h.template = null
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     h.calls.push({ url: String(url), body: init?.body ? JSON.parse(String(init.body)) : {} })
     return new Response(JSON.stringify({ message_id: 'm_meta_1' }), { status: 200 })
@@ -130,5 +133,30 @@ describe('what an agent may send on Messenger / Instagram', () => {
     const res = await post({ message_type: '<img onerror=x>', content_text: 'hi' })
     expect(res.status).toBe(400)
     expect(h.saved).toHaveLength(0)
+  })
+})
+
+describe('Messenger utility template (after the 24 hours)', () => {
+  const tpl = (over: Record<string, unknown> = {}) =>
+    POST(new NextRequest('http://x/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ conversation_id: 'c1', message_type: 'messenger_template', messenger_template_id: '11111111-2222-4333-8444-555555555555', template_params: ['Asha'], ...over }) }))
+
+  it('outside the window: sent as UTILITY with the template and its blank', async () => {
+    h.lastInbound = new Date(Date.now() - 30 * HOUR)
+    h.template = { name: 'order_update', language: 'en_US', body: 'Hi {{1}}, your order shipped.', param_count: 1, status: 'approved' }
+    const res = await tpl()
+    expect(res.status).toBe(200)
+    expect(h.calls[0].url.startsWith('https://graph.facebook.com/v27.0/1029/messages?')).toBe(true)
+    expect(h.calls[0].body).toMatchObject({ recipient: { id: '7654321' }, messaging_type: 'UTILITY', message: { attachment: { type: 'template', payload: { template_type: 'utility', name: 'order_update' } } } })
+    expect(h.saved[0]).toMatchObject({ content_type: 'template', content_text: 'Hi Asha, your order shipped.' })
+  })
+  it('not approved, missing blanks, or not this workspace: nothing sent', async () => {
+    h.template = { name: 'x', language: 'en_US', body: 'Hi {{1}} ok', param_count: 1, status: 'pending' }
+    expect((await tpl()).status).toBe(409)
+    h.template = { name: 'x', language: 'en_US', body: 'Hi {{1}} ok', param_count: 1, status: 'approved' }
+    expect((await tpl({ template_params: [] })).status).toBe(400)
+    h.template = null
+    expect((await tpl()).status).toBe(404)
+    expect((await tpl({ messenger_template_id: "x' OR 1=1" })).status).toBe(400)
+    expect(h.calls).toHaveLength(0)
   })
 })

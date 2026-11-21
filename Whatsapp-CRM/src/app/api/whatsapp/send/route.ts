@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { envelopeFor, humanAgentEnabled, lastInboundAt, loadSocialTarget, socialPost, socialSendAttachment, windowDecision, type SocialChannel, type SocialTarget } from '@/lib/meta/social-messaging'
+import { checkParams, renderTemplate, sendUtilityTemplate } from '@/lib/meta/messenger-templates'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { verifyApiKey } from '@/lib/auth/api-key'
@@ -35,6 +36,43 @@ import { stampFirstResponse } from '@/lib/leads/first-response'
 // Host, recipient and Meta's window: src/lib/meta/social-messaging.ts.
 
 const SOCIAL_MESSAGE_TYPES = new Set(['text', 'image', 'video', 'audio', 'document'])
+
+/**
+ * A Messenger utility template — allowed after the 24-hour window. The
+ * template is loaded with the workspace id and must be approved; the blanks
+ * are checked as plain text and must all be filled.
+ */
+async function handleMessengerTemplateSend(input: {
+  accountId: string; userId: string; conversationId: string; contactId: string; templateId: unknown; params: unknown
+}): Promise<NextResponse> {
+  const id = typeof input.templateId === 'string' && /^[0-9a-f-]{36}$/i.test(input.templateId) ? input.templateId : null
+  if (!id) return NextResponse.json({ error: 'Choose a template.' }, { status: 400 })
+  const rows = await prisma.$queryRaw<{ name: string; language: string; body: string; param_count: number; status: string }[]>`
+    SELECT name, language, body, param_count, status FROM messenger_templates
+    WHERE id = ${id}::uuid AND account_id = ${input.accountId}::uuid LIMIT 1`.catch(() => [])
+  const t = rows[0]
+  if (!t) return NextResponse.json({ error: 'Template not found.' }, { status: 404 })
+  if (t.status !== 'approved') return NextResponse.json({ error: 'This template is not approved by Meta yet.' }, { status: 409 })
+  const params = checkParams(input.params, t.param_count)
+  if (!params.ok) return NextResponse.json({ error: params.error }, { status: 400 })
+  let target: SocialTarget
+  try {
+    target = await loadSocialTarget(input.accountId, input.contactId, 'facebook')
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Messenger is not connected.' }, { status: 400 })
+  }
+  if (!target.pageId || !/^\d{1,30}$/.test(target.pageId)) return NextResponse.json({ error: 'Run Test Connection for Messenger first.' }, { status: 400 })
+  const sent = await sendUtilityTemplate({ pageId: target.pageId, token: target.token, recipientId: target.recipientId, name: t.name, language: t.language, values: params.values })
+  if (!sent.ok) return NextResponse.json({ error: sent.error }, { status: 502 })
+  const text = renderTemplate(t.body, params.values)
+  const savedMsg = await prisma.message.create({
+    data: { conversation_id: input.conversationId, sender_type: 'agent', sender_id: input.userId, content_type: 'template', content_text: text, message_id: sent.messageId, status: 'sent' },
+  })
+  emitToAccount(input.accountId, 'message', { eventType: 'INSERT', new: savedMsg, old: {} })
+  const updatedConv = await prisma.conversation.update({ where: { id: input.conversationId }, data: { last_message_text: text, last_message_at: new Date() } })
+  emitToAccount(input.accountId, 'conversation', { eventType: 'UPDATE', new: updatedConv, old: {} })
+  return NextResponse.json({ success: true, message_id: savedMsg.id })
+}
 
 async function handleSocialSend({
   channel,
@@ -560,6 +598,12 @@ async function sendPost(request: Request, onSender: (who: SentBy) => void): Prom
 
     // Messenger / Instagram contacts are addressed by their PSID / IGSID,
     // not a phone number — handled before the phone check.
+    if (convChannel === 'facebook' && message_type === 'messenger_template') {
+      return handleMessengerTemplateSend({
+        accountId, userId, conversationId: conversation_id, contactId: conversation.contact_id,
+        templateId: body.messenger_template_id, params: body.template_params,
+      })
+    }
     if (convChannel === 'instagram' || convChannel === 'facebook') {
       return handleSocialSend({
         channel: convChannel,

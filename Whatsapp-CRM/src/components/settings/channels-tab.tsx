@@ -119,6 +119,13 @@ const MessengerProfileSettings = dynamic(
     ),
   { ssr: false, loading: () => <PanelLoader /> }
 );
+const MessengerTemplates = dynamic(
+  () =>
+    import('@/components/settings/messenger-templates').then(
+      (m) => m.MessengerTemplates
+    ),
+  { ssr: false, loading: () => <PanelLoader /> }
+);
 const InstagramGatedFeatures = dynamic(
   () =>
     import('@/components/settings/instagram-gated-features').then(
@@ -458,6 +465,7 @@ export function ChannelsTab() {
         <Config defaultConnectMethod={preferredConnectMethod} />
         {channel === 'instagram' && <InstagramIceBreakers />}
         {channel === 'facebook' && <MessengerProfileSettings />}
+        {channel === 'facebook' && <MessengerTemplates />}
         {channel === 'instagram' && <InstagramGatedFeatures />}
       </div>
     );
