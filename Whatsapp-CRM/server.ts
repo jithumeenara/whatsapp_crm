@@ -14,6 +14,7 @@ import { sweepAdminChatBriefs } from "./src/lib/admin-chat/brief-sweep";
 import { sweepScheduledReports } from "./src/lib/reports/schedule/sweep";
 import { sweepReportAlerts } from "./src/lib/reports/alerts/sweep";
 import { sweepSocialConnections } from "./src/lib/meta/social-health-sweep";
+import { takeFollowerSnapshots } from "./src/lib/meta/social-insights";
 import { sweepAutoTags } from "./src/lib/ai/auto-tag";
 import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
 import { sweepTwoWaySheets } from "./src/lib/google/sheet-two-way";
@@ -307,6 +308,11 @@ app.prepare().then(() => {
   every(() => {
     sweepSocialConnections().catch((err) => {
       console.error("[social-health] sweep failed:", err);
+    });
+    // Follower count once per business day per channel, for the growth
+    // chart (src/lib/meta/social-insights.ts) — numbers only.
+    takeFollowerSnapshots().catch((err) => {
+      console.error("[social-insights] snapshot failed:", err);
     });
   }, 6 * 60 * 60_000);
 

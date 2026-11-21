@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useRef, useCallback } from "react"
+import { SocialInsightsPanel } from "./social-insights-panel"
 import { MessageCircle, Share2, Eye, TrendingUp, Users, MousePointer, X, ExternalLink, RefreshCw, ThumbsUp } from "lucide-react"
 import type { Socket } from "socket.io-client"
 import { connectAccountSocket } from "@/lib/realtime-client"
@@ -213,6 +214,7 @@ export function FacebookTab() {
 
   return (
     <div className="p-6 space-y-6">
+      <SocialInsightsPanel channel="facebook" />
 
       {/* Page profile card */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">

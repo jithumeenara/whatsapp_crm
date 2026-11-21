@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { SocialInsightsPanel } from "./social-insights-panel"
 import { safeHref } from "@/lib/utils"
 import {
   Heart, MessageCircle, Bookmark, Eye, TrendingUp, Users,
@@ -109,6 +110,7 @@ export function InstagramTab() {
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-6 space-y-5">
+      <SocialInsightsPanel channel="instagram" />
 
       {/* ── Profile card ── */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">

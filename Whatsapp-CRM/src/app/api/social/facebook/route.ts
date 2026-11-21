@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server"
-import { requireRole } from "@/lib/auth/account"
+import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
 import { GRAPH_API_VERSION } from '@/lib/meta/versions'
+import { explainMetaError } from '@/lib/meta/social-messaging'
 
 type FbApiError = { error?: { message: string; code?: number; type?: string } }
 
@@ -48,8 +49,13 @@ export async function GET() {
       return NextResponse.json({ error: "Facebook Page not connected. Go to Settings → Facebook to connect your page." }, { status: 404 })
     }
 
-    const token  = openStoredSecret(cfg.access_token)
+    // The token goes into URLs encoded; only a numeric Page id is used.
+    const rawToken = openStoredSecret(cfg.access_token)
     const pageId = cfg.page_id
+    if (!rawToken || !/^\d{1,30}$/.test(pageId)) {
+      return NextResponse.json({ error: "Run Test Connection in Settings first." }, { status: 400 })
+    }
+    const token = encodeURIComponent(rawToken)
 
     // ── Step 1: Fetch basic page info ──
     const basicPageResult = await fbGet(
@@ -115,8 +121,10 @@ export async function GET() {
           `https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}/posts?fields=id,message,created_time,full_picture&limit=30&access_token=${token}`
         )
         if (!fallbackResult.ok) {
-          postsError = (fallbackResult.json.error as { message?: string } | undefined)?.message ?? "Could not load posts"
-          console.error("[social/facebook] posts error:", postsError)
+          const metaErr = fallbackResult.json.error as { message?: string; code?: number; error_subcode?: number } | undefined
+          console.error("[social/facebook] posts error:", metaErr?.code, metaErr?.message)
+          // Meta's own words stay in the log.
+          postsError = explainMetaError(metaErr, 400)
         } else {
           const postItems = ((fallbackResult.json.data ?? []) as PostRow[]).slice(0, 24)
           withInsights = postItems.map((post) => ({
@@ -136,7 +144,7 @@ export async function GET() {
             // whole request). Their replacements: post_media_view (views) and
             // post_total_media_view_unique (people who viewed).
             const insResult = await fbGet(
-              `https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(post.id)}/insights?metric=post_media_view,post_total_media_view_unique&access_token=${encodeURIComponent(token)}`
+              `https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(post.id)}/insights?metric=post_media_view,post_total_media_view_unique&access_token=${token}`
             ).catch(() => null)
 
             let reach = 0, impressions = 0
@@ -151,7 +159,7 @@ export async function GET() {
             const engagedUsers = (post.reactions?.summary?.total_count ?? 0) + (post.comments?.summary?.total_count ?? 0) + (post.shares?.count ?? 0)
 
             const reactResult = await fbGet(
-              `https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(post.id)}/reactions?fields=id,name,type&limit=50&access_token=${encodeURIComponent(token)}`
+              `https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(post.id)}/reactions?fields=id,name,type&limit=50&access_token=${token}`
             ).catch(() => null)
             const reactions = reactResult?.ok ? ((reactResult.json.data ?? []) as unknown[]) : []
 
@@ -181,7 +189,7 @@ export async function GET() {
       posts_error: postsError,
     })
   } catch (err) {
-    console.error("[social/facebook]", err)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    // Not signed in / not allowed → 401/403; anything else is logged, with plain words.
+    return toErrorResponse(err)
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { explainMetaError, graphHost } from "@/lib/meta/social-messaging"
-import { requireRole } from "@/lib/auth/account"
+import { safeGraphUrl } from "@/lib/meta/social-insights"
+import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
 
 export async function GET() {
@@ -71,7 +72,10 @@ export async function GET() {
       allMedia = [...(page.data ?? [])]
       let pageCount = 0
       while (page.paging?.next && pageCount < 4) {
-        const nextRes = await fetch(page.paging.next, { cache: "no-store" })
+        // Only Meta's own Graph host is ever followed from a "next" link.
+        const next = safeGraphUrl(page.paging.next)
+        if (!next) break
+        const nextRes = await fetch(next, { cache: "no-store" })
         if (!nextRes.ok) break
         page = await nextRes.json() as MediaPage
         allMedia = [...allMedia, ...(page.data ?? [])]
@@ -85,11 +89,15 @@ export async function GET() {
     type InsightData = { name: string; value?: number; values?: Array<{ value: number }> }
     type InsightRes  = { data?: InsightData[]; error?: { message: string } }
 
+    // Per-post insights for the newest 50 posts only: one call per post,
+    // and opening the screen must not spend hundreds of Meta calls. Older
+    // posts keep their likes / comments counts from the listing.
     const BATCH = 25
+    const INSIGHT_POSTS = 50
     const withInsights = []
 
-    for (let i = 0; i < allMedia.length; i += BATCH) {
-      const batch = allMedia.slice(i, i + BATCH)
+    for (let i = 0; i < Math.min(allMedia.length, INSIGHT_POSTS); i += BATCH) {
+      const batch = allMedia.slice(i, Math.min(i + BATCH, INSIGHT_POSTS))
       const results = await Promise.all(
         batch.map(async (item) => {
           // Current metrics only: video_views was removed by Meta (8 Jan 2025)
@@ -109,7 +117,8 @@ export async function GET() {
               const val = typeof d.value === "number" ? d.value : (d.values?.[0]?.value ?? 0)
               if (d.name === "reach")              reach             = val
               if (d.name === "saved")              saved             = val
-              if (d.name === "video_views")        videoViews        = val
+              // Meta renamed video views to "views" (Jan 2025).
+              if (d.name === "views" || d.name === "video_views") videoViews = val
               if (d.name === "total_interactions") totalInteractions = val
             }
           }
@@ -129,10 +138,13 @@ export async function GET() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       withInsights.push(...(results as any))
     }
+    for (const item of allMedia.slice(INSIGHT_POSTS)) {
+      withInsights.push({ ...item, like_count: item.like_count ?? 0, comments_count: item.comments_count ?? 0, shares: 0, reach: 0, saved: 0, video_views: 0, total_interactions: 0 })
+    }
 
     return NextResponse.json({ profile, media: withInsights })
   } catch (err) {
-    console.error("[social/instagram]", err)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    // Not signed in / not allowed → 401/403; anything else is logged, with plain words.
+    return toErrorResponse(err)
   }
 }
