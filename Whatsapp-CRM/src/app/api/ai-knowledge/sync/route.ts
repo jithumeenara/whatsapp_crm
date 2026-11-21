@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { includedIds, markTrainedAfterRun } from '@/lib/ai/train-pending'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { audit, auditCtx } from '@/lib/audit'
 import { decrypt } from '@/lib/whatsapp/encryption'
@@ -50,6 +51,7 @@ export async function POST(req?: Request) {
   // Everything is embedded, including internal-only entries — the
   // audience boundary is applied at retrieval time, so Admin search
   // can still find staff-only material by meaning.
+  const startedAt = new Date()
   const { qaPairs, documents } = await loadKnowledge(config.id, 'all')
   const chunks = documents.flatMap((doc) => chunkDocument(doc))
   const items = toKnowledgeItems(qaPairs, chunks)
@@ -78,11 +80,8 @@ export async function POST(req?: Request) {
   // everything green and hiding that something didn't embed.
   let trained = 0
   if (result.failed === 0) {
-    const updated = await prisma.aiKnowledgeItem.updateMany({
-      where: { ai_config_id: config.id, status: { in: ['pending', 'failed'] } },
-      data: { status: 'trained', last_error: null },
-    })
-    trained = updated.count
+    // Only what this run embedded; a failed re-sync keeps its error.
+    trained = await markTrainedAfterRun(config.id, includedIds(qaPairs, documents), startedAt)
   }
 
   invalidateKnowledge(config.id)

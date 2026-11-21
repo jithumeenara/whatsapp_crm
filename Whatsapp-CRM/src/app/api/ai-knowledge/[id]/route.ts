@@ -13,6 +13,11 @@ import { invalidateKnowledge } from '@/lib/ai/knowledge-store'
 /** One knowledge entry: read its full content, edit it, re-sync it from
  *  its source, or delete it. */
 
+/** Entries whose text is fetched from somewhere else and re-fetched on sync. */
+const REMOTE_KINDS = new Set(['website', 'sheet', 'database', 'chatbot'])
+/** The same ceiling the file and page extractors use. */
+const MAX_CONTENT = 200_000
+
 async function loadOwned(accountId: string, id: string) {
   return prisma.aiKnowledgeItem.findFirst({ where: { id, account_id: accountId } })
 }
@@ -152,7 +157,26 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim().slice(0, 200)
   if (typeof body.question === 'string') data.question = body.question.trim()
   if (typeof body.answer === 'string') data.answer = body.answer.trim()
-  if (typeof body.content === 'string') data.content = body.content
+  if (typeof body.content === 'string' && !body.resync) {
+    // A website, sheet, table or chatbot entry's text belongs to its
+    // source and is replaced on every re-sync: an edit here would be
+    // silently undone, so it is refused with the way to change it.
+    if (REMOTE_KINDS.has(existing.kind)) {
+      return NextResponse.json(
+        { error: 'This entry’s text comes from its source. Change it there, then use Re-sync now.' },
+        { status: 400 },
+      )
+    }
+    const content = body.content.trim()
+    if (!content) return NextResponse.json({ error: 'The text cannot be empty.' }, { status: 400 })
+    if (content.length > MAX_CONTENT) {
+      return NextResponse.json(
+        { error: `The text is too long: at most 200,000 characters (this has ${content.length.toLocaleString('en-IN')}). Split it into two entries.` },
+        { status: 400 },
+      )
+    }
+    data.content = content
+  }
   if (body.status === 'disabled' || body.status === 'pending') data.status = body.status
   const descriptionChanged =
     typeof body.description === 'string' && (body.description.trim() || null) !== existing.description

@@ -60,6 +60,31 @@ export interface TrainConfigResult {
   firstError: string | null
 }
 
+/** The knowledge entries a run actually loaded (and so embedded). */
+export function includedIds(qaPairs: Array<{ id?: string }>, documents: Array<{ id?: string }>): string[] {
+  return [...new Set([...qaPairs, ...documents].map((x) => x.id).filter((id): id is string => typeof id === 'string'))]
+}
+
+/**
+ * After a run with no embedding failures, marks as trained exactly the
+ * entries it embedded:
+ *  - only ids the run loaded (a future-dated entry is left out of the run
+ *    and so has no vector: it must not claim "trained");
+ *  - only from 'pending' (a 'failed' re-sync keeps its error until a
+ *    re-sync succeeds; it is never turned green by an unrelated run);
+ *  - only rows not edited since the run started (an edit mid-run is
+ *    re-embedded by the next run).
+ * Shared by the timer and the Train now button.
+ */
+export async function markTrainedAfterRun(configId: string, ids: string[], startedAt: Date): Promise<number> {
+  if (ids.length === 0) return 0
+  const updated = await prisma.aiKnowledgeItem.updateMany({
+    where: { ai_config_id: configId, id: { in: ids }, status: 'pending', updated_at: { lte: startedAt } },
+    data: { status: 'trained', last_error: null },
+  })
+  return updated.count
+}
+
 /**
  * Brings one account's embeddings in line with its knowledge base, and
  * marks entries trained only when nothing failed — the same thing the
@@ -82,6 +107,7 @@ export async function trainKnowledgeConfig(configId: string): Promise<TrainConfi
   // 'all', not 'customer': the audience boundary is applied at
   // retrieval time, so staff-only entries are embedded too and Admin
   // search can find them by meaning. Same call the button makes.
+  const startedAt = new Date()
   const { qaPairs, documents } = await loadKnowledge(config.id, 'all')
   const items = toKnowledgeItems(qaPairs, documents.flatMap((doc) => chunkDocument(doc)))
 
@@ -96,11 +122,7 @@ export async function trainKnowledgeConfig(configId: string): Promise<TrainConfi
   // everything green would hide the one entry that did not embed.
   let trained = 0
   if (synced.failed === 0) {
-    const updated = await prisma.aiKnowledgeItem.updateMany({
-      where: { ai_config_id: config.id, status: { in: ['pending', 'failed'] } },
-      data: { status: 'trained', last_error: null },
-    })
-    trained = updated.count
+    trained = await markTrainedAfterRun(config.id, includedIds(qaPairs, documents), startedAt)
   }
   return {
     skipped: null,

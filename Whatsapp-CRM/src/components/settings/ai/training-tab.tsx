@@ -30,7 +30,7 @@ import {
 
 export interface KnowledgeItem {
   id: string;
-  kind: 'qa' | 'document' | 'website' | 'text' | 'database' | 'sheet';
+  kind: 'qa' | 'document' | 'website' | 'text' | 'database' | 'sheet' | 'chatbot';
   name: string;
   source: string;
   audience: string;
@@ -545,13 +545,13 @@ export function TrainingTab(props: TrainingTabProps) {
                             description={
                               item.kind === 'qa'
                                 ? 'Change the question or answer'
-                                : item.kind === 'website' || item.kind === 'database' || item.kind === 'sheet'
-                                  ? 'Rename it, or change what it is for'
+                                : REMOTE_KINDS.has(item.kind)
+                                  ? 'See its text, rename it, or change what it is for'
                                   : 'Change the text, name or purpose'
                             }
                           />
                           <AiMenuSeparator />
-                          {(item.kind === 'website' || item.kind === 'database' || item.kind === 'sheet') && (
+                          {REMOTE_KINDS.has(item.kind) && (
                             <AiMenuItem
                               onClick={() => updateItem(item.id, { resync: true })}
                               icon={<RefreshCw className="h-4 w-4" />}
@@ -747,23 +747,55 @@ function EditContentDialog({
   const [name, setName] = useState(item.name ?? '');
   const [question, setQuestion] = useState(item.question ?? '');
   const [answer, setAnswer] = useState(item.answer ?? '');
+  const [content, setContent] = useState('');
+  /** The text as loaded, so an untouched box is not sent (and does not re-train). */
+  const [loadedContent, setLoadedContent] = useState<string | null>(null);
+  const [contentError, setContentError] = useState('');
   const [description, setDescription] = useState(item.description ?? '');
   const [audience, setAudience] = useState(item.audience ?? 'customer');
   const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(item.effective_from));
   const [effectiveUntil, setEffectiveUntil] = useState(toDateInput(item.effective_until));
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<null | 'save' | 'resync'>(null);
   const [error, setError] = useState('');
 
   /** Content is owned by the source for these, and would be overwritten
-   *  by the next re-sync. */
-  const contentIsRemote = item.kind === 'website' || item.kind === 'database' || item.kind === 'sheet';
+   *  by the next re-sync: shown, not edited. */
+  const contentIsRemote = REMOTE_KINDS.has(item.kind);
+  const hasBody = item.kind !== 'qa';
+
+  // The list does not carry the text (it can be 200,000 characters), so
+  // the full entry is read when the dialog opens.
+  useEffect(() => {
+    if (!hasBody) return;
+    let live = true;
+    fetch(`/api/ai-knowledge/${item.id}`, { cache: 'no-store' })
+      .then(async (res) => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error ?? `Could not load the text (${res.status}).`);
+        const text = typeof data?.item?.content === 'string' ? data.item.content : '';
+        if (!live) return;
+        setContent(text);
+        setLoadedContent(text);
+      })
+      .catch((err) => {
+        console.error('[training] load entry failed:', err);
+        if (live) setContentError(err instanceof Error ? err.message : 'Could not load the text.');
+      });
+    return () => { live = false; };
+  }, [item.id, hasBody]);
 
   async function save() {
     if (item.kind === 'qa' && (!question.trim() || !answer.trim())) {
       setError('A Q&A entry needs both a question and an answer.');
       return;
     }
-    setBusy(true);
+    const contentChanged = hasBody && !contentIsRemote && loadedContent !== null && content !== loadedContent;
+    if (contentChanged && !content.trim()) {
+      setError('The text cannot be empty. Delete the entry instead if it is no longer needed.');
+      return;
+    }
+    if (busy) return;
+    setBusy('save');
     setError('');
     try {
       const res = await fetch(`/api/ai-knowledge/${item.id}`, {
@@ -772,6 +804,7 @@ function EditContentDialog({
         body: JSON.stringify({
           name: name.trim() || undefined,
           ...(item.kind === 'qa' ? { question: question.trim(), answer: answer.trim() } : {}),
+          ...(contentChanged ? { content } : {}),
           description: description.trim(),
           audience,
           effective_from: effectiveFrom || null,
@@ -782,14 +815,39 @@ function EditContentDialog({
       if (!res.ok) throw new Error(data?.error ?? `Could not save (${res.status}).`);
       onSaved();
     } catch (err) {
+      console.error('[training] save entry failed:', err);
       setError(err instanceof Error ? err.message : 'Could not save that.');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
+  async function resync() {
+    if (busy) return;
+    setBusy('resync');
+    setError('');
+    try {
+      const res = await fetch(`/api/ai-knowledge/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resync: true, description: description.trim() }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? `Could not re-sync (${res.status}).`);
+      onSaved();
+    } catch (err) {
+      console.error('[training] re-sync failed:', err);
+      setError(err instanceof Error ? err.message : 'Could not re-sync.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const bodyLabel = item.kind === 'document' ? 'Text read from the file' : 'Content';
+  const preview = content.length > 4000 ? `${content.slice(0, 4000)}…` : content;
+
   return (
-    <AiModal open onOpenChange={(v) => !v && onClose()} size="sm">
+    <AiModal open onOpenChange={(v) => !v && onClose()} size="md">
       <div>
         <AiModalHeader
           icon={
@@ -800,92 +858,175 @@ function EditContentDialog({
           title="Edit entry"
           subtitle={
             contentIsRemote
-              ? 'The content comes from its source and is replaced on every re-sync, so it is not edited here.'
-              : 'Changing the text sends this back to Not trained, so the next Train now re-reads it.'
+              ? 'Its text comes from the source and is replaced on every re-sync. Change it at the source, then Re-sync now.'
+              : 'Changing the text sends this back to Not trained, so the assistant re-reads it within a minute.'
           }
           onClose={onClose}
         />
         <AiModalBody className="space-y-4">
-          <div className="space-y-2">
-            <AiLabel>Name</AiLabel>
-            <AiInput value={name} onChange={(e) => setName(e.target.value)} placeholder="What to call this entry" />
+          <div className="space-y-1.5">
+            <AiLabel>{item.kind === 'text' ? 'Title' : 'Name'}</AiLabel>
+            <AiInput value={name} onChange={(e) => setName(e.target.value)} placeholder="What to call this entry" maxLength={200} />
           </div>
 
           {item.kind === 'qa' && (
             <>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <AiLabel>Question</AiLabel>
-                <AiTextarea
-                  rows={2}
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="What a customer might ask"
-                />
+                <AiTextarea rows={2} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="What a customer might ask" />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <AiLabel>Answer</AiLabel>
-                <AiTextarea
-                  rows={5}
-                  value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
-                  placeholder="What the assistant should say"
-                />
+                <AiTextarea rows={5} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="What the assistant should say" />
               </div>
             </>
           )}
 
-          <div className="space-y-2">
-            <AiLabel>What this is for</AiLabel>
-            <AiInput
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="e.g. our 2026 fee structure"
-            />
-            <AiHint>
-              Searched along with the content, so &ldquo;fees&rdquo; can find a table of bare numbers.
-            </AiHint>
-          </div>
-
-          <div className="space-y-2">
-            <AiLabel>Who may be told this</AiLabel>
-            <Select value={audience} onValueChange={(v) => v && setAudience(v)}>
-              <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 text-[13px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {AUDIENCES.map((a) => (
-                  <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <AiLabel>Valid from</AiLabel>
-              <AiInput type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} />
+          {hasBody && (
+            <div className="space-y-1.5">
+              <AiLabel>{bodyLabel}</AiLabel>
+              {contentError ? (
+                <AiNotice tone="error" icon={<AlertTriangle className="h-4 w-4" />}>{contentError}</AiNotice>
+              ) : loadedContent === null ? (
+                <div className="flex h-40 items-center justify-center rounded-xl bg-slate-50 text-[12.5px] text-slate-500" role="status">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> Loading the text…
+                </div>
+              ) : contentIsRemote ? (
+                <>
+                  <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-3 text-[12px] leading-relaxed text-slate-700">{preview || 'Nothing has been read from the source yet.'}</pre>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <AiHint>{content.length.toLocaleString('en-IN')} characters, read from the source.</AiHint>
+                    <AiButton tone="ghost" onClick={resync} disabled={!!busy}>
+                      {busy === 'resync' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      Re-sync now
+                    </AiButton>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <AiTextarea rows={10} value={content} onChange={(e) => setContent(e.target.value)} placeholder="Paste the details the AI should know…" />
+                  <AiHint>{content.length.toLocaleString('en-IN')} of 200,000 characters.</AiHint>
+                </>
+              )}
             </div>
-            <div className="space-y-2">
-              <AiLabel>Valid until</AiLabel>
-              <AiInput type="date" value={effectiveUntil} onChange={(e) => setEffectiveUntil(e.target.value)} />
-            </div>
-          </div>
-          <AiHint>
-            Leave both empty for an entry that never expires. Outside these dates it is not used in a reply at
-            all — which is what keeps last term&apos;s fees from being quoted as this term&apos;s.
-          </AiHint>
+          )}
+
+          <KnowledgeMetaFields
+            kind={item.kind}
+            description={description}
+            onDescription={setDescription}
+            audience={audience}
+            onAudience={setAudience}
+            effectiveFrom={effectiveFrom}
+            onEffectiveFrom={setEffectiveFrom}
+            effectiveUntil={effectiveUntil}
+            onEffectiveUntil={setEffectiveUntil}
+          />
 
           {error && <AiNotice tone="error" icon={<AlertTriangle className="h-4 w-4" />}>{error}</AiNotice>}
         </AiModalBody>
         <AiModalFooter>
-          <AiButton tone="ghost" onClick={onClose} disabled={busy}>Cancel</AiButton>
-          <AiButton onClick={save} disabled={busy}>
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+          <AiButton tone="ghost" onClick={onClose} disabled={!!busy}>Cancel</AiButton>
+          <AiButton onClick={save} disabled={!!busy || (hasBody && !contentIsRemote && loadedContent === null && !contentError)}>
+            {busy === 'save' && <Loader2 className="h-4 w-4 animate-spin" />}
             Save changes
           </AiButton>
         </AiModalFooter>
       </div>
     </AiModal>
+  );
+}
+
+/** Kinds whose text is fetched from a source and re-fetched on every sync. */
+const REMOTE_KINDS = new Set<string>(['website', 'database', 'sheet', 'chatbot']);
+
+/**
+ * "What is this for?", "Who can this be said to?" and "When is this true?"
+ * — one set of fields, so adding and editing an entry look the same.
+ */
+function KnowledgeMetaFields({
+  kind, description, onDescription, audience, onAudience,
+  effectiveFrom, onEffectiveFrom, effectiveUntil, onEffectiveUntil,
+}: {
+  kind: string;
+  description: string;
+  onDescription: (v: string) => void;
+  audience: string;
+  onAudience: (v: string) => void;
+  effectiveFrom: string;
+  onEffectiveFrom: (v: string) => void;
+  effectiveUntil: string;
+  onEffectiveUntil: (v: string) => void;
+}) {
+  return (
+    <>
+      <div className="space-y-1.5 border-t border-slate-100 pt-4">
+        <AiLabel>What is this for?</AiLabel>
+        <AiInput
+          value={description}
+          onChange={(e) => onDescription(e.target.value)}
+          maxLength={2000}
+          placeholder={
+            kind === 'database'
+              ? 'e.g. Course fees per programme — use for any pricing question'
+              : kind === 'chatbot'
+                ? 'e.g. How to reach our campus — use for any question about location or directions'
+                : 'e.g. Our 2026 fee structure for all courses'
+          }
+        />
+        <AiHint>
+          Sent to the AI alongside the content, so it knows what this entry <em>is</em> rather than guessing from a
+          fragment of it. The single most useful thing you can add for tables of numbers.
+        </AiHint>
+      </div>
+
+      <div className="space-y-1.5">
+        <AiLabel>Who can this be said to?</AiLabel>
+        <div className="grid gap-2 xs:grid-cols-3" role="radiogroup" aria-label="Who can this be said to?">
+          {AUDIENCES.map((a) => (
+            <button
+              key={a.value}
+              type="button"
+              role="radio"
+              aria-checked={audience === a.value}
+              onClick={() => onAudience(a.value)}
+              className={[
+                'rounded-xl p-2.5 text-left ring-1 transition-all duration-150',
+                audience === a.value
+                  ? 'bg-[#4A5CE8]/[0.05] ring-[#5B6CF9]/30'
+                  : 'bg-white ring-slate-200/70 hover:ring-slate-300',
+              ].join(' ')}
+            >
+              <span className={`block text-[12.5px] font-semibold ${audience === a.value ? 'text-[#4A5CE8]' : 'text-slate-700'}`}>
+                {a.label}
+              </span>
+              <span className="mt-0.5 block text-[10.5px] leading-snug text-slate-500">{a.hint}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <AiLabel>When is this true? <span className="font-normal text-slate-400">(optional)</span></AiLabel>
+        <div className="grid gap-2 xs:grid-cols-2">
+          <label className="space-y-1">
+            <span className="block text-[10.5px] font-medium text-slate-500">Start using it</span>
+            <AiInput type="date" value={effectiveFrom} onChange={(e) => onEffectiveFrom(e.target.value)} />
+          </label>
+          <label className="space-y-1">
+            <span className="block text-[10.5px] font-medium text-slate-500">Stop using it</span>
+            <AiInput type="date" value={effectiveUntil} onChange={(e) => onEffectiveUntil(e.target.value)} />
+          </label>
+        </div>
+        <AiHint>
+          Outside these dates the assistant never sees this entry at all — it is
+          filtered out before anything is sent to the model, so it cannot be quoted
+          by accident. Use it for anything with a closing date: a programme that
+          stops taking registrations, an offer that ends, a fee list for one term.
+          Leave either side blank for no limit.
+        </AiHint>
+      </div>
+    </>
   );
 }
 
@@ -1216,79 +1357,17 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
             </div>
           )}
 
-          <div className="space-y-1.5 border-t border-slate-100 pt-4">
-            <AiLabel>What is this for?</AiLabel>
-            <AiInput
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={
-                kind === 'database'
-                  ? 'e.g. Course fees per programme — use for any pricing question'
-                  : kind === 'chatbot'
-                    ? 'e.g. How to reach our campus — use for any question about location or directions'
-                    : 'e.g. Our 2026 fee structure for all courses'
-              }
-            />
-            <AiHint>
-              Sent to the AI alongside the content, so it knows what this entry <em>is</em> rather than guessing from a
-              fragment of it. The single most useful thing you can add for tables of numbers.
-            </AiHint>
-          </div>
-
-          <div className="space-y-1.5">
-            <AiLabel>Who can this be said to?</AiLabel>
-            <div className="grid gap-2 xs:grid-cols-3">
-              {AUDIENCES.map((a) => (
-                <button
-                  key={a.value}
-                  type="button"
-                  onClick={() => setAudience(a.value)}
-                  className={[
-                    'rounded-xl p-2.5 text-left ring-1 transition-all duration-150',
-                    audience === a.value
-                      ? 'bg-[#4A5CE8]/[0.05] ring-[#5B6CF9]/30'
-                      : 'bg-white ring-slate-200/70 hover:ring-slate-300',
-                  ].join(' ')}
-                >
-                  <span
-                    className={`block text-[12.5px] font-semibold ${audience === a.value ? 'text-[#4A5CE8]' : 'text-slate-700'}`}
-                  >
-                    {a.label}
-                  </span>
-                  <span className="mt-0.5 block text-[10.5px] leading-snug text-slate-500">{a.hint}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <AiLabel>When is this true? <span className="font-normal text-slate-400">(optional)</span></AiLabel>
-            <div className="grid gap-2 xs:grid-cols-2">
-              <div className="space-y-1">
-                <span className="block text-[10.5px] font-medium text-slate-500">Start using it</span>
-                <AiInput
-                  type="date"
-                  value={effectiveFrom}
-                  onChange={(e) => setEffectiveFrom(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <span className="block text-[10.5px] font-medium text-slate-500">Stop using it</span>
-                <AiInput
-                  type="date"
-                  value={effectiveUntil}
-                  onChange={(e) => setEffectiveUntil(e.target.value)}
-                />
-              </div>
-            </div>
-            <AiHint>
-              Outside these dates the assistant never sees this entry at all — it is
-              filtered out before anything is sent to the model, so it cannot be quoted
-              by accident. Use it for anything with a closing date: a programme that
-              stops taking registrations, an offer that ends, a fee list for one term.
-              Leave either side blank for no limit.
-            </AiHint>
-          </div>
+          <KnowledgeMetaFields
+            kind={kind}
+            description={description}
+            onDescription={setDescription}
+            audience={audience}
+            onAudience={setAudience}
+            effectiveFrom={effectiveFrom}
+            onEffectiveFrom={setEffectiveFrom}
+            effectiveUntil={effectiveUntil}
+            onEffectiveUntil={setEffectiveUntil}
+          />
 
           {error && (
             <AiNotice tone="error" icon={<X className="h-3.5 w-3.5" />}>{error}</AiNotice>
