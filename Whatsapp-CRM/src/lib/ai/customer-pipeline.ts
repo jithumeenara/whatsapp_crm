@@ -48,6 +48,7 @@ import { GROUNDING_RULES, enforceGroundedList } from './list-grounding'
 import { accuracyPromptBlock, accuracyRulesFor, checkAccuracyRules, correctionFor, DEFAULT_ACCURACY_RULES, mergeRuleBreaches, type AccuracyRules } from './accuracy-rules'
 import type { HistoryTurn } from './history'
 import { TEAM_MEMBER_RULE } from './history'
+import { expandedQuery, rewriteQuery } from './query-rewrite'
 
 /** The subset of AiConfig this module reads. Declared structurally so
  *  callers can pass a Prisma row or a per-node override of one. */
@@ -490,13 +491,28 @@ export async function retrieveForMessage(args: {
   const useSemantic = aiConfig.retrieval_mode !== 'keyword' && Boolean(geminiApiKey)
   const contextLimit = Math.max(1, aiConfig.max_context_results)
 
-  return selectRelevantContext(query, qaPairs, documents, {
+  const options = {
     // A different set of documents is a different cache entry.
     cacheKey: `${aiConfig.id}:${version}${withheld ? `:w:${[...withheld].sort().join(',')}` : ''}`,
     maxQaPairs: contextLimit,
     maxDocChunks: contextLimit,
     ...(useSemantic ? { semantic: { aiConfigId: aiConfig.id, geminiApiKey: geminiApiKey!, accountId: args.accountId } } : {}),
-  })
+  }
+  const first = await selectRelevantContext(query, qaPairs, documents, options)
+
+  // ── Not confident: rewrite the question and search again ──────────
+  //
+  // "fees ethra aanu" finds nothing in an English fee table. Only when the
+  // first search falls under the account's own confidence line (so a clear
+  // question costs nothing extra), the message is rewritten into English,
+  // Malayalam script and keywords (query-rewrite.ts) and searched again;
+  // the better of the two searches is used.
+  const line = typeof aiConfig.confidence_threshold === 'number' ? aiConfig.confidence_threshold : 0
+  if (!geminiApiKey || first.confidence >= line || (qaPairs.length === 0 && documents.length === 0)) return first
+  const rewritten = await rewriteQuery(geminiApiKey, trimmed)
+  if (!rewritten) return first
+  const second = await selectRelevantContext(expandedQuery(query, rewritten), qaPairs, documents, options)
+  return second.confidence > first.confidence ? { ...second, embeddingMs: (first.embeddingMs ?? 0) + (second.embeddingMs ?? 0) } : first
 }
 
 export type TurnDecision =
