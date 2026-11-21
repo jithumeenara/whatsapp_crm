@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
-import { CheckCircle2, CircleHelp, Loader2, Plug, RefreshCw, Unplug, XCircle } from 'lucide-react';
+import { CheckCircle2, CircleHelp, Loader2, Plug, RefreshCw, Unplug, XCircle, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -220,6 +220,19 @@ export function MetaSocialHealth({ channel }: Readonly<{ channel: Channel }>) {
     } finally { setBusy(null); }
   }
 
+  async function importChats() {
+    if (busy) return;
+    setBusy('import');
+    try {
+      const res = await apiFetch('/api/meta/social-import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel }) });
+      const r = (await res.json()) as { conversations?: number; messages?: number };
+      toast.success(`Imported ${r.conversations ?? 0} chats and ${r.messages ?? 0} new messages into the Inbox.`);
+    } catch (err) {
+      console.error('[meta connect] import failed:', err);
+      toast.error(errorText(err, 'Could not import the chats.'));
+    } finally { setBusy(null); }
+  }
+
   async function disconnect() {
     if (busy) return;
     const ok = await confirm({
@@ -256,6 +269,13 @@ export function MetaSocialHealth({ channel }: Readonly<{ channel: Channel }>) {
               onClick={async () => { setBusy('reconnect'); try { await startConnect(); } catch (err) { console.error(err); toast.error(errorText(err, 'Could not start the connection.')); setBusy(null); } }}>
               {busy === 'reconnect' ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
               {s.connected ? 'Reconnect' : 'Connect'}
+            </Button>
+          )}
+          {s.connected && (
+            <Button type="button" variant="outline" size="sm" disabled={busy !== null} onClick={() => void importChats()}
+              title="Brings the 50 most recent chats into the Inbox. Safe to run again.">
+              {busy === 'import' ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Download className="h-3.5 w-3.5" aria-hidden="true" />}
+              Import recent chats
             </Button>
           )}
           {s.connected && (
