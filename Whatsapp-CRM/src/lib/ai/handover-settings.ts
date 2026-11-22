@@ -13,13 +13,17 @@ import { prisma } from '@/lib/db'
 export interface HandoverSettings {
   /** Ask the customer before connecting them to a person. */
   ask_first: boolean
+  /** When the assistant is not sure it understood, ask the customer one
+   *  clarifying question before handing over (clarify.ts). On unless an
+   *  admin switched it off. */
+  clarify_first: boolean
 }
 
-export const DEFAULT_HANDOVER: HandoverSettings = { ask_first: false }
+export const DEFAULT_HANDOVER: HandoverSettings = { ask_first: false, clarify_first: true }
 
 export function parseHandoverSettings(raw: unknown): HandoverSettings {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
-  return { ask_first: o.ask_first === true }
+  return { ask_first: o.ask_first === true, clarify_first: o.clarify_first !== false }
 }
 
 const TTL_MS = 30_000

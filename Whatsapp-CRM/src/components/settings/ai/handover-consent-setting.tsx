@@ -14,6 +14,7 @@ import { Switch } from '@/components/ui/switch';
 
 type State = {
   ask_first: boolean;
+  clarify_first: boolean;
   offers_enabled: boolean;
   alerts: { enabled: boolean; numbers: number; template: boolean };
   hours: string | null;
@@ -50,19 +51,25 @@ export function HandoverConsentSetting() {
     void load();
   }, [load]);
 
-  async function toggle(next: boolean) {
+  async function save(field: 'ask_first' | 'clarify_first', next: boolean) {
+    if (saving) return;
     setSaving(true);
     try {
       const res = await fetch('/api/ai-config/handover', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ask_first: next }),
+        body: JSON.stringify({ [field]: next }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Could not save');
       setState(data);
-      toast.success(next ? 'The assistant will ask first' : 'Switched off');
+      toast.success(
+        field === 'clarify_first'
+          ? next ? 'The assistant will ask what the customer means first' : 'Switched off'
+          : next ? 'The assistant will ask first' : 'Switched off',
+      );
     } catch (err) {
+      console.error('[handover] save failed:', err);
       toast.error(err instanceof Error ? err.message : 'Could not save');
     } finally {
       setSaving(false);
@@ -72,6 +79,20 @@ export function HandoverConsentSetting() {
   if (!state) return null;
 
   return (
+    <div className="space-y-3">
+    <div className="rounded-2xl bg-[#F7F8FC] p-3.5 ring-1 ring-slate-200/70">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[13px] font-medium text-slate-800">When the assistant is not sure, ask the customer first</p>
+          <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">
+            Instead of handing over straight away, it asks one short question in the customer&apos;s own language to
+            understand what they need. If it still does not understand, it connects them to your team and alerts staff
+            (WhatsApp, and Telegram for admins linked in Admin Chat). Never two questions in a row.
+          </p>
+        </div>
+        <Switch checked={state.clarify_first} disabled={saving} onCheckedChange={(v) => void save('clarify_first', v)} aria-label="Ask what the customer means before handing over" />
+      </div>
+    </div>
     <div className="rounded-2xl bg-[#F7F8FC] p-3.5 ring-1 ring-slate-200/70">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
@@ -86,7 +107,7 @@ export function HandoverConsentSetting() {
         {saving ? (
           <Loader2 className="mt-1 h-4 w-4 shrink-0 animate-spin text-slate-400" />
         ) : (
-          <Switch checked={state.ask_first} onCheckedChange={(v) => void toggle(v)} aria-label="Ask before connecting to a person" />
+          <Switch checked={state.ask_first} onCheckedChange={(v) => void save('ask_first', v)} aria-label="Ask before connecting to a person" />
         )}
       </div>
 
@@ -111,6 +132,7 @@ export function HandoverConsentSetting() {
           </Check>
         </ul>
       )}
+    </div>
     </div>
   );
 }

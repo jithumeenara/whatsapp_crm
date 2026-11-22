@@ -565,7 +565,7 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
         select: { bot_source: true, created_at: true },
       })
       .catch(() => null)
-    if (shouldAskToClarify({ reason, conversationStatus: conversation?.status, lastAssistant, now: new Date() })) {
+    if ((await handoverSettingsFor(args.accountId)).clarify_first && shouldAskToClarify({ reason, conversationStatus: conversation?.status, lastAssistant, now: new Date() })) {
       const started = Date.now()
       const question = await makeClarifyingQuestion(aiConfig as unknown as Parameters<typeof makeClarifyingQuestion>[0], text, history)
       if (question.provider) {
