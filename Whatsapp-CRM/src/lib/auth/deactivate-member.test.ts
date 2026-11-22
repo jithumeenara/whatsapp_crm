@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest'
  * Switching somebody off now drops the cache with it, as does reviving.
  */
 
-const h = vi.hoisted(() => ({ forgotten: [] as string[], invalidated: [] as string[], keyRevoke: null as unknown }))
+const h = vi.hoisted(() => ({ forgotten: [] as string[], invalidated: [] as string[], keyRevoke: null as unknown, chatRevoke: null as unknown }))
 vi.mock('./account', () => ({ forgetCachedProfile: (id: string) => h.forgotten.push(id) }))
 vi.mock('./session-invalidation', () => ({
   invalidateAllSessions: (id: string) => {
@@ -23,6 +23,13 @@ const tx = {
   apiKey: {
     updateMany: (args: unknown) => {
       h.keyRevoke = args
+      return Promise.resolve({ count: 1 })
+    },
+  },
+  // Added with the Telegram alert security fix (2026-11-22).
+  adminChatMember: {
+    updateMany: (args: unknown) => {
+      h.chatRevoke = args
       return Promise.resolve({ count: 1 })
     },
   },
@@ -67,6 +74,18 @@ describe('switching a member off and on', () => {
     expect(h.keyRevoke).toEqual({
       where: { created_by_user_id: 'u3', revoked_at: null },
       data: { revoked_at: expect.any(Date) },
+    })
+  })
+
+  // Security review 2026-11-21: a removed admin's Telegram/WhatsApp Admin
+  // Chat link stayed active until its end date, so alerts with customer
+  // details could keep reaching them. Removing a member switches it off.
+  it('switches off their Admin Chat links (no more alerts or questions)', async () => {
+    h.chatRevoke = null
+    await deactivateMember('u4', 'D')
+    expect(h.chatRevoke).toEqual({
+      where: { user_id: 'u4', status: { not: 'disabled' } },
+      data: { status: 'disabled', alerts_enabled: false, brief_enabled: false, verify_code_hash: null },
     })
   })
 })

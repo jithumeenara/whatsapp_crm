@@ -48,6 +48,13 @@ export async function deactivateMember(userId: string, displayName: string | nul
       where: { created_by_user_id: userId, revoked_at: null },
       data: { revoked_at: new Date() },
     })
+    // Their Admin Chat links (WhatsApp / Telegram) end too. A link left
+    // active kept receiving handover alerts with customer details until
+    // its end date (security review 2026-11-21).
+    await tx.adminChatMember.updateMany({
+      where: { user_id: userId, status: { not: 'disabled' } },
+      data: { status: 'disabled', alerts_enabled: false, brief_enabled: false, verify_code_hash: null },
+    })
     if (who) {
       await auditInTx(tx, who.ctx, {
         action: 'member.deactivated',

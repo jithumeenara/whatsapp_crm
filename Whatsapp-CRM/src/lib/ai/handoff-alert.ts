@@ -86,7 +86,8 @@ export async function sendHandoffAlert(input: HandoffAlertInput): Promise<Handof
     // Telegram first and regardless of the WhatsApp settings: it is free
     // and has no 24-hour window, so admins who opted in hear of it even
     // when WhatsApp would need an approved template.
-    const telegram = await sendTelegramStaffAlert(input.accountId, plain)
+    // Each member sees only what their Admin Chat scope allows.
+    const telegram = await sendTelegramStaffAlert(input.accountId, { who, phone, quote, reason })
 
     if (!aiConfig?.handoff_alert_enabled) return { ...empty, skipped: 'disabled', telegram }
     if (cleanNumbers(aiConfig.handoff_alert_numbers).length === 0) {
