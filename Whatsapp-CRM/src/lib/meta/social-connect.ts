@@ -31,9 +31,15 @@ export const PAGE_WEBHOOK_FIELDS = [
   'message_deliveries', 'message_edits', 'messaging_referrals', 'messaging_optins',
   'messaging_handovers', 'standby', 'feed', 'leadgen',
 ] as const
-/** Webhook fields subscribed for an Instagram professional account (Unified Login). */
+/**
+ * Webhook fields subscribed for an Instagram professional account (Unified
+ * Login) — only fields in Meta's Unified Login webhook matrix. message_edit
+ * is not listed there (Nov 2026), and one unsupported field makes Meta refuse
+ * the whole subscription, so it is not asked for (edits are still handled if
+ * Meta sends them).
+ */
 export const INSTAGRAM_WEBHOOK_FIELDS = [
-  'messages', 'messaging_postbacks', 'messaging_seen', 'message_reactions', 'message_edit',
+  'messages', 'messaging_postbacks', 'messaging_seen', 'message_reactions',
   'messaging_referral', 'comments', 'live_comments', 'mentions', 'story_insights',
 ] as const
 
@@ -107,9 +113,16 @@ export async function discoverAssets(token: string, app: MetaApp): Promise<{ pag
   return { pages, instagram }
 }
 
-/** Fields Meta delivers without any extra permission beyond messaging. */
+/** Last resort: fields Meta delivers with the messaging permission alone. */
 const PAGE_CORE_FIELDS = ['messages', 'messaging_postbacks'] as const
 const INSTAGRAM_CORE_FIELDS = ['messages', 'messaging_postbacks'] as const
+/**
+ * Second try: the documented messaging + comment fields only (no insights,
+ * Lead Ads, hand-over or other extras), so a refusal of an optional field
+ * does not cost the Inbox its comments as well.
+ */
+const PAGE_STANDARD_FIELDS: readonly string[] = ['messages', 'messaging_postbacks', 'message_echoes', 'message_reactions', 'message_reads', 'message_deliveries', 'messaging_referrals', 'feed']
+const INSTAGRAM_STANDARD_FIELDS: readonly string[] = ['messages', 'messaging_postbacks', 'message_reactions', 'messaging_seen', 'messaging_referral', 'comments', 'live_comments', 'mentions']
 
 const has = (scopes: string[], any: string[]) => any.some((s) => scopes.includes(s))
 
@@ -143,8 +156,9 @@ function subscribeError(e: MetaError | undefined): string {
 
 /**
  * Subscribe a Page or an Instagram account to our webhooks. If Meta refuses
- * the full set, messages alone are tried, so a missing optional permission
- * never stops the Inbox. `limited` says only messages are delivered.
+ * the full set, the standard messaging + comment fields are tried, then
+ * messages alone — a missing optional permission never stops the Inbox.
+ * `limited` says some fields (listed in the server log) are not delivered.
  */
 export async function subscribeWebhooks(kind: 'page' | 'instagram', id: string, token: string, app: MetaApp, scopes?: string[]): Promise<{ ok: true; limited?: boolean } | { ok: false; error: string }> {
   if (!NUMERIC_ID.test(id)) return { ok: false, error: 'Invalid account id.' }
@@ -154,14 +168,24 @@ export async function subscribeWebhooks(kind: 'page' | 'instagram', id: string, 
   // Meta's wording stays in the log; the owner gets plain words.
   console.error(`[meta connect] ${kind} subscription failed:`, r.error?.code, r.error?.message)
   if (r.error?.code === 190) return { ok: false, error: subscribeError(r.error) }
+  const standard = fields.filter((f) => (kind === 'page' ? PAGE_STANDARD_FIELDS : INSTAGRAM_STANDARD_FIELDS).includes(f))
   const core = [...(kind === 'page' ? PAGE_CORE_FIELDS : INSTAGRAM_CORE_FIELDS)]
-  if (core.length < fields.length) {
-    const retry = await graph('POST', `/${id}/subscribed_apps`, token, app, { subscribed_fields: core.join(',') })
-    if (retry.ok) return { ok: true, limited: true }
-    console.error(`[meta connect] ${kind} messages-only subscription failed:`, retry.error?.code, retry.error?.message)
-    return { ok: false, error: subscribeError(retry.error) }
+  // Each smaller set is tried only if it is really smaller than the last one.
+  const attempts: string[][] = []
+  if (standard.length > 0 && standard.length < fields.length) attempts.push(standard)
+  if (core.length < (attempts[0]?.length ?? fields.length)) attempts.push(core)
+  let last = r.error
+  for (const set of attempts) {
+    const retry = await graph('POST', `/${id}/subscribed_apps`, token, app, { subscribed_fields: set.join(',') })
+    if (retry.ok) {
+      console.warn(`[meta connect] ${kind} subscribed with fewer fields:`, set.join(','))
+      return { ok: true, limited: true }
+    }
+    last = retry.error
+    console.error(`[meta connect] ${kind} subscription (${set.length} fields) failed:`, retry.error?.code, retry.error?.message)
+    if (retry.error?.code === 190) break
   }
-  return { ok: false, error: subscribeError(r.error) }
+  return { ok: false, error: subscribeError(last) }
 }
 
 export async function unsubscribeWebhooks(id: string, token: string, app: MetaApp): Promise<void> {

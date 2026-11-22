@@ -62,16 +62,30 @@ describe('which webhook fields are asked for', () => {
 })
 
 describe('subscribing', () => {
-  it('Meta refuses the full set: messages alone are subscribed and the result says "limited"', async () => {
+  it('Meta refuses the full set: the standard messaging + comment fields are tried next, comments kept', async () => {
     h.refuse = [{ code: 200, message: '(#200) Requires instagram_manage_insights permission to manage the object' }]
     const r = await subscribeWebhooks('instagram', '1784', 'EAAbisu', app)
     expect(r).toEqual({ ok: true, limited: true })
     expect(h.calls).toHaveLength(2)
-    expect(fieldsOf(1)).toEqual(['messages', 'messaging_postbacks'])
+    expect(fieldsOf(1)).toEqual(['messages', 'messaging_postbacks', 'messaging_seen', 'message_reactions', 'messaging_referral', 'comments', 'live_comments', 'mentions'])
+    expect(fieldsOf(1)).not.toContain('story_insights')
   })
 
-  it('both refused: a plain-words error, never Meta\'s own text', async () => {
-    h.refuse = [{ code: 200, message: '(#200) raw meta text' }, { code: 200, message: '(#200) raw meta text' }]
+  it('the standard set refused too: messages alone, so the Inbox still works', async () => {
+    h.refuse = [{ code: 200, message: 'x' }, { code: 100, message: 'y' }]
+    const r = await subscribeWebhooks('instagram', '1784', 'EAAbisu', app)
+    expect(r).toEqual({ ok: true, limited: true })
+    expect(h.calls).toHaveLength(3)
+    expect(fieldsOf(2)).toEqual(['messages', 'messaging_postbacks'])
+  })
+
+  it('message_edit is never asked for (not in Meta\'s Unified Login webhook list)', () => {
+    expect(INSTAGRAM_WEBHOOK_FIELDS).not.toContain('message_edit')
+    expect(webhookFieldsFor('instagram', ALL_IG)).not.toContain('message_edit')
+  })
+
+  it('every try refused: a plain-words error, never Meta\'s own text', async () => {
+    h.refuse = [{ code: 200, message: '(#200) raw meta text' }, { code: 200, message: '(#200) raw meta text' }, { code: 200, message: '(#200) raw meta text' }]
     const r = await subscribeWebhooks('instagram', '1784', 'EAAbisu', app)
     expect(r.ok).toBe(false)
     expect(JSON.stringify(r)).not.toMatch(/#200|raw meta text/)
