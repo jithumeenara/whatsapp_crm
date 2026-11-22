@@ -11,6 +11,7 @@
  * chunks earlier.
  */
 
+import { keepWithNote } from './text-cap'
 import { prisma } from '@/lib/db'
 
 /** Hard cap on how much one connected table contributes. A Data Store
@@ -18,7 +19,6 @@ import { prisma } from '@/lib/db'
  *  keeps one big table from crowding out every other knowledge source
  *  and from making every sync an expensive embedding run. */
 const MAX_RECORDS = 500
-const MAX_TEXT_CHARS = 200_000
 
 export interface SerializedTable {
   tableName: string
@@ -140,6 +140,6 @@ export async function serializeDataTable(
     recordCount: used.length,
     truncated,
     fields: fields.map((f) => f.label),
-    text: blocks.join('\n\n').slice(0, MAX_TEXT_CHARS),
+    text: keepWithNote(blocks.join('\n\n')),
   }
 }

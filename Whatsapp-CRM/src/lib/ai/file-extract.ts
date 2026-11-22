@@ -11,6 +11,7 @@
  */
 
 import type { PdfReadOptions } from './pdf-extract'
+import { keepWithNote } from './text-cap'
 
 export const SUPPORTED_UPLOAD_HINT = 'Supported: PDF, TXT, MD, CSV, JSON.'
 
@@ -19,7 +20,6 @@ const TEXT_EXTENSIONS = ['.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.
 /** Same cap the website extractor uses — chunking and embedding cost
  *  scale with this, and a document longer than it is almost always an
  *  archive rather than one reference text. */
-const MAX_TEXT_CHARS = 200_000
 
 function extensionOf(name: string): string {
   const dot = name.lastIndexOf('.')
@@ -43,7 +43,7 @@ export async function extractFileText(file: File, opts: PdfReadOptions = {}): Pr
   }
 
   if (TEXT_EXTENSIONS.includes(ext) || type.startsWith('text/') || type === 'application/json') {
-    return (await file.text()).slice(0, MAX_TEXT_CHARS)
+    return keepWithNote(await file.text())
   }
 
   // Word/Excel files are zip containers — reading them as text yields

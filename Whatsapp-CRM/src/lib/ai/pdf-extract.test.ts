@@ -24,6 +24,8 @@ const h = vi.hoisted(() => ({
     ocrCalls: 0,
     ocrThrows: null as string | null,
     openThrows: false,
+    /** Why the fake Gemini stopped (MAX_TOKENS = cut at its output limit). */
+    finish: "STOP",
   },
 }));
 
@@ -43,7 +45,7 @@ vi.mock("@google/generative-ai", () => ({
           h.state.ocrCalls += 1;
           if (h.state.ocrThrows) return Promise.reject(new Error(h.state.ocrThrows));
           return Promise.resolve({
-            response: { text: () => h.state.ocr, usageMetadata: undefined },
+            response: { text: () => h.state.ocr, usageMetadata: undefined, candidates: [{ finishReason: h.state.finish }] },
           });
         },
       };
@@ -64,6 +66,7 @@ beforeEach(() => {
   h.state.ocrCalls = 0;
   h.state.ocrThrows = null;
   h.state.openThrows = false;
+  h.state.finish = "STOP";
 });
 
 describe("readPdf", () => {
@@ -117,6 +120,31 @@ describe("readPdf", () => {
   it("explains a PDF that will not open, instead of failing obscurely", async () => {
     h.state.openThrows = true;
     await expect(readPdf(BYTES, { geminiApiKey: "key" })).rejects.toThrow(/corrupted or password-protected/);
+  });
+});
+
+// Bug: text over 200,000 characters was cut with no sign, and a scan whose
+// reading stopped at the model's output limit was stored as if complete.
+describe("readPdf says when only part was kept", () => {
+  it("a very long text layer keeps the first 200,000 characters and says so", async () => {
+    h.state.layer = "word ".repeat(60_000);
+    const result = await readPdf(BYTES, { geminiApiKey: "key" });
+    expect(result.text).toMatch(/Only the first 200,000 characters/);
+    expect(result.text.length).toBeLessThanOrEqual(200_200);
+  });
+
+  it("a scan read only partly (model output limit) is marked partly read", async () => {
+    h.state.layer = "";
+    h.state.ocr = REAL_TEXT;
+    h.state.finish = "MAX_TOKENS";
+    const result = await readPdf(BYTES, { geminiApiKey: "key" });
+    expect(result.text).toMatch(/only partly read/i);
+  });
+
+  it("a normal document carries no note", async () => {
+    h.state.layer = REAL_TEXT;
+    const result = await readPdf(BYTES, { geminiApiKey: "key" });
+    expect(result.text).not.toMatch(/Only the first|partly read/);
   });
 });
 

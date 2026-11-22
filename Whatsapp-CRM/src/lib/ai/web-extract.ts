@@ -16,13 +16,13 @@
  */
 
 import { safeFetch } from '@/lib/net/safe-fetch'
+import { keepWithNote } from './text-cap'
 import { assertSafeAiBaseUrl } from './providers/ssrf-guard'
 import { looksLikePdf, type PdfReadOptions } from './pdf-extract'
 
-/** Pages beyond this are truncated rather than refused — a long page is
- *  usually long because of boilerplate, and the leading content is what
- *  carries the actual information. */
-const MAX_TEXT_CHARS = 200_000
+// Pages past 200,000 characters keep their first part, with a note
+// (keepWithNote, text-cap.ts) — a long page is usually long because of
+// boilerplate, and the leading content carries the actual information.
 const FETCH_TIMEOUT_MS = 20_000
 /** The same 16 MB every upload route takes. A link is an upload the
  *  server makes on someone's behalf, and needs the same ceiling. */
@@ -91,7 +91,7 @@ export function htmlToText(html: string): string {
   out = out.replace(/\s*\n\s*/g, '\n')
   out = out.replace(/\n{3,}/g, '\n\n')
 
-  return out.trim().slice(0, MAX_TEXT_CHARS)
+  return keepWithNote(out.trim())
 }
 
 /** Best-effort page title, for naming the knowledge entry when the user
@@ -166,7 +166,7 @@ export async function fetchPageText(
 
   // A plain-text or markdown URL needs no stripping at all.
   const isHtml = contentType.includes('html') || /<\/?(html|body|div|p)\b/i.test(body.slice(0, 2000))
-  const text = isHtml ? htmlToText(body) : body.slice(0, MAX_TEXT_CHARS).trim()
+  const text = isHtml ? htmlToText(body) : keepWithNote(body.trim())
 
   if (!text) {
     throw new Error('No readable text found on that page — it may be rendered entirely by JavaScript.')

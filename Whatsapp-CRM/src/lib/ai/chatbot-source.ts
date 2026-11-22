@@ -41,12 +41,12 @@
  * placeholders that nothing filled in.
  */
 
+import { keepWithNote } from './text-cap'
 import { prisma } from '@/lib/db'
 
 /** A long branching bot is still a small document; this is a guard
  *  against a pathological flow rather than a real limit. */
 const MAX_NODES = 300
-const MAX_TEXT_CHARS = 200_000
 
 export interface SerializedChatbot {
   flowName: string
@@ -263,6 +263,6 @@ export async function serializeChatbot(
   return {
     flowName: flow.name,
     stepCount,
-    text: blocks.join('\n\n').slice(0, MAX_TEXT_CHARS),
+    text: keepWithNote(blocks.join('\n\n')),
   }
 }

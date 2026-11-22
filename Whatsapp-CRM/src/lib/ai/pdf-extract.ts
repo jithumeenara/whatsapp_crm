@@ -42,9 +42,9 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { recordAiUsage } from './usage'
 import { tokensFromGemini } from './pricing'
 
-/** Same cap the other extractors use. Past this a document is an
- *  archive rather than one reference text. */
-const MAX_TEXT_CHARS = 200_000
+// The same cap and note for every source (text-cap.ts).
+import { keepWithNote } from './text-cap'
+export { keepWithNote }
 
 /** Below this, a "successful" text-layer extraction is almost certainly
  *  a scan with a few stray characters — a page number, a header baked
@@ -128,7 +128,7 @@ export async function extractPdfTextLayer(bytes: Uint8Array): Promise<string> {
     throw new Error('That PDF could not be opened — it may be corrupted or password-protected.')
   }
   const { text } = await extractText(pdf, { mergePages: true })
-  return normalizePdfText(text).slice(0, MAX_TEXT_CHARS)
+  return keepWithNote(normalizePdfText(text))
 }
 
 /**
@@ -192,7 +192,9 @@ export async function ocrPdfWithGemini(
   if (!text) {
     throw new Error('Nothing could be read from that scan — the pages may be blank or too faint.')
   }
-  return normalizePdfText(text).slice(0, MAX_TEXT_CHARS)
+  // Stopped at its output limit: the rest of the pages were never read.
+  const finish = result.response.candidates?.[0]?.finishReason
+  return keepWithNote(normalizePdfText(text), { partlyRead: String(finish ?? '') === 'MAX_TOKENS' })
 }
 
 /**
