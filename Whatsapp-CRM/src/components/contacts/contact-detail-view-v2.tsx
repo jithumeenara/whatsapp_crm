@@ -1,4 +1,5 @@
 ﻿"use client"
+import { PeopleOnNumber } from "@/components/contacts/people-on-number"
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
@@ -508,6 +509,8 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
                     )}
                     {saving ? "Saving…" : "Save Changes"}
                   </button>
+                  {/* People booked through this number (a child, a parent…). */}
+                  {contactId ? <PeopleOnNumber contactId={contactId} /> : null}
                 </div>
               )}
 

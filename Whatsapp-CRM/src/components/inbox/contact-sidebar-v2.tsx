@@ -1,4 +1,5 @@
 ﻿"use client"
+import { PeopleOnNumber } from "@/components/contacts/people-on-number"
 
 import { useState, useEffect, useCallback } from "react"
 import type { Contact, ContactNote, Tag } from "@/types"
@@ -539,6 +540,13 @@ export function ContactSidebarV2({ contact, channel = "whatsapp", conversationId
             </div>
           )}
         </div>
+
+        {/* People booked through this number (a child, a parent…). */}
+        {contactId ? (
+          <div className="border-b border-slate-100 px-4 py-3">
+            <PeopleOnNumber contactId={contactId} compact />
+          </div>
+        ) : null}
 
         {/* Notes */}
         <div className="px-4 py-3">
