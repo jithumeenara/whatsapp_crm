@@ -141,7 +141,8 @@ FROM (VALUES
   ('178_contact_people',               to_regclass('contact_people') IS NOT NULL),
   ('179_meta_channel_configs',         EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'meta_platform_config' AND column_name = 'instagram_config_id')),
   ('181_meta_webhook_verify_token',    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'meta_platform_config' AND column_name = 'webhook_verify_token')),
-  ('190_meta_ad_accounts_catalogs',    to_regclass('meta_ad_accounts') IS NOT NULL AND to_regclass('meta_catalogs') IS NOT NULL)
+  ('190_meta_ad_accounts_catalogs',    to_regclass('meta_ad_accounts') IS NOT NULL AND to_regclass('meta_catalogs') IS NOT NULL),
+  ('191_conversion_events',            to_regclass('conversion_events') IS NOT NULL)
 ) AS m(migration, present)
 ORDER BY m.migration;
 

@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
 import { Switch } from '@/components/ui/switch';
 import { MetaAssetPanel } from '@/components/settings/meta-asset-connect';
+import { MetaConversionsCard } from '@/components/settings/meta-conversions-card';
 
 type Provider = 'meta' | 'google';
 
@@ -295,6 +296,8 @@ function MetaAdsOverview() {
       </div>
 
       <MetaAssetPanel kind="ads" onChanged={() => void fetchConfig()} />
+
+      <MetaConversionsCard />
 
       {/* Quick Connect / Manual Connect — only relevant pre-connection */}
       {!config && (

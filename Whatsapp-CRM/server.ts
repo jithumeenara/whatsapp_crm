@@ -15,6 +15,7 @@ import { sweepReportAlerts } from "./src/lib/reports/alerts/sweep";
 import { sweepSocialConnections } from "./src/lib/meta/social-health-sweep";
 import { takeFollowerSnapshots } from "./src/lib/meta/social-insights";
 import { sweepScheduledPosts } from "./src/lib/meta/social-publish";
+import { sendDueConversions } from "./src/lib/meta-ads/conversions";
 import { sweepAutoTags } from "./src/lib/ai/auto-tag";
 import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
 import { sweepTwoWaySheets } from "./src/lib/google/sheet-two-way";
@@ -234,6 +235,15 @@ app.prepare().then(() => {
   every(() => {
     socialPostsOnce().catch((err) => {
       console.error("[social-publish] sweep failed:", err);
+    });
+  }, 60_000);
+
+  // Results sent back to Meta (src/lib/meta-ads/conversions.ts): retries
+  // with back-off; a row is claimed before sending, so never sent twice.
+  const conversionsOnce = singleFlight(() => sendDueConversions());
+  every(() => {
+    conversionsOnce().catch((err) => {
+      console.error("[conversions] sweep failed:", err);
     });
   }, 60_000);
 

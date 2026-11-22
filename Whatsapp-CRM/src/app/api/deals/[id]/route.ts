@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
-import { reportMetaAdsOutcome } from '@/lib/meta-ads/triggers'
+import { reportConversion } from '@/lib/meta-ads/conversions'
 import { audit, auditCtx } from '@/lib/audit'
 import { closingFields, isCurrencyCode, isDealStatus, isDealValue, MAX_LOST_REASON, recordDealEvent, type DealStatus } from '@/lib/deals/closing'
 import { canViewAllLeads } from '@/lib/auth/roles'
@@ -112,12 +112,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // outcome signal there is; report it if this contact's conversation
     // came from an ad (reportMetaAdsOutcome no-ops otherwise).
     if (deal.status === 'won' && existing.status !== 'won') {
-      void reportMetaAdsOutcome({
+      void reportConversion({
         accountId: ctx.accountId,
+        stage: 'won',
         contactId: deal.contact_id,
-        eventName: 'Purchase',
-        customData: { currency: deal.currency ?? undefined, value: Number(deal.value) },
-        record: { kind: 'deal', id },
+        dealId: id,
+        value: Number(deal.value),
+        currency: deal.currency ?? undefined,
       })
     }
 

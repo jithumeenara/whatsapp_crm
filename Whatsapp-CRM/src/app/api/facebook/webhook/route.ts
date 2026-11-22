@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { recordAdTouch, referralFromMeta } from "@/lib/ads/attribution"
 import { emitToAccount } from "@/lib/socket"
+import { reportConversion } from "@/lib/meta-ads/conversions"
 import { dispatchInboundToFlows } from "@/lib/flows/engine"
 import { normalizePhone } from "@/lib/whatsapp/phone-utils"
 import { fetchLead, getLeadField, fetchAdTargeting } from "@/lib/meta-ads/api"
@@ -530,6 +531,9 @@ async function processLeadgenChange(
       raw_field_data: lead.field_data as unknown as Prisma.InputJsonValue,
     },
   })
+
+  // Conversion Leads: the first stage ("Lead") goes back to Meta for this Lead Ads lead.
+  void reportConversion({ accountId, stage: "raw", contactId: contact.id, leadId: createdLead.id })
 
   // The same ad journey as chats (src/lib/ads/attribution.ts), and the
   // ad's name looked up. Never throws.

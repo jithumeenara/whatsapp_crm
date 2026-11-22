@@ -1029,6 +1029,44 @@ model MetaAdAccount {
   @@map("meta_ad_accounts")
 }
 
+/// Results sent back to Meta: per-workspace settings (migration 191).
+model ConversionSettings {
+  account_id     String   @id @db.Uuid
+  enabled        Boolean  @default(true)
+  stage_names    Json     @default("{\"raw\":\"Lead\",\"qualified\":\"Qualified\",\"won\":\"Converted\",\"lost\":\"Lost\"}")
+  crm_dataset_id String?
+  datasets       Json     @default("{}")
+  updated_by     String?  @db.Uuid
+  updated_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("conversion_settings")
+}
+
+/// One result sent back to Meta — outbox and send log (migration 191). Meta ids only.
+model ConversionEvent {
+  id              String    @id @default(uuid()) @db.Uuid
+  account_id      String    @db.Uuid
+  target          String
+  channel         String?
+  stage           String
+  event_name      String
+  event_id        String
+  record_kind     String
+  record_id       String    @db.Uuid
+  payload         Json      @default("{}")
+  status          String    @default("pending")
+  attempts        Int       @default(0)
+  next_attempt_at DateTime  @default(now()) @db.Timestamptz(6)
+  last_error      String?
+  sent_at         DateTime? @db.Timestamptz(6)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([account_id, event_id])
+  @@index([status, next_attempt_at])
+  @@map("conversion_events")
+}
+
 /// A connected product catalog; several per workspace, one may be the default (migration 190).
 model MetaCatalog {
   id              String    @id @default(uuid()) @db.Uuid

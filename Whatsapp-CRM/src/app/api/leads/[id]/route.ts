@@ -7,7 +7,7 @@ import { canViewAllLeads } from '@/lib/auth/roles'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
-import { reportMetaAdsOutcome } from '@/lib/meta-ads/triggers'
+import { reportConversion } from '@/lib/meta-ads/conversions'
 import { audit, auditCtx } from '@/lib/audit'
 import { parseFunnel, type FunnelStage } from '@/lib/reports/settings'
 import { closeReasonLabels } from '@/lib/leads/close-reasons'
@@ -446,8 +446,15 @@ export async function PATCH(
     // Click-to-WhatsApp attribution — a lead qualifying is a real outcome
     // worth reporting back to Meta, if this contact's conversation came
     // from an ad in the first place (reportMetaAdsOutcome no-ops otherwise).
+    // Results go back to Meta through one pipeline (outbox + retries +
+    // send log): chats from an ad on every channel, and Lead Ads stages.
     if (lead_quality === 'qualified' && existing.lead_quality !== 'qualified') {
-      void reportMetaAdsOutcome({ accountId: ctx.accountId, contactId: lead.contact_id, eventName: 'QualifiedLead', record: { kind: 'lead', id } })
+      void reportConversion({ accountId: ctx.accountId, stage: 'qualified', contactId: lead.contact_id, leadId: id })
+    }
+    if (data.converted_at instanceof Date && !existing.converted_at) {
+      void reportConversion({ accountId: ctx.accountId, stage: 'won', contactId: lead.contact_id, leadId: id })
+    } else if (data.lost_at instanceof Date && !existing.lost_at) {
+      void reportConversion({ accountId: ctx.accountId, stage: 'lost', contactId: lead.contact_id, leadId: id })
     }
 
     const activities: Array<ReturnType<typeof prisma.leadActivity.create>> = []
