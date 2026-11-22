@@ -975,6 +975,8 @@ model MetaPlatformConfig {
   instagram_config_id String?
   /// Facebook Login for Business configuration for "Connect Messenger" (migration 179).
   messenger_config_id String?
+  /// Instagram + Page webhook verify token, sealed (migration 181). Never returned by any API after it is generated.
+  webhook_verify_token String?
   updated_by String?  @db.Uuid
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { graphHost, messagesUrl } from "@/lib/meta/social-messaging"
 import { channelAuth, fillPostDetails, saveIncomingComment, saveMention } from "@/lib/meta/social-comments"
 import { applySocialDelete, applySocialEdit, applySocialReaction, attachmentsToRows, noteBusinessAiHandoff, replyTargetId, saveSocialEcho } from "@/lib/meta/social-inbound"
-import { sameToken, scopeAllows, socialWebhookScope, type SocialWebhookScope } from "@/lib/social/webhook-secrets"
+import { platformVerifyTokenMatches, sameToken, scopeAllows, socialWebhookScope, type SocialWebhookScope } from "@/lib/social/webhook-secrets"
 import { prisma } from "@/lib/db"
 import { recordAdTouch, referralFromMeta } from "@/lib/ads/attribution"
 import { emitToAccount } from "@/lib/socket"
@@ -64,6 +64,11 @@ export async function GET(req: NextRequest) {
     return new NextResponse("Bad request", { status: 400 })
   }
 
+  // The server's token from Settings → Embedded Signup (database).
+  if (await platformVerifyTokenMatches(token)) {
+    return new NextResponse(challenge, { status: 200 })
+  }
+  // Legacy: a token an older setup put in .env.
   if (sameToken(token, process.env.INSTAGRAM_VERIFY_TOKEN)) {
     return new NextResponse(challenge, { status: 200 })
   }

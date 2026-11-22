@@ -54,6 +54,8 @@ export async function GET() {
       instagram_config_id: config.instagram_config_id ?? "",
       messenger_config_id: config.messenger_config_id ?? "",
       app_secret: MASKED,
+      // Whether a webhook verify token is saved — never the token itself.
+      has_verify_token: Boolean(config.webhook_verify_token),
       updated_at: config.updated_at,
       ...addresses,
     })

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { sameToken, scopeAllows, socialWebhookScope, type SocialWebhookScope } from "@/lib/social/webhook-secrets"
+import { platformVerifyTokenMatches, sameToken, scopeAllows, socialWebhookScope, type SocialWebhookScope } from "@/lib/social/webhook-secrets"
 import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { recordAdTouch, referralFromMeta } from "@/lib/ads/attribution"
@@ -58,7 +58,11 @@ export async function GET(req: NextRequest) {
     return new NextResponse("Bad request", { status: 400 })
   }
 
-  // Also check FACEBOOK_VERIFY_TOKEN env var as a fast path (no DB needed)
+  // The server's token from Settings → Embedded Signup (database).
+  if (await platformVerifyTokenMatches(token)) {
+    return new NextResponse(challenge, { status: 200 })
+  }
+  // Legacy: a token an older setup put in .env.
   if (sameToken(token, process.env.FACEBOOK_VERIFY_TOKEN)) {
     return new NextResponse(challenge, { status: 200 })
   }

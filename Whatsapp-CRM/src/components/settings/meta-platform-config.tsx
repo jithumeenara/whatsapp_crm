@@ -40,13 +40,16 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
   const [appSecret, setAppSecret] = useState('');
   const [secretEdited, setSecretEdited] = useState(false);
   const [addresses, setAddresses] = useState<Addresses | null>(null);
+  const [hasVerifyToken, setHasVerifyToken] = useState(false);
+  const [newToken, setNewToken] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
 
   async function load() {
     setLoading(true);
     try {
       const res = await apiFetch('/api/platform/meta-config');
       const data = (await res.json()) as Partial<Addresses> & {
-        configured?: boolean; app_id?: string; config_id?: string; instagram_config_id?: string; messenger_config_id?: string
+        configured?: boolean; app_id?: string; config_id?: string; instagram_config_id?: string; messenger_config_id?: string; has_verify_token?: boolean
       };
       setAddresses({ redirect_uri: data.redirect_uri ?? null, instagram_webhook: data.instagram_webhook ?? null, messenger_webhook: data.messenger_webhook ?? null });
       if (data.configured) {
@@ -55,6 +58,7 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
         setConfigId(data.config_id ?? '');
         setIgConfigId(data.instagram_config_id ?? '');
         setFbConfigId(data.messenger_config_id ?? '');
+        setHasVerifyToken(data.has_verify_token === true);
         setAppSecret(MASKED);
         setSecretEdited(false);
       }
@@ -95,6 +99,24 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
       toast.error(errorText(err, 'Could not save the Meta App settings.'));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function generateToken() {
+    if (generating) return;
+    setGenerating(true);
+    try {
+      const res = await apiFetch('/api/platform/meta-config/verify-token', { method: 'POST' });
+      const data = (await res.json()) as { verify_token?: string };
+      if (!data.verify_token) throw new Error('No token came back. Try again.');
+      setNewToken(data.verify_token);
+      setHasVerifyToken(true);
+      toast.success('New verify token saved. Copy it into Meta now — it is shown only once.');
+    } catch (err) {
+      console.error('[platform meta app] verify token failed:', err);
+      toast.error(errorText(err, 'Could not make a new verify token.'));
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -170,7 +192,23 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
                   {addresses.redirect_uri && <CopyRow label="Valid OAuth Redirect URI (Facebook Login for Business → Settings)" value={addresses.redirect_uri} onCopy={copy} />}
                   {addresses.instagram_webhook && <CopyRow label="Instagram webhook callback URL" value={addresses.instagram_webhook} onCopy={copy} />}
                   {addresses.messenger_webhook && <CopyRow label="Messenger (Page) webhook callback URL" value={addresses.messenger_webhook} onCopy={copy} />}
-                  <p className="text-[11px] text-slate-500">Webhook verify tokens are set on the server (INSTAGRAM_VERIFY_TOKEN, FACEBOOK_VERIFY_TOKEN), never here.</p>
+                  <div className="min-w-0 border-t border-slate-200 pt-2">
+                    <p className="text-[11px] text-slate-500">Webhook verify token (the same one for the Instagram and the Page webhook)</p>
+                    {newToken ? (
+                      <>
+                        <CopyRow label="New verify token — shown only once" value={newToken} onCopy={copy} />
+                        <p className="mt-1 text-[11px] text-amber-800">Paste it in Meta now and press Verify and save. After you leave this page it cannot be shown again (make a new one if needed).</p>
+                      </>
+                    ) : (
+                      <p className="mt-0.5 text-[12px] text-slate-700">{hasVerifyToken ? 'Saved (hidden for safety).' : 'Not set yet.'}</p>
+                    )}
+                    {configured && (
+                      <Button type="button" variant="outline" size="sm" disabled={generating} onClick={() => void generateToken()} className="mt-2 h-8 text-[12px]">
+                        {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+                        {hasVerifyToken ? 'Make a new token' : 'Generate token'}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
 

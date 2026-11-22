@@ -107,6 +107,21 @@ export async function socialWebhookAllowed(rawBody: string, signature: string | 
 }
 
 /** Constant-time string compare (hashed first, so lengths do not leak). */
+/**
+ * The server's own webhook verify token, saved (sealed) in Settings →
+ * Embedded Signup. False when none is set, the column is not there yet, or
+ * anything fails — the caller then refuses the handshake.
+ */
+export async function platformVerifyTokenMatches(given: string): Promise<boolean> {
+  try {
+    const rows = await prisma.$queryRaw<{ t: string | null }[]>`
+      SELECT webhook_verify_token AS t FROM meta_platform_config WHERE id = 'singleton' LIMIT 1`
+    return sameToken(given, openStoredSecret(rows[0]?.t ?? null))
+  } catch {
+    return false
+  }
+}
+
 export function sameToken(given: string, expected: string | null | undefined): boolean {
   if (!expected) return false
   const a = crypto.createHash('sha256').update(given).digest()
