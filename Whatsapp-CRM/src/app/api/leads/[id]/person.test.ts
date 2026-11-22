@@ -64,4 +64,10 @@ describe('which person on the number a lead is for', () => {
     await patch({ contact_id: 'c-other' })
     expect(h.updates[1]).toMatchObject({ contact_id: 'c-other', person_id: null })
   })
+
+  it('removing the number and choosing a person in one request does not fall back to the old number', async () => {
+    const res = await patch({ contact_id: '', person_id: P1 })
+    expect(res.status).toBe(400)
+    expect(h.updates).toEqual([])
+  })
 })

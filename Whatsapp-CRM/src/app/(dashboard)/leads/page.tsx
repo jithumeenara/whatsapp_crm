@@ -12,7 +12,7 @@ import {
   Filter, MoreHorizontal, Trash2, EyeOff, Eye,
   LayoutGrid, Table2, ChevronRight, Clock, Calendar,
   Sparkles, Bell, UserPlus, Globe, Megaphone, Share2, Bot,
-  Loader2,
+  Loader2, Users,
 } from "lucide-react"
 import { toast } from "sonner"
 import type { Lead } from "@/types"
@@ -1694,6 +1694,12 @@ function LeadsV2() {
             {/* Only when there is something to fix. A button that
                 always says zero is one people learn to ignore. */}
             <DuplicatesButton count={duplicateCount} onClick={() => setDuplicatesOpen(true)} />
+            {/* Old bookings with several leads on one number: give each its person. */}
+            {canViewAllLeads && (
+              <Link href="/leads/split" className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50">
+                <Users className="h-3.5 w-3.5" aria-hidden="true" /> People on one number
+              </Link>
+            )}
             <button type="button" onClick={openCreate}
               className={cn(
                 "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-semibold transition-colors",

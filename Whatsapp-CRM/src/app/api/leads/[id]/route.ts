@@ -296,7 +296,9 @@ export async function PATCH(
         data.person_id = null
       } else {
         if (!isPersonId(rawPerson)) return NextResponse.json({ error: 'Choose a person from the list.' }, { status: 400 })
-        const cid = (data.contact_id as string | null | undefined) ?? existing.contact_id
+        // The number this request leaves the lead on: a removed number ('' / null)
+        // must not fall back to the old one (null ?? old would).
+        const cid = 'contact_id' in data ? (data.contact_id as string | null) : existing.contact_id
         if (!cid) return NextResponse.json({ error: 'This lead has no phone number, so it cannot have a person.' }, { status: 400 })
         const person = await findPerson(ctx.accountId, cid, rawPerson)
         if (!person) return NextResponse.json({ error: 'That person is not on this number.' }, { status: 404 })
