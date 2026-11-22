@@ -271,12 +271,13 @@ export async function findSimilarKnowledge(args: {
  * not at reply time, so a WhatsApp reply never pays embedding-generation
  * latency; only the "Save" click in Settings does.
  *
- * Embeds items one at a time rather than batching — this app's
- * knowledge bases are explicitly "small-to-medium" (same framing as
- * knowledge.ts's own keyword-scorer comment), and a failed item should
- * not block the others from saving. A single bad/oversized entry logs
- * and is skipped, not a hard failure of the whole sync.
+ * Embeds each item on its own (a few in parallel, EMBED_CONCURRENCY) so a
+ * failed item does not block the others from saving. A single bad or
+ * oversized entry logs and is skipped, not a hard failure of the whole
+ * sync.
  */
+const EMBED_CONCURRENCY = 4
+
 export async function syncKnowledgeEmbeddings(args: {
   aiConfigId: string
   apiKey: string
@@ -323,7 +324,11 @@ export async function syncKnowledgeEmbeddings(args: {
   // going only to console.error, where the person who needs it is not
   // looking.
   let firstError: string | undefined
-  for (const item of missing) {
+  // A few at a time instead of one by one: one-at-a-time with a 10 s
+  // timeout each made "Train now" on a large knowledge base outlast the
+  // HTTP request. Small enough to stay inside the provider's rate limits.
+  let next = 0
+  const embedOne = async (item: (typeof missing)[number]) => {
     try {
       const vector = await embedDocument(apiKey, item.text, model)
       estimatedTokens += estimateTokensFromText(item.text)
@@ -345,6 +350,13 @@ export async function syncKnowledgeEmbeddings(args: {
       )
     }
   }
+  const worker = async () => {
+    while (next < missing.length) {
+      const item = missing[next++]
+      await embedOne(item)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(EMBED_CONCURRENCY, missing.length) }, worker))
 
   if (accountId && embedded > 0) {
     void recordAiUsage({
