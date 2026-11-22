@@ -29,7 +29,7 @@ import { ScheduleMenuButton } from "@/components/inbox/schedule-menu-button"
 import { TemplatePicker, type TemplateSendValues } from "@/components/inbox/template-picker"
 import { NewChatDialog } from "@/components/shared/new-chat-dialog"
 import { LeadDescription } from "@/components/leads/lead-description"
-import { LeadSummaryCard } from "@/components/leads/lead-summary-card"
+import { LeadSummaryButton } from "@/components/leads/lead-summary-card"
 import { LeadTags } from "@/components/leads/lead-tags"
 import { LeadFollowUps, type LeadFollowUp } from "@/components/leads/lead-follow-ups"
 import { ContactForm } from "@/components/contacts/contact-form"
@@ -960,14 +960,6 @@ export default function LeadDetailPage() {
             </div>
           </div>
 
-          {/* The chat in two or three sentences, on request (a paid AI call). */}
-          <LeadSummaryCard
-            leadId={String(lead.id)}
-            hasContact={!!contactId}
-            canWork={accountRole !== "viewer"}
-            onNoteSaved={loadLead}
-          />
-
           {/* What this lead is for and what they need — right under who
               they are, so nobody has to scroll the timeline to find out. */}
           <LeadDescription
@@ -1229,6 +1221,13 @@ export default function LeadDetailPage() {
               <p className="text-[13px] font-semibold text-slate-800 truncate">{displayName}</p>
               <p className="text-[11px] text-slate-500">{channelName}</p>
             </div>
+            {/* The chat in two or three sentences, on request (a paid AI call). */}
+            <LeadSummaryButton
+              leadId={String(lead.id)}
+              hasContact={!!contactId}
+              canWork={accountRole !== "viewer"}
+              onNoteSaved={loadLead}
+            />
             <button type="button" onClick={loadChat} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-slate-100 shrink-0" title="Refresh the chat" aria-label="Refresh the chat">
               <RefreshCw className={cn("h-3.5 w-3.5 text-slate-500", chatLoading && "animate-spin")} aria-hidden="true" />
             </button>

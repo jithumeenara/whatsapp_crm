@@ -1,11 +1,13 @@
 "use client"
 
 /**
- * "Chat summary" on the lead page: the customer's chat in two or three
- * sentences, in English, made only when somebody presses the button
- * (each one is a paid AI call). Optional focus on one topic, a cached
- * translation, "N new messages since", Save as note after the person has
- * read and corrected it, and a thumbs up/down.
+ * "Chat summary" on the lead page: a small icon in the chat panel's header
+ * opens a popup with the customer's chat in two or three sentences, in
+ * English, made only when somebody presses the button (each one is a paid
+ * AI call). A topic drop-down (with a search box) narrows it to one topic;
+ * it opens on the topic summarised last on this lead. Cached translation,
+ * "N new messages since", Save as note after the person has read and
+ * corrected it, and a thumbs up/down.
  *
  * Server: /api/leads/[id]/summary (lib/ai/lead-summary.ts holds the rules
  * for what is sent to the model and what never is).
@@ -13,9 +15,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import { Check, Languages, Loader2, NotebookPen, RefreshCw, Sparkles, ThumbsDown, ThumbsUp, X } from "lucide-react"
+import { Check, ChevronDown, Languages, Loader2, NotebookPen, RefreshCw, Search, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import { cn } from "@/lib/utils"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
 interface Summary {
   focus: string
@@ -25,7 +28,7 @@ interface Summary {
   messages: number
   feedback: "up" | "down" | null
 }
-interface Reply { summary: Summary | null; newSince?: number; hasChat?: boolean; languages?: Record<string, string> }
+interface Reply { summary: Summary | null; newSince?: number; hasChat?: boolean; languages?: Record<string, string>; lastFocus?: string | null }
 
 const PRESETS: Array<{ key: string; label: string }> = [
   { key: "", label: "Whole chat" },
@@ -34,6 +37,7 @@ const PRESETS: Array<{ key: string; label: string }> = [
   { key: "documents", label: "Documents" },
   { key: "complaint", label: "Complaint" },
 ]
+const labelFor = (focus: string) => PRESETS.find((p) => p.key === focus)?.label ?? focus
 
 function ago(iso: string, nowMs: number): string {
   const t = Date.parse(iso)
@@ -47,50 +51,85 @@ function ago(iso: string, nowMs: number): string {
   return `${d} ${d === 1 ? "day" : "days"} ago`
 }
 
-export function LeadSummaryCard({ leadId, hasContact, canWork, onNoteSaved }: Readonly<{
+interface Props {
   leadId: string
   hasContact: boolean
   /** Agents and above make, translate and save; a viewer only reads. */
   canWork: boolean
   onNoteSaved?: () => void
-}>) {
-  const [focus, setFocus] = useState("")
-  const [custom, setCustom] = useState("")
+}
+
+/** The small icon in the chat header; the summary opens in a popup. */
+export function LeadSummaryButton(props: Readonly<Props>) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        aria-label="Chat summary"
+        title="Chat summary"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-indigo-600 hover:bg-indigo-50"
+      >
+        <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[min(92vw,26rem)] gap-0 p-0">
+        {/* Mounted only while open: every opening reads the latest state. */}
+        {open ? <SummaryPanel {...props} /> : null}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function SummaryPanel({ leadId, hasContact, canWork, onNoteSaved }: Readonly<Props>) {
+  /** null until the server says which topic was summarised last. */
+  const [focus, setFocus] = useState<string | null>(null)
   const [data, setData] = useState<Reply | null>(null)
   const [loadedFocus, setLoadedFocus] = useState<string | null>(null)
   const [lang, setLang] = useState("en")
   const [busy, setBusy] = useState<null | "make" | "translate" | "note" | "vote">(null)
   const [noteDraft, setNoteDraft] = useState<string | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [query, setQuery] = useState("")
   const seq = useRef(0)
 
-  const load = useCallback(async (f: string) => {
+  const load = useCallback(async (f: string, first = false) => {
     const mine = ++seq.current
     try {
       const res = await apiFetch(`/api/leads/${leadId}/summary?focus=${encodeURIComponent(f)}`, { cache: "no-store" })
       const body = (await res.json()) as Reply
       if (mine !== seq.current) return
+      // First opening: go to the topic summarised last, if it was another one.
+      if (first && typeof body.lastFocus === "string" && body.lastFocus !== f) {
+        setFocus(body.lastFocus)
+        return
+      }
       setData(body)
       setLoadedFocus(f)
+      setFocus(f)
       setNowMs(Date.now())
     } catch (err) {
       if (mine !== seq.current) return
       console.error("[lead summary] load failed:", err)
       setData({ summary: null })
       setLoadedFocus(f)
+      setFocus(f)
       toast.error(errorText(err, "Could not load the chat summary."))
     }
   }, [leadId])
 
-  useEffect(() => { void load(focus) }, [load, focus])
+  // Opening: ask for the whole chat, which also says the last topic.
+  useEffect(() => { if (hasContact) void load("", true) }, [load, hasContact])
+  // A topic chosen later (or the last one, from the first answer).
+  useEffect(() => { if (focus !== null && focus !== loadedFocus) void load(focus) }, [focus, loadedFocus, load])
 
-  const summary = loadedFocus === focus ? data?.summary ?? null : null
+  const current = focus ?? ""
+  const summary = loadedFocus !== null && loadedFocus === focus ? data?.summary ?? null : null
   const languages = data?.languages ?? {}
-  const loading = loadedFocus !== focus
+  const loading = hasContact && (focus === null || loadedFocus !== focus)
   const shown = summary ? (lang !== "en" && summary.translations[lang]) || summary.text : ""
 
   async function make() {
-    if (busy || !canWork) return
+    if (busy || !canWork || focus === null) return
     setBusy("make")
     try {
       const res = await apiFetch(`/api/leads/${leadId}/summary`, {
@@ -120,7 +159,7 @@ export function LeadSummaryCard({ leadId, hasContact, canWork, onNoteSaved }: Re
       const res = await apiFetch(`/api/leads/${leadId}/summary`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "translate", focus, lang: next }),
+        body: JSON.stringify({ action: "translate", focus: current, lang: next }),
       })
       const body = (await res.json()) as Reply
       if (body.summary) setData((d) => ({ ...(d ?? {}), summary: body.summary }))
@@ -140,7 +179,7 @@ export function LeadSummaryCard({ leadId, hasContact, canWork, onNoteSaved }: Re
       const res = await apiFetch(`/api/leads/${leadId}/summary`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "feedback", focus, vote: summary.feedback === v ? null : v }),
+        body: JSON.stringify({ action: "feedback", focus: current, vote: summary.feedback === v ? null : v }),
       })
       const body = (await res.json()) as Reply
       if (body.summary) setData((d) => ({ ...(d ?? {}), summary: body.summary }))
@@ -160,7 +199,7 @@ export function LeadSummaryCard({ leadId, hasContact, canWork, onNoteSaved }: Re
       await apiFetch(`/api/leads/${leadId}/summary`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "save_note", focus, text }),
+        body: JSON.stringify({ action: "save_note", focus: current, text }),
       })
       toast.success("Saved as a note on this lead.")
       setNoteDraft(null)
@@ -173,32 +212,33 @@ export function LeadSummaryCard({ leadId, hasContact, canWork, onNoteSaved }: Re
     }
   }
 
-  function applyCustom() {
-    const f = custom.trim().toLowerCase().slice(0, 60)
-    if (f) setFocus(f)
+  function pick(f: string) {
+    setPickerOpen(false)
+    setQuery("")
+    setLang("en")
+    setNoteDraft(null)
+    setFocus(f.trim().toLowerCase().slice(0, 60))
   }
 
+  const q = query.trim().toLowerCase()
+  const matches = PRESETS.filter((p) => !q || p.label.toLowerCase().includes(q) || p.key.includes(q))
+  const customOffer = q && !PRESETS.some((p) => p.label.toLowerCase() === q || p.key === q) ? q.slice(0, 60) : ""
   const newSince = summary ? data?.newSince ?? 0 : 0
-  const focusLabel = PRESETS.find((p) => p.key === focus)?.label ?? focus
+  const focusLabel = labelFor(current)
 
   return (
-    <section aria-labelledby={`sum-${leadId}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-card sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id={`sum-${leadId}`} className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-slate-600">
-          <Sparkles className="h-4 w-4 text-indigo-600" aria-hidden="true" /> Chat summary
-        </h2>
+    <div className="p-3.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-slate-600">
+          <Sparkles className="h-3.5 w-3.5 text-indigo-600" aria-hidden="true" /> Chat summary
+        </p>
         {summary ? (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <label className="sr-only" htmlFor={`sum-lang-${leadId}`}>Summary language</label>
             <span className="relative inline-flex items-center">
               <Languages className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
-              <select
-                id={`sum-lang-${leadId}`}
-                value={lang}
-                onChange={(e) => void chooseLanguage(e.target.value)}
-                disabled={busy === "translate"}
-                className="h-8 rounded-lg border border-slate-200 bg-white pl-7 pr-2 text-[12.5px] text-slate-700"
-              >
+              <select id={`sum-lang-${leadId}`} value={lang} onChange={(e) => void chooseLanguage(e.target.value)} disabled={busy === "translate"}
+                className="h-7 rounded-lg border border-slate-200 bg-white pl-7 pr-1.5 text-[12px] text-slate-700">
                 <option value="en">English</option>
                 {Object.entries(languages).map(([code, name]) => (
                   <option key={code} value={code} disabled={!canWork && !summary.translations[code]}>{name}</option>
@@ -207,38 +247,62 @@ export function LeadSummaryCard({ leadId, hasContact, canWork, onNoteSaved }: Re
             </span>
             {canWork ? (
               <button type="button" onClick={() => void make()} disabled={!!busy} aria-label="Make a fresh summary"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50">
-                {busy === "make" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50">
+                {busy === "make" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
               </button>
             ) : null}
           </div>
         ) : null}
       </div>
 
-      {/* Focus: the whole chat, or one topic. */}
-      <div className="mt-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="What to summarise">
-        {PRESETS.map((p) => (
-          <button key={p.key || "all"} type="button" aria-pressed={focus === p.key} onClick={() => setFocus(p.key)}
-            className={cn("h-7 rounded-full px-3 text-[12px] font-medium transition-colors",
-              focus === p.key ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200")}>
-            {p.label}
+      {/* Topic: a drop-down with a search box. */}
+      {hasContact ? (
+        <div className="relative mt-2.5">
+          <button type="button" onClick={() => setPickerOpen((o) => !o)} aria-expanded={pickerOpen} aria-haspopup="listbox"
+            className="flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-[12.5px] text-slate-700 hover:bg-slate-50">
+            <span className="truncate"><span className="text-slate-500">Topic: </span><span className="font-semibold">{focus === null ? "…" : focusLabel}</span></span>
+            <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-slate-500 transition-transform", pickerOpen && "rotate-180")} aria-hidden="true" />
           </button>
-        ))}
-        {!PRESETS.some((p) => p.key === focus) ? (
-          <span className="inline-flex h-7 items-center gap-1 rounded-full bg-slate-900 pl-3 pr-1 text-[12px] font-medium text-white">
-            {focus}
-            <button type="button" onClick={() => setFocus("")} aria-label="Back to the whole chat" className="flex h-5 w-5 items-center justify-center rounded-full hover:bg-white/20">
-              <X className="h-3 w-3" aria-hidden="true" />
-            </button>
-          </span>
-        ) : null}
-        <form onSubmit={(e) => { e.preventDefault(); applyCustom() }} className="inline-flex">
-          <label className="sr-only" htmlFor={`sum-topic-${leadId}`}>Another topic</label>
-          <input id={`sum-topic-${leadId}`} name="summary-topic" value={custom} onChange={(e) => setCustom(e.target.value)} maxLength={60}
-            placeholder="Other topic…" autoComplete="off"
-            className="h-7 w-32 rounded-full border border-slate-200 bg-white px-3 text-[12px] text-slate-700 placeholder:text-slate-400" />
-        </form>
-      </div>
+          {pickerOpen ? (
+            <div className="absolute left-0 right-0 top-9 z-10 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg">
+              <form onSubmit={(e) => { e.preventDefault(); if (matches.length === 1 && !customOffer) pick(matches[0].key); else if (customOffer) pick(customOffer) }}
+                className="relative">
+                <Search className="pointer-events-none absolute left-2 top-2 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                <input value={query} onChange={(e) => setQuery(e.target.value)} maxLength={60} autoComplete="off" name="summary-topic-search"
+                  aria-label="Search or type a topic" placeholder="Search or type a topic…"
+                  className="h-8 w-full rounded-md border border-slate-200 bg-white pl-7 pr-2 text-[12.5px] text-slate-800 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
+              </form>
+              <ul role="listbox" aria-label="Topics" className="mt-1 max-h-48 overflow-y-auto">
+                {matches.map((p) => (
+                  <li key={p.key || "all"} role="option" aria-selected={current === p.key}>
+                    <button type="button" onClick={() => pick(p.key)}
+                      className={cn("flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[12.5px] hover:bg-slate-100", current === p.key ? "font-semibold text-slate-900" : "text-slate-700")}>
+                      {p.label}
+                      {current === p.key ? <Check className="h-3.5 w-3.5 text-indigo-600" aria-hidden="true" /> : null}
+                    </button>
+                  </li>
+                ))}
+                {!PRESETS.some((p) => p.key === current) && current && !q ? (
+                  <li role="option" aria-selected>
+                    <span className="flex items-center justify-between rounded-md px-2 py-1.5 text-[12.5px] font-semibold text-slate-900">
+                      {current} <Check className="h-3.5 w-3.5 text-indigo-600" aria-hidden="true" />
+                    </span>
+                  </li>
+                ) : null}
+                {customOffer ? (
+                  <li role="option" aria-selected={false}>
+                    <button type="button" onClick={() => pick(customOffer)}
+                      className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[12.5px] text-indigo-700 hover:bg-indigo-50">
+                      <Search className="h-3.5 w-3.5" aria-hidden="true" /> <span className="truncate">Summarise about “{customOffer}”</span>
+                    </button>
+                  </li>
+                ) : null}
+                {matches.length === 0 && !customOffer ? <li className="px-2 py-1.5 text-[12px] text-slate-500">No topic matches.</li> : null}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="mt-3" aria-live="polite">
         {!hasContact ? (
@@ -250,11 +314,11 @@ export function LeadSummaryCard({ leadId, hasContact, canWork, onNoteSaved }: Re
           </div>
         ) : summary ? (
           <>
-            <p className={cn("text-[14px] leading-relaxed text-slate-800", busy === "translate" && "opacity-50")} lang={lang}>
+            <p className={cn("max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-[13.5px] leading-relaxed text-slate-800", busy === "translate" && "opacity-50")} lang={lang}>
               {shown}
             </p>
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-slate-500">
-              <span>{focus ? `${focusLabel} · ` : ""}Made {ago(summary.madeAt, nowMs)} from {summary.messages} messages</span>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+              <span>{current ? `${focusLabel} · ` : ""}Made {ago(summary.madeAt, nowMs)} from {summary.messages} messages</span>
               {newSince > 0 ? (
                 <span className="font-semibold text-amber-700">
                   {newSince} new {newSince === 1 ? "message" : "messages"} since
@@ -267,7 +331,7 @@ export function LeadSummaryCard({ leadId, hasContact, canWork, onNoteSaved }: Re
             </div>
 
             {canWork ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
                 <button type="button" onClick={() => setNoteDraft(shown)} disabled={!!busy || noteDraft !== null}
                   className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                   <NotebookPen className="h-3.5 w-3.5" aria-hidden="true" /> Save as note
@@ -302,18 +366,18 @@ export function LeadSummaryCard({ leadId, hasContact, canWork, onNoteSaved }: Re
         ) : canWork ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-3">
             <p className="min-w-0 text-[12.5px] text-slate-600">
-              {data?.hasChat === false ? "No chat with this customer that you can see yet." : focus ? `Summarise what the chat says about ${focusLabel.toLowerCase()}.` : "Get the chat in two or three sentences."}
+              {data?.hasChat === false ? "No chat with this customer that you can see yet." : current ? `Summarise what the chat says about ${focusLabel.toLowerCase()}.` : "Get the chat in two or three sentences."}
             </p>
             <button type="button" onClick={() => void make()} disabled={!!busy || data?.hasChat === false}
               className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 text-[13px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
               {busy === "make" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Sparkles className="h-4 w-4" aria-hidden="true" />}
-              Summarise this chat
+              Summarise
             </button>
           </div>
         ) : (
           <p className="rounded-lg bg-slate-50 px-3 py-3 text-[12.5px] text-slate-600">No summary yet. An agent can make one.</p>
         )}
       </div>
-    </section>
+    </div>
   )
 }

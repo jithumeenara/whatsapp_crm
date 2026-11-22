@@ -16,7 +16,8 @@ import {
 /**
  * /api/leads/[id]/summary — the lead page's AI chat summary.
  *
- *   GET   ?focus=      the saved summary (if any) and how many messages came since
+ *   GET   ?focus=      the saved summary (if any), how many messages came since,
+ *                      and lastFocus (the topic summarised most recently)
  *   POST  { focus }    make or refresh it (one model call)
  *   PATCH { action }   'translate' { focus, lang } — cached per language
  *                      'feedback'  { focus, vote: 'up' | 'down' }
@@ -85,9 +86,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if ('error' in found) return found.error
     const focus = normaliseFocus(req.nextUrl.searchParams.get('focus'))
     const row = await prisma.leadSummary.findUnique({ where: { lead_id_focus: { lead_id: id, focus } } })
+    // The topic summarised most recently on this lead — the popup opens on it.
+    const latest = await prisma.leadSummary.findFirst({
+      where: { lead_id: id, account_id: ctx.accountId },
+      orderBy: { updated_at: 'desc' },
+      select: { focus: true },
+    })
     const convIds = await conversationIds(ctx, found.lead.contact_id)
     return NextResponse.json({
       summary: view(row),
+      lastFocus: latest ? latest.focus : null,
       newSince: await newSince(convIds, row?.last_message_at ?? null),
       hasChat: convIds.length > 0,
       languages: SUMMARY_LANGUAGES,

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const h = vi.hoisted(() => ({
+  latest: null as { focus: string } | null,
+  latestWhere: [] as Array<Record<string, unknown>>,
   role: 'agent' as string,
   lead: { id: 'L1', title: 'Anu', contact_id: 'C1', assigned_to: 'me' as string | null } as null | Record<string, unknown>,
   convWhere: [] as Array<Record<string, unknown>>,
@@ -57,6 +59,7 @@ vi.mock('@/lib/db', () => ({
     aiConfig: { findUnique: async () => ({ temperature: 0.7, max_tokens: 1000, active_provider: 'gemini', fallback_provider: null, provider_keys: {} }) },
     leadSummary: {
       findUnique: async () => h.summary,
+      findFirst: async ({ where }: { where: { lead_id: string; account_id: string } }) => { h.latestWhere.push(where); return h.latest },
       upsert: async (a: { create: Record<string, unknown> }) => {
         h.upserts.push(a)
         return { ...a.create, translations: {}, feedback: null, created_at: new Date(), updated_at: new Date('2026-11-21T10:00:00Z') }
@@ -87,6 +90,8 @@ beforeEach(() => {
   h.summary = null
   h.translateCalls = 0
   h.perLeadOk = true
+  h.latest = null
+  h.latestWhere = []
 })
 
 describe('POST /api/leads/[id]/summary', () => {
@@ -192,5 +197,18 @@ describe('PATCH save_note and feedback', () => {
     h.summary = savedSummary()
     expect((await PATCH(req('PATCH', { action: 'feedback', vote: 'meh' }), p())).status).toBe(400)
     expect((await PATCH(req('PATCH', { action: 'feedback', vote: 'down' }), p())).status).toBe(200)
+  })
+})
+
+describe('GET lastFocus (the popup opens on the topic summarised last)', () => {
+  it('is the newest summary topic of this lead in this workspace only', async () => {
+    h.latest = { focus: 'fees' }
+    const body = await (await GET(req('GET', undefined, '?focus='), p())).json()
+    expect(body.lastFocus).toBe('fees')
+    expect(h.latestWhere[0]).toEqual({ lead_id: 'L1', account_id: 'acc' })
+  })
+  it("null when nothing was summarised yet; another account's lead is not found", async () => {
+    expect((await (await GET(req('GET'), p())).json()).lastFocus).toBeNull()
+    expect((await GET(req('GET'), p('other'))).status).toBe(404)
   })
 })
