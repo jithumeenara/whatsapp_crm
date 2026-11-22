@@ -1,5 +1,4 @@
 import { createServer } from "http";
-import { parse } from "url";
 import next from "next";
 import { Server as SocketIOServer } from "socket.io";
 // Relative import (not the "@/..." alias) -- server.ts runs directly via
@@ -144,8 +143,10 @@ app.prepare().then(() => {
       if (!isClientGone(err)) console.error("[response]", err);
     });
 
-    const parsedUrl = parse(req.url!, true);
-    handle(req, res, parsedUrl);
+    // Next.js parses the URL itself (WHATWG URL). The legacy url.parse()
+    // used here before printed DEP0169 on every start and is the parser
+    // Node flags for security problems.
+    handle(req, res);
   });
 
   // Connections that fail before they are a request at all: a socket
