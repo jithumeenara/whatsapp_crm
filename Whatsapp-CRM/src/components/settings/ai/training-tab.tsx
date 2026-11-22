@@ -8,6 +8,7 @@ import {
   Pencil, Bot,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SearchModelSetting } from './search-model-setting';
 import { GoogleSheetChooser } from '@/components/shared/google-sheet-chooser';
@@ -261,6 +262,9 @@ export function TrainingTab(props: TrainingTabProps) {
 
   const [addKind, setAddKind] = useState<AddKind | null>(null);
   const [editing, setEditing] = useState<KnowledgeItem | null>(null);
+  /** The entry waiting for "Delete it?" to be confirmed. */
+  const [deleting, setDeleting] = useState<KnowledgeItem | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
   const [training, setTraining] = useState(false);
   const [trainResult, setTrainResult] = useState('');
   // Account-wide, from the API. The warning below used to count the
@@ -351,9 +355,23 @@ export function TrainingTab(props: TrainingTabProps) {
     await load();
   }
 
+  /** Delete only after the person confirms in the dialog; locked while it runs. */
   async function deleteItem(id: string) {
-    await fetch(`/api/ai-knowledge/${id}`, { method: 'DELETE' });
-    await load();
+    if (deletingBusy) return;
+    setDeletingBusy(true);
+    try {
+      const res = await fetch(`/api/ai-knowledge/${id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? `Could not delete (${res.status}).`);
+      setDeleting(null);
+      await load();
+    } catch (err) {
+      console.error('[training] delete failed:', err);
+      setListError(err instanceof Error ? err.message : 'Could not delete that entry.');
+      setDeleting(null);
+    } finally {
+      setDeletingBusy(false);
+    }
   }
 
   return (
@@ -577,7 +595,7 @@ export function TrainingTab(props: TrainingTabProps) {
                           />
                           <AiMenuSeparator />
                           <AiMenuItem
-                            onClick={() => deleteItem(item.id)}
+                            onClick={() => setDeleting(item)}
                             icon={<Trash2 className="h-4 w-4" />}
                             title="Delete"
                             tone="danger"
@@ -709,6 +727,23 @@ export function TrainingTab(props: TrainingTabProps) {
           onSaved={() => { setEditing(null); load(); }}
         />
       )}
+
+      {/* Deleting removes the entry and what the assistant learnt from it,
+          so it is never one click: the app's own confirm popup first. */}
+      <ConfirmDialog
+        open={deleting !== null}
+        title="Delete this knowledge entry?"
+        description={
+          deleting
+            ? `“${deleting.name}” will be removed and the assistant will stop using it. This cannot be undone — to keep it but stop using it, choose Disable instead.`
+            : undefined
+        }
+        confirmLabel={deletingBusy ? 'Deleting…' : 'Delete'}
+        cancelLabel="Keep it"
+        variant="destructive"
+        onCancel={() => { if (!deletingBusy) setDeleting(null); }}
+        onConfirm={() => { if (deleting) void deleteItem(deleting.id); }}
+      />
     </div>
   );
 }
