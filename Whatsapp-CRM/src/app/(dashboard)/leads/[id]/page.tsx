@@ -31,6 +31,7 @@ import { NewChatDialog } from "@/components/shared/new-chat-dialog"
 import { LeadDescription } from "@/components/leads/lead-description"
 import { LeadSummaryButton } from "@/components/leads/lead-summary-card"
 import { LeadTags } from "@/components/leads/lead-tags"
+import { LeadPerson } from "@/components/leads/lead-person"
 import { LeadFollowUps, type LeadFollowUp } from "@/components/leads/lead-follow-ups"
 import { ContactForm } from "@/components/contacts/contact-form"
 import { useRealtime } from "@/hooks/use-realtime"
@@ -250,8 +251,10 @@ export default function LeadDetailPage() {
         if (!dirtyRef.current) {
           setDistrict(d.lead?.district ?? "")
           setPlace(d.lead?.place ?? "")
-          setAge(d.lead?.contact?.age != null ? String(d.lead.contact.age) : "")
-          setAddress(d.lead?.contact?.address ?? "")
+          // The person this lead is for, falling back to the contact.
+          const shownAge = d.lead?.person?.age ?? d.lead?.contact?.age
+          setAge(shownAge != null ? String(shownAge) : "")
+          setAddress(d.lead?.person?.address ?? d.lead?.contact?.address ?? "")
         }
       })
       .catch((err) => {
@@ -405,12 +408,16 @@ export default function LeadDetailPage() {
     setSavingDetails(true)
     dirtyRef.current = false
     const ok = await patchLead({ district: district || null, place: place || null })
-    // Age and address belong to the contact: saved there, only when changed.
+    // Age and address belong to this lead's PERSON when it has one (never
+    // the other people on the number), otherwise to the contact. Saved
+    // only when changed from what is shown.
     let contactOk = true
-    const was = lead?.contact
-    if (contactId && (age.trim() !== (was?.age != null ? String(was.age) : "") || address.trim() !== (was?.address ?? "").trim())) {
+    const shownAge = lead?.person?.age ?? lead?.contact?.age
+    const shownAddress = lead?.person?.address ?? lead?.contact?.address ?? ""
+    const target = lead?.person?.id && contactId ? `/api/contacts/${contactId}/people/${lead.person.id}` : contactId ? `/api/contacts/${contactId}` : null
+    if (target && (age.trim() !== (shownAge != null ? String(shownAge) : "") || address.trim() !== shownAddress.trim())) {
       try {
-        await apiFetch(`/api/contacts/${contactId}`, {
+        await apiFetch(target, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ age: age.trim(), address }),
@@ -727,7 +734,8 @@ export default function LeadDetailPage() {
 
   const phone = lead.contact?.phone
   const altPhone = lead.contact?.alternate_phone
-  const displayName = lead.contact?.name || lead.title
+  // The person this lead is for (several people can share one number).
+  const displayName = lead.person?.name || lead.contact?.name || lead.title
   // Null unless this lead is closed; then 'won', 'lost' or plain
   // 'closed' when nobody recorded which.
   const leadOutcome = outcomeOf(lead)
@@ -960,6 +968,17 @@ export default function LeadDetailPage() {
             </div>
           </div>
 
+          {/* Who on the number this lead is for; "Change person". */}
+          <LeadPerson
+            key={lead.person?.id ?? "owner"}
+            leadId={String(lead.id)}
+            contactId={contactId}
+            ownerName={lead.contact?.name ?? null}
+            person={lead.person ?? null}
+            canEdit={accountRole !== "viewer"}
+            onChanged={loadLead}
+          />
+
           {/* What this lead is for and what they need — right under who
               they are, so nobody has to scroll the timeline to find out. */}
           <LeadDescription
@@ -981,7 +1000,7 @@ export default function LeadDetailPage() {
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
               <div className="mb-4 flex items-center justify-between gap-2">
                 <h2 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Lead details</h2>
-                <GenderBadge gender={lead.contact?.gender} />
+                <GenderBadge gender={lead.person?.gender ?? lead.contact?.gender} />
               </div>
               <div className="space-y-4">
                 <div className="space-y-1.5">

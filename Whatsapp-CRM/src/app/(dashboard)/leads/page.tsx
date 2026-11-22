@@ -29,6 +29,7 @@ import { decayScore, describeDecay } from "@/lib/leads/score-decay"
 import { DuplicateLeadDialog, type DuplicateInfo } from "@/components/leads/duplicate-lead-dialog"
 import { NewFollowUpDialog } from "@/components/leads/new-follow-up-dialog"
 import { ContactPicker, type PickedContact } from "@/components/leads/contact-picker"
+import { PersonChooser, personPayload, type PersonChoice } from "@/components/leads/person-chooser"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import { readableTextColor } from "@/lib/readable-color"
 import { TelegramIcon } from "@/components/icons/brand-icons"
@@ -340,6 +341,9 @@ function CreateLeadDialog({
 
   // Who the lead is for: a contact on record, or a new one to add.
   const [picked, setPicked] = useState<PickedContact>(null)
+  // Which person on that number (several people can share one number).
+  const [person, setPerson] = useState<PersonChoice>({ kind: "owner" })
+  const [focusPerson, setFocusPerson] = useState(false)
 
   const [form, setForm] = useState({
     title: "", source: sourceOptions.find(s => s.label.toLowerCase() === "manual")?.label ?? sourceOptions[0]?.label ?? "manual",
@@ -351,6 +355,7 @@ function CreateLeadDialog({
   function resetAll() {
     setForm({ title: "", source: sourceOptions.find(s => s.label.toLowerCase() === "manual")?.label ?? sourceOptions[0]?.label ?? "manual", status: "new", score: (scoreOptions[1] ?? scoreOptions[0])?.label ?? "", lead_quality: "", district: "", place: "", notes: "", gender: "", age: "", address: "" })
     setPicked(null)
+    setPerson({ kind: "owner" }); setFocusPerson(false)
     setDuplicateInfo(null); setPendingForm(null)
   }
 
@@ -369,6 +374,7 @@ function CreateLeadDialog({
               : target?.kind === "new"
                 ? { new_contact: target.contact }
                 : {}),
+          ...personPayload(person),
           force_create: force,
         }),
       })
@@ -405,6 +411,10 @@ function CreateLeadDialog({
       toast.error("Enter the new contact's phone number, or search for an existing contact.")
       return
     }
+    if (person.kind === "new" && !person.name.trim()) {
+      toast.error("Enter the name of the person this lead is for.")
+      return
+    }
     await doCreate(form, picked)
   }
 
@@ -420,6 +430,15 @@ function CreateLeadDialog({
       router.push(`/leads/${duplicateInfo.activeLead.id}`)
       onClose(); resetAll()
     }
+  }
+  // "It's another person on this number": back to the form, adding a person.
+  function handleAnotherPerson() {
+    const c = duplicateInfo?.contact
+    if (!c?.id) return
+    setPicked({ kind: "existing", contact: { id: c.id, name: c.name ?? null, phone: c.phone ?? null } })
+    setPerson({ kind: "new", name: "", relation: "" })
+    setFocusPerson(true)
+    setDuplicateInfo(null); setPendingForm(null)
   }
   async function handleCreateAnyway() {
     if (!pendingForm) return
@@ -441,6 +460,7 @@ function CreateLeadDialog({
           onOpenContact={handleOpenContact}
           onContinueActiveLead={handleContinueActive}
           onCreateAnyway={handleCreateAnyway}
+          onAnotherPerson={handleAnotherPerson}
           onCancel={() => { setDuplicateInfo(null); setPendingForm(null) }}
         />
       )}
@@ -452,12 +472,22 @@ function CreateLeadDialog({
         </DialogHeader>
         <form onSubmit={handleSave} className="space-y-4">
 
-          <ContactPicker value={picked} onChange={setPicked} idPrefix="lead" />
+          <ContactPicker value={picked} onChange={(p) => { setPicked(p); setPerson({ kind: "owner" }); setFocusPerson(false) }} idPrefix="lead" />
+
+          {picked && (
+            <PersonChooser
+              contactId={picked.kind === "existing" ? picked.contact.id : null}
+              ownerName={picked.contact.name ?? null}
+              value={person}
+              onChange={setPerson}
+              autoFocusName={focusPerson}
+            />
+          )}
 
           {picked && (
             <div role="group" aria-labelledby="lead-person-heading" className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
               <p id="lead-person-heading" className="text-[12px] font-medium text-slate-600">
-                About the person <span className="font-normal text-slate-400">— saved on the contact</span>
+                About the person <span className="font-normal text-slate-400">— {person.kind === "owner" ? "saved on the contact" : "saved on this person"}</span>
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -683,7 +713,9 @@ function LeadTile({
   onHide: (id: string, hidden: boolean) => void
   onAddToPipeline: (lead: Lead) => void
 }) {
-  const contactName = lead.contact?.name
+  // The person the lead is for; the number's owner shown beside it when different.
+  const contactName = lead.person?.name ?? lead.contact?.name
+  const viaOwner = lead.person && lead.contact?.name && lead.contact.name !== lead.person.name ? lead.contact.name : null
   const phone = lead.contact?.phone ?? ""
   const ini = initials(contactName, phone)
   const isHidden = (lead as unknown as Record<string, unknown>).is_hidden === true
@@ -734,7 +766,7 @@ function LeadTile({
               )}
             </div>
             {contactName && (
-              <p className="text-[12px] text-slate-500 truncate mt-0.5">{contactName}</p>
+              <p className="text-[12px] text-slate-500 truncate mt-0.5">{contactName}{viaOwner ? <span className="text-slate-400"> · via {viaOwner}</span> : null}</p>
             )}
           </div>
           <div className="relative shrink-0">
@@ -854,7 +886,9 @@ function LeadRow({
   onToggleSelect: (id: string) => void
   sla: SlaThresholds
 }) {
-  const contactName = lead.contact?.name
+  // The person the lead is for; the number's owner shown beside it when different.
+  const contactName = lead.person?.name ?? lead.contact?.name
+  const viaOwner = lead.person && lead.contact?.name && lead.contact.name !== lead.person.name ? lead.contact.name : null
   const phone = lead.contact?.phone ?? ""
   const ini = initials(contactName, phone)
   const isHidden = (lead as unknown as Record<string, unknown>).is_hidden === true
@@ -928,7 +962,7 @@ function LeadRow({
       <td className="px-4 py-3.5 hidden lg:table-cell">
         {(contactName || phone) ? (
           <div className="flex flex-col gap-0.5">
-            {contactName && <span className="text-[12px] font-medium text-slate-700">{contactName}</span>}
+            {contactName && <span className="text-[12px] font-medium text-slate-700">{contactName}{viaOwner ? <span className="font-normal text-slate-400"> · via {viaOwner}</span> : null}</span>}
             {phone && (
               <span className="flex items-center gap-1 text-[11px] text-slate-500">
                 <Phone className="h-2.5 w-2.5 text-slate-400" aria-hidden="true" /><span className="tabular-nums">{phone}</span>

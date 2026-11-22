@@ -884,6 +884,9 @@ export type LeadCallOutcome =
   | 'invalid_number';
 
 export interface Lead {
+  /** The person on the number this lead is for (migration 178); null = the number's owner. */
+  person?: { id: string; name: string; relation?: string | null; age?: number | null; gender?: string | null; address?: string | null } | null
+  person_id?: string | null
   id: string;
   account_id: string;
   user_id: string;

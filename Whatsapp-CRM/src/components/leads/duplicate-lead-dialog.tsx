@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation"
 import {
   AlertTriangle, User, Phone, Mail,
   ExternalLink, RefreshCw, UserPlus, Clock,
-  Flame, Thermometer, Snowflake, Loader2,
+  Flame, Thermometer, Snowflake, Loader2, Users,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 
@@ -44,6 +44,8 @@ interface Props {
   onOpenContact: () => void
   onContinueActiveLead: () => void
   onCreateAnyway: () => void
+  /** "It's another person on this number" — book them as their own person. */
+  onAnotherPerson?: () => void
   onCancel: () => void
   creating?: boolean
 }
@@ -93,7 +95,7 @@ function initials(name?: string | null, phone?: string | null) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function DuplicateLeadDialog({
-  info, onOpenContact, onContinueActiveLead, onCreateAnyway, onCancel, creating,
+  info, onOpenContact, onContinueActiveLead, onCreateAnyway, onAnotherPerson, onCancel, creating,
 }: Props) {
   const { contact, counts, activeLead, lastActivityAt } = info
   const agentName = activeLead?.assignee?.profile?.full_name
@@ -220,6 +222,24 @@ export function DuplicateLeadDialog({
               </div>
             </button>
           )}
+
+          {/* Another person on the same number (a family member, a colleague) */}
+          {onAnotherPerson ? (
+            <button
+              type="button"
+              onClick={onAnotherPerson}
+              disabled={creating}
+              className="w-full flex items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 text-left hover:bg-indigo-50 disabled:opacity-50 transition-colors"
+            >
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100">
+                <Users className="h-4 w-4 text-indigo-700" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="text-[13px] font-semibold text-indigo-900">It&apos;s another person on this number</p>
+                <p className="text-[11px] text-indigo-700">Book them with their own name, age and details</p>
+              </div>
+            </button>
+          ) : null}
 
           {/* Create new lead anyway */}
           <button
