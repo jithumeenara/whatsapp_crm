@@ -136,7 +136,8 @@ FROM (VALUES
   ('172_social_comment_kind',          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'social_comments' AND column_name = 'kind')),
   ('174_social_account_snapshots',     to_regclass('social_account_snapshots') IS NOT NULL),
   ('175_social_posts',                 to_regclass('social_posts') IS NOT NULL),
-  ('176_messenger_templates',          to_regclass('messenger_templates') IS NOT NULL)
+  ('176_messenger_templates',          to_regclass('messenger_templates') IS NOT NULL),
+  ('177_tag_color_hex_only',           NOT EXISTS (SELECT 1 FROM tags WHERE color IS NULL OR color !~* '^#[0-9a-f]{6}$'))
 ) AS m(migration, present)
 ORDER BY m.migration;
 

@@ -1,7 +1,8 @@
 "use client"
 
 /**
- * The person's tags, on the lead page: shown, added and removed here.
+ * The person's tags, on the lead page: shown, added, removed and — when the
+ * tag does not exist yet — created here.
  *
  * Tags belong to the contact (the Leads list filters on them), so this
  * reads and writes /api/contacts/[id]/tags — the same records the Inbox
@@ -67,6 +68,34 @@ export function LeadTags({ contactId }: Readonly<{ contactId: string | null }>) 
     }
   }
 
+  /** A tag that does not exist yet: made, then put on this person. */
+  async function createAndAdd(name: string) {
+    if (!contactId || busy) return
+    setBusy("new")
+    try {
+      const res = await apiFetch("/api/tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      })
+      const body = (await res.json()) as { tag?: TagItem }
+      if (!body.tag?.id) throw new Error("The tag was not created.")
+      await apiFetch(`/api/contacts/${contactId}/tags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tag_id: body.tag.id }),
+      })
+      await load()
+      setFilter("")
+      toast.success(`Tag “${body.tag.name}” added.`)
+    } catch (err) {
+      console.error("[lead tags] create failed:", err)
+      toast.error(errorText(err, `Could not create “${name}”.`))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   async function remove(tag: TagItem) {
     if (!contactId || busy) return
     setBusy(tag.id)
@@ -84,6 +113,9 @@ export function LeadTags({ contactId }: Readonly<{ contactId: string | null }>) 
   const mine = all.filter((t) => attached.has(t.id))
   const q = filter.trim().toLowerCase()
   const available = all.filter((t) => !attached.has(t.id) && (!q || t.name.toLowerCase().includes(q)))
+  // Typed a name no tag has: offer to make it (the server also refuses duplicates).
+  const newName = filter.replace(/\s+/g, " ").trim().slice(0, 40)
+  const canCreate = newName.length > 0 && !all.some((t) => t.name.toLowerCase() === newName.toLowerCase())
   const swatch = (t: TagItem) => (HEX.test(t.color) ? t.color : "#64748b")
 
   return (
@@ -92,7 +124,7 @@ export function LeadTags({ contactId }: Readonly<{ contactId: string | null }>) 
         <p id={`${uid}-label`} className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           <TagIcon className="h-3.5 w-3.5" aria-hidden="true" /> Tags
         </p>
-        {contactId && all.length > 0 && (
+        {contactId && (
           <button type="button" onClick={() => setAdding((v) => !v)} aria-expanded={adding}
             className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[12px] font-medium text-indigo-700 hover:bg-indigo-50">
             {adding ? <X className="h-3.5 w-3.5" aria-hidden="true" /> : <Plus className="h-3.5 w-3.5" aria-hidden="true" />}
@@ -109,7 +141,7 @@ export function LeadTags({ contactId }: Readonly<{ contactId: string | null }>) 
         <>
           {mine.length === 0 ? (
             <p className="text-[12px] italic text-slate-400">
-              {all.length === 0 ? "No tags yet. Create them in Settings → Contacts → Tags." : "No tags on this person."}
+              {all.length === 0 ? "No tags yet. Press Add tag to create one." : "No tags on this person."}
             </p>
           ) : (
             <ul aria-labelledby={`${uid}-label`} className="flex flex-wrap gap-1.5">
@@ -128,13 +160,20 @@ export function LeadTags({ contactId }: Readonly<{ contactId: string | null }>) 
 
           {adding && (
             <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-2.5">
-              {all.length - mine.length > 8 && (
-                <input type="search" value={filter} onChange={(e) => setFilter(e.target.value)} autoComplete="off" name="tag-filter"
-                  aria-label="Find a tag" placeholder="Find a tag…"
+              <form onSubmit={(e) => { e.preventDefault(); if (available.length === 1 && !canCreate) void add(available[0]); else if (canCreate) void createAndAdd(newName) }}>
+                <input type="search" value={filter} onChange={(e) => setFilter(e.target.value)} autoComplete="off" name="tag-filter" maxLength={40}
+                  aria-label="Find or create a tag" placeholder="Find or create a tag…"
                   className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[12.5px] text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
+              </form>
+              {canCreate && (
+                <button type="button" onClick={() => void createAndAdd(newName)} disabled={busy !== null}
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-dashed border-indigo-300 bg-white px-2.5 py-1 text-[12px] font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50">
+                  {busy === "new" ? <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Plus className="h-3 w-3" aria-hidden="true" />}
+                  <span className="truncate">Create “{newName}”</span>
+                </button>
               )}
               {available.length === 0 ? (
-                <p className="text-[12px] text-slate-500">{q ? "No tag matches." : "Every tag is already on this person."}</p>
+                <p className="text-[12px] text-slate-500">{q ? (canCreate ? "No tag with that name yet." : "That tag is already on this person.") : all.length === 0 ? "Type a name to create the first tag." : "Every tag is already on this person."}</p>
               ) : (
                 <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
                   {available.map((t) => (
