@@ -11,12 +11,15 @@ import { reportMetaAdsOutcome } from '@/lib/meta-ads/triggers'
 import { audit, auditCtx } from '@/lib/audit'
 import { parseFunnel, type FunnelStage } from '@/lib/reports/settings'
 import { closeReasonLabels } from '@/lib/leads/close-reasons'
+import { findPerson, isPersonId } from '@/lib/contacts/people'
 
 async function getLead(id: string, accountId: string) {
   return prisma.lead.findFirst({
     where: { id, account_id: accountId },
     include: {
       contact: { select: { id: true, name: true, phone: true, alternate_phone: true, avatar_url: true, gender: true, age: true, address: true } },
+      // The person on the number this lead is for (migration 178), if any.
+      person: { select: { id: true, name: true, relation: true, age: true, gender: true, address: true } },
       assignee: { select: { id: true, email: true, profile: { select: { full_name: true, avatar_url: true } } } },
       activities: {
         orderBy: { created_at: 'desc' },
@@ -283,6 +286,23 @@ export async function PATCH(
     const data: Record<string, unknown> = {}
     if (title !== undefined) data.title = title
     if (contact_id !== undefined) data.contact_id = contact_id || null
+    // Another number has other people: its person no longer applies.
+    if (contact_id !== undefined && (contact_id || null) !== existing.contact_id) data.person_id = null
+    // Which person on the number this lead is for: one of THIS number's
+    // people in THIS workspace, or none (the number's owner).
+    const rawPerson = (body as Record<string, unknown>).person_id
+    if (rawPerson !== undefined) {
+      if (rawPerson === null || rawPerson === '') {
+        data.person_id = null
+      } else {
+        if (!isPersonId(rawPerson)) return NextResponse.json({ error: 'Choose a person from the list.' }, { status: 400 })
+        const cid = (data.contact_id as string | null | undefined) ?? existing.contact_id
+        if (!cid) return NextResponse.json({ error: 'This lead has no phone number, so it cannot have a person.' }, { status: 400 })
+        const person = await findPerson(ctx.accountId, cid, rawPerson)
+        if (!person) return NextResponse.json({ error: 'That person is not on this number.' }, { status: 404 })
+        data.person_id = person.id
+      }
+    }
     if (source !== undefined) data.source = source
     if (status !== undefined) data.status = status
     if (score !== undefined) {

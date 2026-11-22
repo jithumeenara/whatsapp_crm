@@ -11,6 +11,7 @@ import { audit, auditCtx } from '@/lib/audit'
 import { findOrCreateContact } from '@/lib/contacts/find-or-create'
 import { normalizeEnteredPhone } from '@/lib/leads/new-follow-up'
 import { cleanContactDetails, hasContactDetails, saveContactDetails } from '@/lib/leads/contact-details'
+import { cleanPerson, createPerson, detailsAsPerson, findPerson, isPersonId, type PersonFields } from '@/lib/contacts/people'
 
 const PAGE_SIZE = 25
 
@@ -190,6 +191,8 @@ export async function GET(req: NextRequest) {
         { notes: { contains: search, mode: 'insensitive' } },
         { contact: { name: { contains: search, mode: 'insensitive' } } },
         { contact: { phone: { contains: search, mode: 'insensitive' } } },
+        // A person booked through the number (migration 178).
+        { person: { name: { contains: search, mode: 'insensitive' } } },
       ]
     }
 
@@ -201,6 +204,7 @@ export async function GET(req: NextRequest) {
         take: limit,
         include: {
           contact: { select: { id: true, name: true, phone: true, alternate_phone: true, avatar_url: true } },
+          person: { select: { id: true, name: true, relation: true } },
           assignee: { select: { id: true, email: true, profile: { select: { full_name: true, avatar_url: true } } } },
           _count: { select: { activities: true, follow_ups: true, tasks: true } },
         },
@@ -295,13 +299,36 @@ export async function POST(req: NextRequest) {
       contact_id = found.contact.id
     }
 
+    // ── Which person on the number (migration 178) ──────────────────────────────
+    // A lead can be for one of the people booked through this number (a
+    // child, a parent…) — picked (person_id) or added now (new_person). No
+    // person = the number's owner, exactly as before.
+    let personId: string | null = null
+    let newPerson: (PersonFields & { name: string }) | null = null
+    const rawPersonId = (body as Record<string, unknown>).person_id
+    const rawNewPerson = (body as Record<string, unknown>).new_person
+    if (rawPersonId !== undefined && rawPersonId !== null && rawPersonId !== '') {
+      if (!isPersonId(rawPersonId)) return NextResponse.json({ error: 'Choose a person from the list.' }, { status: 400 })
+      if (!contact_id) return NextResponse.json({ error: 'Choose the phone number first.' }, { status: 400 })
+      const person = await findPerson(ctx.accountId, contact_id, rawPersonId)
+      if (!person) return NextResponse.json({ error: 'That person is not on this number.' }, { status: 404 })
+      personId = person.id
+    } else if (rawNewPerson && typeof rawNewPerson === 'object') {
+      const cleaned = cleanPerson(rawNewPerson, true)
+      if (!cleaned.ok) return NextResponse.json({ error: cleaned.error }, { status: 400 })
+      if (!contact_id) return NextResponse.json({ error: 'A person needs a phone number.' }, { status: 400 })
+      newPerson = cleaned.value as PersonFields & { name: string }
+    }
+
     // ── Duplicate detection ─────────────────────────────────────────────────────
     // When a contact is linked, check whether they already have leads.
     // Return 409 with enough info for the UI to show the duplicate dialog.
     // The caller passes force_create=true to skip this check and proceed anyway.
-    if (contact_id && !force_create) {
+    // Per PERSON: a new person on a known number is never a duplicate; the
+    // same person (or the number's owner, when no person is chosen) is.
+    if (contact_id && !force_create && !newPerson) {
       const existingLeads = await prisma.lead.findMany({
-        where: { contact_id: contact_id as string, account_id: ctx.accountId },
+        where: { contact_id: contact_id as string, account_id: ctx.accountId, person_id: personId },
         orderBy: { created_at: 'desc' },
         select: {
           id: true, title: true, status: true, score: true, created_at: true, converted_at: true,
@@ -346,6 +373,14 @@ export async function POST(req: NextRequest) {
     }
     // ── End duplicate detection ─────────────────────────────────────────────────
 
+    // A new person is saved now (after the checks), with the details typed
+    // on the lead: age, gender and address belong to that person.
+    const forPerson = Boolean(personId || newPerson)
+    if (newPerson && contact_id) {
+      const created = await createPerson(ctx.accountId, contact_id, ctx.userId, { ...detailsAsPerson(details), ...newPerson })
+      personId = created.id
+    }
+
     // Number and ad come from the contact's own chats in this account —
     // never from the body.
     const origin = await leadOrigin({ accountId: ctx.accountId, contactId: contact_id ?? null })
@@ -355,6 +390,7 @@ export async function POST(req: NextRequest) {
         user_id: ctx.userId,
         title: title as string,
         contact_id: (contact_id as string) ?? null,
+        person_id: personId,
         // A lead made through an integration key is not "made by hand": the
         // dashboard's "new for me" counts only hand-made leads as the maker's own.
         source: (source as string) ?? (ctx.apiKeyId ? 'api' : 'manual'),
@@ -370,6 +406,7 @@ export async function POST(req: NextRequest) {
       },
       include: {
         contact: { select: { id: true, name: true, phone: true, alternate_phone: true } },
+        person: { select: { id: true, name: true, relation: true } },
         assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
       },
     })
@@ -388,7 +425,16 @@ export async function POST(req: NextRequest) {
 
     // The lead is saved either way; a failure here is said, not hidden.
     let details_saved = true
-    if (lead.contact_id && hasContactDetails(details)) {
+    if (forPerson && personId && hasContactDetails(details) && !newPerson && contact_id) {
+      // An existing person: their own age / gender / address, never the
+      // shared contact's (the other people on the number keep theirs).
+      try {
+        await prisma.contactPerson.update({ where: { id: personId }, data: detailsAsPerson(details) })
+      } catch (err) {
+        console.error('[leads] person details not saved:', err instanceof Error ? err.message : err)
+        details_saved = false
+      }
+    } else if (!forPerson && lead.contact_id && hasContactDetails(details)) {
       try {
         await saveContactDetails(ctx.accountId, lead.contact_id, details)
       } catch (err) {
@@ -400,7 +446,7 @@ export async function POST(req: NextRequest) {
     await audit(auditCtx(req, ctx), {
       action: 'record.created',
       target: { type: 'lead', id: lead.id, label: null },
-      after: { title: lead.title, contact_id: lead.contact_id, source: lead.source, status: lead.status, score: lead.score, assigned_to: lead.assigned_to },
+      after: { title: lead.title, contact_id: lead.contact_id, person_id: personId, source: lead.source, status: lead.status, score: lead.score, assigned_to: lead.assigned_to },
       meta: force_create ? { force_create: true } : null,
     })
 

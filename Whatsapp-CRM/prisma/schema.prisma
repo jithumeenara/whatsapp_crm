@@ -466,6 +466,7 @@ model Contact {
   automation_pending_executions AutomationPendingExecution[]
   flow_runs                     FlowRun[]
   leads                         Lead[]
+  people                        ContactPerson[]
   follow_ups                    FollowUp[]
   lead_activities               LeadActivity[]
   ai_lead_reviews               AiLeadReview[]
@@ -2970,6 +2971,7 @@ model Lead {
   account_id      String    @db.Uuid
   user_id         String    @db.Uuid
   contact_id      String?   @db.Uuid
+  person_id       String?   @db.Uuid
   title           String
   source          String    @default("manual") // whatsapp, instagram, website, campaign, referral, manual
   /// new, open, call_not_connected, visited, appointment_fixed,
@@ -3053,6 +3055,8 @@ model Lead {
   account             Account            @relation(fields: [account_id], references: [id], onDelete: Cascade)
   user                User               @relation(fields: [user_id], references: [id], onDelete: Restrict)
   contact             Contact?           @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  /// The person on this number the lead is for (migration 178); null = the number's owner.
+  person              ContactPerson?     @relation(fields: [person_id], references: [id], onDelete: SetNull)
   assignee            User?              @relation("LeadAssignee", fields: [assigned_to], references: [id], onDelete: SetNull)
   activities          LeadActivity[]
   follow_ups          FollowUp[]
@@ -4367,6 +4371,28 @@ model DealStageEvent {
 /// referral, or a Lead Ads form. Deduped on Meta's own id.
 /// AI chat summary on the lead page, one per lead and focus ('' = whole chat).
 /// Foreign keys live in migration 173 (lead/account cascade, created_by RESTRICT).
+/// Several people on one phone number (migration 178). The contact is the
+/// number; each person booked through it is one row. Scoped by account_id.
+model ContactPerson {
+  id         String   @id @default(uuid()) @db.Uuid
+  account_id String   @db.Uuid
+  contact_id String   @db.Uuid
+  name       String
+  age        Int?
+  gender     String?
+  address    String?
+  relation   String?
+  created_by String?  @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  contact Contact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+  leads   Lead[]
+
+  @@index([account_id, contact_id], map: "contact_people_account_contact_idx")
+  @@map("contact_people")
+}
+
 model LeadSummary {
   id              String    @id @default(uuid()) @db.Uuid
   account_id      String    @db.Uuid

@@ -137,7 +137,8 @@ FROM (VALUES
   ('174_social_account_snapshots',     to_regclass('social_account_snapshots') IS NOT NULL),
   ('175_social_posts',                 to_regclass('social_posts') IS NOT NULL),
   ('176_messenger_templates',          to_regclass('messenger_templates') IS NOT NULL),
-  ('177_tag_color_hex_only',           NOT EXISTS (SELECT 1 FROM tags WHERE color IS NULL OR color !~* '^#[0-9a-f]{6}$'))
+  ('177_tag_color_hex_only',           NOT EXISTS (SELECT 1 FROM tags WHERE color IS NULL OR color !~* '^#[0-9a-f]{6}$')),
+  ('178_contact_people',               to_regclass('contact_people') IS NOT NULL)
 ) AS m(migration, present)
 ORDER BY m.migration;
 
