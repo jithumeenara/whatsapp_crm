@@ -37,6 +37,8 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
   const [configId, setConfigId] = useState('');
   const [igConfigId, setIgConfigId] = useState('');
   const [fbConfigId, setFbConfigId] = useState('');
+  const [adsConfigId, setAdsConfigId] = useState('');
+  const [catalogConfigId, setCatalogConfigId] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [secretEdited, setSecretEdited] = useState(false);
   const [addresses, setAddresses] = useState<Addresses | null>(null);
@@ -49,7 +51,7 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
     try {
       const res = await apiFetch('/api/platform/meta-config');
       const data = (await res.json()) as Partial<Addresses> & {
-        configured?: boolean; app_id?: string; config_id?: string; instagram_config_id?: string; messenger_config_id?: string; has_verify_token?: boolean
+        configured?: boolean; app_id?: string; config_id?: string; instagram_config_id?: string; messenger_config_id?: string; ads_config_id?: string; catalog_config_id?: string; has_verify_token?: boolean
       };
       setAddresses({ redirect_uri: data.redirect_uri ?? null, instagram_webhook: data.instagram_webhook ?? null, messenger_webhook: data.messenger_webhook ?? null });
       if (data.configured) {
@@ -58,6 +60,8 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
         setConfigId(data.config_id ?? '');
         setIgConfigId(data.instagram_config_id ?? '');
         setFbConfigId(data.messenger_config_id ?? '');
+        setAdsConfigId(data.ads_config_id ?? '');
+        setCatalogConfigId(data.catalog_config_id ?? '');
         setHasVerifyToken(data.has_verify_token === true);
         setAppSecret(MASKED);
         setSecretEdited(false);
@@ -75,8 +79,8 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
   async function onSave() {
     if (saving) return;
     if (!appId.trim()) { toast.error('Enter the App ID.'); return; }
-    if (!configId.trim() && !igConfigId.trim() && !fbConfigId.trim()) {
-      toast.error('Add at least one configuration ID (WhatsApp, Instagram or Messenger).');
+    if (!configId.trim() && !igConfigId.trim() && !fbConfigId.trim() && !adsConfigId.trim() && !catalogConfigId.trim()) {
+      toast.error('Add at least one configuration ID.');
       return;
     }
     setSaving(true);
@@ -89,6 +93,8 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
           config_id: configId.trim(),
           instagram_config_id: igConfigId.trim(),
           messenger_config_id: fbConfigId.trim(),
+          ads_config_id: adsConfigId.trim(),
+          catalog_config_id: catalogConfigId.trim(),
           app_secret: secretEdited ? appSecret.trim() : MASKED,
         }),
       });
@@ -185,6 +191,12 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
 
               <ConfigField id={`${uid}-fb`} label="Messenger configuration ID" value={fbConfigId} onChange={(v) => setFbConfigId(digitsOnly(v))}
                 help={<>Optional. Turns on <strong>Connect Messenger</strong>. Assets: <strong>Pages</strong> only. Permissions: pages_show_list, pages_manage_metadata, pages_messaging, pages_read_engagement, business_management. Token: system-user, never expires.</>} />
+
+              <ConfigField id={`${uid}-ads`} label="Ads configuration ID" value={adsConfigId} onChange={(v) => setAdsConfigId(digitsOnly(v))}
+                help={<>Optional. Turns on <strong>Connect Ads</strong> (several ad accounts). Assets: <strong>Ad accounts</strong> only, task Analyze. Permissions: ads_read, business_management. Token: system-user, never expires.</>} />
+
+              <ConfigField id={`${uid}-cat`} label="Catalog configuration ID" value={catalogConfigId} onChange={(v) => setCatalogConfigId(digitsOnly(v))}
+                help={<>Optional. Turns on <strong>Connect Catalog</strong> (several catalogs). Assets: <strong>Catalogs</strong> only. Permissions: catalog_management, business_management. Token: system-user, never expires.</>} />
 
               {addresses && (addresses.redirect_uri || addresses.instagram_webhook) && (
                 <div className="space-y-2 rounded-xl border border-slate-100 bg-slate-50 p-3">

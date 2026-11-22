@@ -53,6 +53,8 @@ export async function GET() {
       config_id: config.config_id,
       instagram_config_id: config.instagram_config_id ?? "",
       messenger_config_id: config.messenger_config_id ?? "",
+      ads_config_id: config.ads_config_id ?? "",
+      catalog_config_id: config.catalog_config_id ?? "",
       app_secret: MASKED,
       // Whether a webhook verify token is saved — never the token itself.
       has_verify_token: Boolean(config.webhook_verify_token),
@@ -96,7 +98,9 @@ export async function PATCH(req: NextRequest) {
     let igConfig = configIdField((body as { instagram_config_id?: unknown }).instagram_config_id)
     let fbConfig = configIdField((body as { messenger_config_id?: unknown }).messenger_config_id)
     if (igConfig === undefined && fbConfig === undefined && legacy !== undefined) { igConfig = legacy; fbConfig = legacy }
-    if (igConfig === null || fbConfig === null) {
+    const adsConfig = configIdField((body as { ads_config_id?: unknown }).ads_config_id)
+    const catConfig = configIdField((body as { catalog_config_id?: unknown }).catalog_config_id)
+    if (igConfig === null || fbConfig === null || adsConfig === null || catConfig === null) {
       return NextResponse.json({ error: "A Messenger or Instagram configuration ID is a number from the App Dashboard." }, { status: 400 })
     }
 
@@ -109,13 +113,17 @@ export async function PATCH(req: NextRequest) {
 
     const nextIg = igConfig !== undefined ? igConfig : (existing?.instagram_config_id ?? "")
     const nextFb = fbConfig !== undefined ? fbConfig : (existing?.messenger_config_id ?? "")
-    if (!waConfig && !nextIg && !nextFb) {
+    const nextAds = adsConfig !== undefined ? adsConfig : (existing?.ads_config_id ?? "")
+    const nextCat = catConfig !== undefined ? catConfig : (existing?.catalog_config_id ?? "")
+    if (!waConfig && !nextIg && !nextFb && !nextAds && !nextCat) {
       return NextResponse.json({ error: "Add at least one configuration ID (WhatsApp, Instagram or Messenger)." }, { status: 400 })
     }
 
     const channelConfigs = {
       ...(igConfig !== undefined ? { instagram_config_id: igConfig || null } : {}),
       ...(fbConfig !== undefined ? { messenger_config_id: fbConfig || null } : {}),
+      ...(adsConfig !== undefined ? { ads_config_id: adsConfig || null } : {}),
+      ...(catConfig !== undefined ? { catalog_config_id: catConfig || null } : {}),
       // The old shared value is replaced by the two fields above (migration 179).
       ...(igConfig !== undefined || fbConfig !== undefined ? { social_config_id: null } : {}),
     }
@@ -131,6 +139,8 @@ export async function PATCH(req: NextRequest) {
       ...(existing?.config_id !== waConfig ? ["config_id"] : []),
       ...(igConfig !== undefined && (existing?.instagram_config_id ?? "") !== igConfig ? ["instagram_config_id"] : []),
       ...(fbConfig !== undefined && (existing?.messenger_config_id ?? "") !== fbConfig ? ["messenger_config_id"] : []),
+      ...(adsConfig !== undefined && (existing?.ads_config_id ?? "") !== adsConfig ? ["ads_config_id"] : []),
+      ...(catConfig !== undefined && (existing?.catalog_config_id ?? "") !== catConfig ? ["catalog_config_id"] : []),
       ...(!keepSecret ? ["app_secret"] : []),
     ]
     await auditConfigChange(auditCtx(req, ctx), "config.platform_changed", {

@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
-import { EmbeddedSignupButton } from '@/components/settings/embedded-signup-button';
+import { MetaAssetPanel } from '@/components/settings/meta-asset-connect';
 import { apiFetch, errorText } from "@/lib/api-fetch"
 
 const META_BLUE = '#0866FF';
@@ -230,6 +230,8 @@ export function CatalogTab() {
         </div>
       </div>
 
+      <MetaAssetPanel kind="catalog" onChanged={() => void fetchConfig()} />
+
       {!connected || !config ? (
         <>
           {/* Quick Connect / Manual Connect — same pill-switcher shape as the Ads tab.
@@ -279,18 +281,10 @@ export function CatalogTab() {
               <span className="flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: META_BLUE_SOFT }}>
                 <ShoppingBag className="h-6 w-6" style={{ color: META_BLUE }} />
               </span>
-              <h3 className="text-[16px] font-semibold text-slate-900">Connect with Facebook</h3>
+              <h3 className="text-[16px] font-semibold text-slate-900">Connect Catalog</h3>
               <p className="max-w-sm text-[12.5px] text-slate-500">
-                Uses the exact same sign-in as WhatsApp Quick Connect. If your Business owns exactly one
-                product catalog, it connects automatically — no tokens to copy. If it owns more than one,
-                switch to Manual Connect to pick which one.
-              </p>
-              <EmbeddedSignupButton
-                onConnected={fetchConfig}
-                className="mt-1 h-11 rounded-xl bg-[#0866FF] px-5 text-[14px] font-semibold text-white hover:bg-[#0655d1]"
-              />
-              <p className="mt-1 text-[11px] text-slate-400">
-                Already connected WhatsApp this way? Click again to check for catalog access.
+                Use <b>Connect Catalog</b> above: Meta asks only for your catalogs, and you can connect
+                several. This no longer goes through WhatsApp Quick Connect.
               </p>
             </div>
           ) : (

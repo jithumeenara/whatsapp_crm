@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/account'
 import { auditCtx } from '@/lib/audit'
 import { auditConfigChange } from '@/lib/audit/config-change'
-import { CONNECT_NONCE_COOKIE, verifyConnectState } from '@/lib/meta/connect-state'
+import { CONNECT_NONCE_COOKIE, isAssetKind, verifyConnectState } from '@/lib/meta/connect-state'
+import { createAssetSession, discoverAdAccounts, discoverCatalogs, hasAssetScope, saveAssets, tokenGrants } from '@/lib/meta/asset-connect'
 import { discoverAssets, exchangeCode, saveSocialConnection, tokenInfo } from '@/lib/meta/social-connect'
 import { CONNECT_CALLBACK_PATH, assetsForChannel, connectOrigin, createConnectSession, linkedPageId, loadSocialApp, settingsUrl } from '@/lib/meta/social-connect-server'
 
@@ -21,8 +22,11 @@ import { CONNECT_CALLBACK_PATH, assetsForChannel, connectOrigin, createConnectSe
 export async function GET(req: NextRequest) {
   const origin = connectOrigin()
   if (!origin) return NextResponse.json({ error: 'Server address not configured.' }, { status: 500 })
+  // Ads / Catalog return to their own Settings tab (read before the state is
+  // checked; a forged value only changes which tab shows the error).
+  let tab: 'channels' | 'ads' | 'catalog' = 'channels'
   const done = (params: Record<string, string>) => {
-    const res = NextResponse.redirect(settingsUrl(origin, params))
+    const res = NextResponse.redirect(settingsUrl(origin, params, tab))
     res.cookies.set(CONNECT_NONCE_COOKIE, '', { path: '/api/meta/social-connect', maxAge: 0 })
     return res
   }
@@ -46,8 +50,32 @@ export async function GET(req: NextRequest) {
   if (!code) return done({ meta_connect: 'error', code: 'no_code' })
 
   const channel = state.channel ?? null
+  if (isAssetKind(channel)) tab = channel === 'ads' ? 'ads' : 'catalog'
   const app = await loadSocialApp(channel ?? undefined)
   if (!app) return done({ meta_connect: 'error', code: 'no_app' })
+
+  if (isAssetKind(channel)) {
+    try {
+      const token = await exchangeCode(code, `${origin}${CONNECT_CALLBACK_PATH}`, app)
+      const grants = await tokenGrants(token, app)
+      if (!grants.valid) return done({ meta_connect: 'error', code: 'bad_token', kind: channel })
+      if (!hasAssetScope(channel, grants.scopes)) return done({ meta_connect: 'error', code: channel === 'ads' ? 'no_ads_permission' : 'no_catalog_permission', kind: channel })
+      const assets = channel === 'ads' ? await discoverAdAccounts(token, app, grants) : await discoverCatalogs(token, app, grants)
+      if (assets.length === 0) return done({ meta_connect: 'error', code: channel === 'ads' ? 'no_ad_account' : 'no_catalog', kind: channel })
+      if (assets.length === 1) {
+        await saveAssets({ accountId: ctx.accountId, userId: ctx.userId, kind: channel, token, scopes: grants.scopes, assets })
+        await auditConfigChange(auditCtx(req, ctx), 'config.channel_changed', {
+          area: 'meta_asset_connect', fields: [channel], meta: { step: 'connected', kind: channel, ids: assets.map((a) => a.id) },
+        })
+        return done({ meta_connect: 'connected', kind: channel })
+      }
+      const session = await createAssetSession({ accountId: ctx.accountId, userId: ctx.userId, kind: channel, token, assets, scopes: grants.scopes })
+      return done({ meta_connect: 'choose_asset', kind: channel, session })
+    } catch (err) {
+      console.error('[meta connect] asset callback failed:', err instanceof Error ? err.message : err)
+      return done({ meta_connect: 'error', code: 'failed', kind: channel })
+    }
+  }
 
   try {
     const token = await exchangeCode(code, `${origin}${CONNECT_CALLBACK_PATH}`, app)

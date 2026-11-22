@@ -126,14 +126,8 @@ export function EmbeddedSignupButton({ onConnected, className, label = 'Connect 
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || 'Failed to finish connecting'); return; }
 
-      // Report every channel that actually got connected — Page/Instagram
-      // only show up if the platform's Meta App Configuration granted
-      // those assets too, not just WhatsApp.
-      const connected = [`WhatsApp (${data.phoneDisplay || 'connected'})`];
-      if (data.facebookConnected) connected.push(`Facebook Page (${data.pageName})`);
-      if (data.instagramConnected) connected.push(`Instagram (@${data.igUsername})`);
-      if (data.metaAdsConnected) connected.push(`Meta Ads${data.adAccountName ? ` (${data.adAccountName})` : ''}`);
-      toast.success(`Connected — ${connected.join(', ')}`);
+      // WhatsApp only: Instagram, Messenger, ads and catalogs have their own Connect buttons.
+      toast.success(`WhatsApp connected${data.phoneDisplay ? ` (${data.phoneDisplay})` : ''}.`);
       onConnected?.();
     } finally {
       setConnecting(false);

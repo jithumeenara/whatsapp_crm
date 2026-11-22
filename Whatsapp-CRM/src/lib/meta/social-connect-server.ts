@@ -8,7 +8,7 @@ import { prisma } from '@/lib/db'
 import type { Prisma } from '@prisma/client'
 import { decrypt, openStoredSecret, sealSecret } from '@/lib/whatsapp/encryption'
 import type { MetaApp, PageAsset, InstagramAsset } from './social-connect'
-import type { SocialChannel } from './connect-state'
+import type { ConnectKind, SocialChannel } from './connect-state'
 
 export const CONNECT_CALLBACK_PATH = '/api/meta/social-connect/callback'
 export const SESSION_TTL_MS = 15 * 60_000
@@ -26,17 +26,20 @@ export function connectOrigin(): string | null {
   }
 }
 
-type ConfigRow = { app_id: string; app_secret: string; instagram_config_id: string | null; messenger_config_id: string | null }
+type ConfigRow = { app_id: string; app_secret: string; instagram_config_id: string | null; messenger_config_id: string | null; ads_config_id: string | null; catalog_config_id: string | null }
 
-function configFor(row: ConfigRow, channel: SocialChannel): string | null {
-  const v = channel === 'instagram' ? row.instagram_config_id : row.messenger_config_id
+function configFor(row: ConfigRow, kind: ConnectKind): string | null {
+  const v = kind === 'instagram' ? row.instagram_config_id
+    : kind === 'facebook' ? row.messenger_config_id
+    : kind === 'ads' ? row.ads_config_id
+    : row.catalog_config_id
   return v && /^\d{5,30}$/.test(v) ? v : null
 }
 
 async function loadConfigRow(): Promise<ConfigRow | null> {
   const row = await prisma.metaPlatformConfig.findUnique({
     where: { id: 'singleton' },
-    select: { app_id: true, app_secret: true, instagram_config_id: true, messenger_config_id: true },
+    select: { app_id: true, app_secret: true, instagram_config_id: true, messenger_config_id: true, ads_config_id: true, catalog_config_id: true },
   })
   return row?.app_id && row.app_secret ? row : null
 }
@@ -46,7 +49,7 @@ async function loadConfigRow(): Promise<ConfigRow | null> {
  * for one channel ("Connect Instagram" or "Connect Messenger"). Without a
  * channel: the app, when either channel is set up.
  */
-export async function loadSocialApp(channel?: SocialChannel): Promise<(MetaApp & { configId: string }) | null> {
+export async function loadSocialApp(channel?: ConnectKind): Promise<(MetaApp & { configId: string }) | null> {
   const row = await loadConfigRow()
   if (!row) return null
   const configId = channel ? configFor(row, channel) : configFor(row, 'instagram') ?? configFor(row, 'facebook')
@@ -55,9 +58,10 @@ export async function loadSocialApp(channel?: SocialChannel): Promise<(MetaApp &
 }
 
 /** Which one-click buttons this server can show. */
-export async function socialConnectReady(): Promise<Record<SocialChannel, boolean>> {
+export async function socialConnectReady(): Promise<Record<ConnectKind, boolean>> {
   const row = await loadConfigRow()
-  return { instagram: Boolean(row && configFor(row, 'instagram')), facebook: Boolean(row && configFor(row, 'facebook')) }
+  const ok = (k: ConnectKind) => Boolean(row && configFor(row, k))
+  return { instagram: ok('instagram'), facebook: ok('facebook'), ads: ok('ads'), catalog: ok('catalog') }
 }
 
 export async function loadMetaAppOnly(): Promise<MetaApp | null> {
@@ -84,8 +88,8 @@ export function linkedPageId(pages: Array<{ id: string; igId: string | null }>, 
 }
 
 /** Where Settings shows the result. */
-export function settingsUrl(origin: string, params: Record<string, string>): string {
-  const q = new URLSearchParams({ tab: 'channels', ...params })
+export function settingsUrl(origin: string, params: Record<string, string>, tab: 'channels' | 'ads' | 'catalog' = 'channels'): string {
+  const q = new URLSearchParams({ tab, ...params })
   return `${origin}/settings?${q.toString()}`
 }
 
@@ -131,7 +135,8 @@ export async function readConnectChoices(id: string, accountId: string, userId: 
     select: { options: true },
   })
   if (!row) return null
-  const o = row.options as unknown as StoredOptions
+  const o = row.options as unknown as StoredOptions & { kind?: string }
+  if (o.kind) return null // an ads / catalog choice, read by /api/meta/assets/finish
   // Only the button's own channel is offered (pages stay server side for an
   // Instagram session: they are used only to note the linked Page).
   return {
@@ -154,7 +159,9 @@ export async function claimConnectSession(id: string, accountId: string, userId:
   const row = await prisma.metaConnectSession.findFirst({ where: { id, account_id: accountId }, select: { token: true, options: true } })
   await prisma.metaConnectSession.deleteMany({ where: { id, account_id: accountId } })
   if (!row) return null
-  const o = row.options as unknown as StoredOptions
+  const o = row.options as unknown as StoredOptions & { kind?: string }
+  // An ads / catalog choice is finished by /api/meta/assets/finish, never here.
+  if (o.kind) return null
   const token = openStoredSecret(row.token)
   if (!token) return null
   return {

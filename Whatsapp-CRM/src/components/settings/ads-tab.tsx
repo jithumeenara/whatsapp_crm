@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
 import { Switch } from '@/components/ui/switch';
-import { EmbeddedSignupButton } from '@/components/settings/embedded-signup-button';
+import { MetaAssetPanel } from '@/components/settings/meta-asset-connect';
 
 type Provider = 'meta' | 'google';
 
@@ -294,6 +294,8 @@ function MetaAdsOverview() {
         </div>
       </div>
 
+      <MetaAssetPanel kind="ads" onChanged={() => void fetchConfig()} />
+
       {/* Quick Connect / Manual Connect — only relevant pre-connection */}
       {!config && (
         <div className="scroll-styled overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
@@ -333,18 +335,10 @@ function MetaAdsOverview() {
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#EAF2FF]">
             <Megaphone className="h-6 w-6" style={{ color: META_BLUE }} />
           </span>
-          <h3 className="text-[16px] font-semibold text-slate-900">Connect with Facebook</h3>
+          <h3 className="text-[16px] font-semibold text-slate-900">Connect Ads</h3>
           <p className="max-w-sm text-[12.5px] text-slate-500">
-            Uses the exact same sign-in as WhatsApp Quick Connect. If this Meta App&apos;s permissions
-            include ads access, your ad account and Conversions API dataset connect automatically —
-            no tokens to copy.
-          </p>
-          <EmbeddedSignupButton
-            onConnected={fetchConfig}
-            className="mt-1 h-11 rounded-xl bg-[#0866FF] px-5 text-[14px] font-semibold text-white hover:bg-[#0655d1]"
-          />
-          <p className="mt-1 text-[11px] text-slate-400">
-            Already connected WhatsApp this way? Click again to check for ad account access.
+            Use <b>Connect Ads</b> above: Meta asks only for your ad accounts, and you can connect
+            several. This no longer goes through WhatsApp Quick Connect.
           </p>
         </div>
       ) : (config || connectMethod === 'manual') && (

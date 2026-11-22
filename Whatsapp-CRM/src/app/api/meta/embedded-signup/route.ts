@@ -1,11 +1,9 @@
-import { randomUUID } from 'node:crypto'
 import { randomInt } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
-import { encrypt, sealSecret } from "@/lib/whatsapp/encryption"
+import { encrypt } from "@/lib/whatsapp/encryption"
 import { loadMetaPlatformConfig } from "@/lib/whatsapp/meta-platform-config"
-import { ensureFacebookConfigTable, ensureInstagramConfigTable } from "@/lib/social/ensure-tables"
 import {
   exchangeEmbeddedSignupCode,
   subscribeWabaToApp,
@@ -14,10 +12,8 @@ import {
   listWabaPhoneNumberIds,
 } from "@/lib/whatsapp/meta-api"
 import { createOrGetDataset } from "@/lib/meta-ads/api"
-import { listOwnedCatalogs } from "@/lib/whatsapp/catalog-api"
 import { auditCtx } from "@/lib/audit"
 import { auditConfigChange } from "@/lib/audit/config-change"
-import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 
 /**
  * POST /api/meta/embedded-signup
@@ -158,11 +154,12 @@ export async function POST(req: NextRequest) {
     // so this user-facing "Connected!" response doesn't pay the sum of
     // three separate multi-call Graph API round trips (previously ~2-4s
     // of avoidable extra latency).
-    const [social, ads, catalog] = await Promise.all([
-      discoverAndSaveFacebookAndInstagram(ctx.accountId, accessToken),
-      discoverAndSaveMetaAds(ctx.accountId, ctx.userId, accessToken, wabaId),
-      discoverAndSaveCatalog(ctx.accountId, ctx.userId, accessToken),
-    ])
+    // WhatsApp only. Instagram, Messenger, ads and catalogs each have their
+    // own Connect button (one asset type per Meta login); this flow no
+    // longer guesses them (it used to take the first ad account and the
+    // only catalog it could see). The WABA's Conversions API dataset stays
+    // here: it belongs to the WhatsApp number.
+    const dataset = await ensureWabaDataset(ctx.accountId, ctx.userId, accessToken, wabaId)
 
     // Which number was connected and what else came with it — ids only,
     // never the business token or the registration PIN.
@@ -174,8 +171,6 @@ export async function POST(req: NextRequest) {
         verb: existingForThisNumber ? "reconnected" : "connected",
         phone_number_id: phoneNumberId,
         waba_id: wabaId,
-        facebook_connected: social.facebookConnected,
-        instagram_connected: social.instagramConnected,
       },
     })
 
@@ -183,205 +178,53 @@ export async function POST(req: NextRequest) {
       success: true,
       phoneDisplay: phoneInfo?.display_phone_number ?? "",
       verifiedName: phoneInfo?.verified_name ?? "",
-      ...social,
-      ...ads,
-      ...catalog,
+      datasetReady: dataset.datasetReady,
     })
   } catch (err) {
     return toErrorResponse(err)
   }
 }
 
-async function discoverAndSaveFacebookAndInstagram(accountId: string, businessToken: string) {
-  const result = { facebookConnected: false, instagramConnected: false, pageName: "", igUsername: "" }
-  try {
-    const pagesRes = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/me/accounts`, { headers: { Authorization: `Bearer ${businessToken}` }, cache: "no-store" })
-    const pagesData = (await pagesRes.json()) as { data?: Array<{ id: string; name: string; access_token: string }> }
-    // The Configuration may not have requested Page access at all (a
-    // WhatsApp-only setup) — an empty/missing list here just means there's
-    // nothing to connect, not a failure.
-    const page = pagesData.data?.[0]
-    if (!page || !/^\d{1,30}$/.test(page.id)) return result
-
-    await ensureFacebookConfigTable()
-    // One workspace per Page: webhooks route by page_id, so a second claim
-    // would deliver one business's messages into another's Inbox (the
-    // manual Settings routes already refused this; this path did not).
-    const pageTaken = await prisma.$queryRaw<{ n: number }[]>`
-      SELECT 1 AS n FROM facebook_config WHERE account_id <> ${accountId}::uuid AND page_id = ${page.id} LIMIT 1
-    `
-    if (pageTaken.length > 0) {
-      console.warn("[embedded-signup] Page already connected to another workspace — not connected here")
-      return result
-    }
-    await prisma.$executeRaw`
-      INSERT INTO facebook_config (id, account_id, access_token, page_id, page_name, status, test_error, last_tested_at, updated_at)
-      VALUES (${randomUUID()}::uuid, ${accountId}::uuid, ${sealSecret(page.access_token)}, ${page.id}, ${page.name}, 'connected', null, now(), now())
-      ON CONFLICT (account_id) DO UPDATE SET
-        access_token = EXCLUDED.access_token,
-        page_id      = EXCLUDED.page_id,
-        page_name    = EXCLUDED.page_name,
-        status       = 'connected',
-        test_error   = null,
-        last_tested_at = now(),
-        updated_at   = now()
-    `
-    result.facebookConnected = true
-    result.pageName = page.name
-
-    // An Instagram professional account is always linked through a Page in
-    // Meta's data model — this is the standard, stable discovery call.
-    const igRes = await fetch(
-      `https://graph.facebook.com/${GRAPH_API_VERSION}/${page.id}?fields=instagram_business_account{id,username,name}`,
-      { headers: { Authorization: `Bearer ${page.access_token}` }, cache: "no-store" },
-    )
-    const igData = (await igRes.json()) as { instagram_business_account?: { id: string; username?: string; name?: string } }
-    const ig = igData.instagram_business_account
-    const igTaken = ig?.id
-      ? await prisma.$queryRaw<{ n: number }[]>`
-          SELECT 1 AS n FROM instagram_config WHERE account_id <> ${accountId}::uuid AND (instagram_account_id = ${ig.id} OR page_id = ${page.id}) LIMIT 1
-        `.catch(() => [] as { n: number }[])
-      : []
-    if (igTaken.length > 0) console.warn("[embedded-signup] Instagram account already connected to another workspace — not connected here")
-    if (ig?.id && /^\d{1,30}$/.test(ig.id) && igTaken.length === 0) {
-      await ensureInstagramConfigTable()
-      await prisma.$executeRaw`
-        INSERT INTO instagram_config (id, account_id, access_token, instagram_account_id, page_id, ig_username, ig_name, status, test_error, last_tested_at, updated_at)
-        VALUES (${randomUUID()}::uuid, ${accountId}::uuid, ${sealSecret(page.access_token)}, ${ig.id}, ${page.id}, ${ig.username ?? null}, ${ig.name ?? null}, 'connected', null, now(), now())
-        ON CONFLICT (account_id) DO UPDATE SET
-          access_token         = EXCLUDED.access_token,
-          instagram_account_id = EXCLUDED.instagram_account_id,
-          page_id              = EXCLUDED.page_id,
-          ig_username          = EXCLUDED.ig_username,
-          ig_name              = EXCLUDED.ig_name,
-          status               = 'connected',
-          test_error           = null,
-          last_tested_at       = now(),
-          updated_at           = now()
-      `
-      result.instagramConnected = true
-      result.igUsername = ig.username ?? ""
-    }
-  } catch (err) {
-    // Best-effort by design — never let a Page/Instagram discovery hiccup
-    // fail the WhatsApp connection that already succeeded above.
-    console.error("[embedded-signup] Facebook/Instagram discovery skipped (non-fatal):", err)
-  }
-  return result
-}
 
 /**
- * Meta Ads' own "Quick Connect" — same one popup, same business token.
- * Whether this finds anything at all depends entirely on whether the
- * platform's Meta App Configuration was set up to request
- * ads_management/whatsapp_business_manage_events — exactly the same
- * best-effort shape as discoverAndSaveFacebookAndInstagram above. Finding
- * nothing here isn't an error; it just means Manual Connect (pasting a
- * System User token with those permissions) is the path for now.
+ * The WABA's Conversions API dataset (whatsapp_business_manage_events on
+ * the WhatsApp token) so Click-to-WhatsApp outcomes can be reported. Never
+ * picks an ad account — "Connect Ads" does that, and may hold several —
+ * and never overwrites a token an ads connection saved.
  */
-async function discoverAndSaveMetaAds(accountId: string, userId: string, businessToken: string, wabaId: string) {
-  const result = { metaAdsConnected: false, adAccountName: "" }
+async function ensureWabaDataset(accountId: string, userId: string, businessToken: string, wabaId: string) {
+  const result = { datasetReady: false }
   try {
-    const adAccountsRes = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/me/adaccounts?fields=id,name`, { headers: { Authorization: `Bearer ${businessToken}` }, cache: "no-store" })
-    const adAccountsData = (await adAccountsRes.json()) as { data?: Array<{ id: string; name: string }> }
-    const adAccount = adAccountsData.data?.[0]
-
-    // The dataset only needs whatsapp_business_manage_events, not
-    // ads_management — worth trying independently of ad account access,
-    // since Click-to-WhatsApp attribution can work even for a
-    // Configuration that never granted ad account visibility at all.
     let datasetId: string | null = null
     try {
-      const created = await createOrGetDataset({ wabaId, accessToken: businessToken })
-      datasetId = created.datasetId
+      datasetId = (await createOrGetDataset({ wabaId, accessToken: businessToken })).datasetId
     } catch (err) {
-      console.warn("[embedded-signup] Meta Ads dataset creation skipped (non-fatal):", err instanceof Error ? err.message : err)
+      console.warn("[embedded-signup] Conversions API dataset skipped (non-fatal):", err instanceof Error ? err.message : err)
     }
-
-    // Nothing this Configuration actually granted — Manual Connect is
-    // the path until the platform operator widens its permission set.
-    if (!adAccount && !datasetId) return result
-
-    const now = new Date()
-    await prisma.metaAdsConfig.upsert({
-      where: { account_id: accountId },
-      create: {
-        account_id: accountId,
-        user_id: userId,
-        waba_id: wabaId,
-        ad_account_id: adAccount?.id ?? null,
-        access_token: encrypt(businessToken),
-        dataset_id: datasetId,
-        status: "connected",
-        connected_at: now,
-        last_tested_at: now,
-      },
-      update: {
-        waba_id: wabaId,
-        ad_account_id: adAccount?.id ?? null,
-        access_token: encrypt(businessToken),
-        dataset_id: datasetId ?? undefined,
-        status: "connected",
-        last_tested_at: now,
-      },
-    })
-    result.metaAdsConnected = true
-    result.adAccountName = adAccount?.name ?? ""
+    if (!datasetId) return result
+    const existing = await prisma.metaAdsConfig.findUnique({ where: { account_id: accountId }, select: { ad_account_id: true } })
+    if (existing) {
+      // An ads connection owns the token when it chose an ad account.
+      await prisma.metaAdsConfig.update({
+        where: { account_id: accountId },
+        data: existing.ad_account_id
+          ? { waba_id: wabaId, dataset_id: datasetId }
+          : { waba_id: wabaId, dataset_id: datasetId, access_token: encrypt(businessToken) },
+      })
+    } else {
+      const now = new Date()
+      await prisma.metaAdsConfig.create({
+        data: {
+          account_id: accountId, user_id: userId, waba_id: wabaId, ad_account_id: null,
+          access_token: encrypt(businessToken), dataset_id: datasetId,
+          status: "connected", connected_at: now, last_tested_at: now,
+        },
+      })
+    }
+    result.datasetReady = true
   } catch (err) {
-    console.error("[embedded-signup] Meta Ads discovery skipped (non-fatal):", err)
+    console.error("[embedded-signup] Conversions API dataset not saved (non-fatal):", err)
   }
   return result
 }
 
-/**
- * Product Catalog's own "Quick Connect" — same one popup, same business
- * token. Catalogs are owned by a Meta Business (not directly by "me" or a
- * WABA), so this first finds the business the token can manage, then lists
- * that business's catalogs. Auto-connects when there's exactly one; when
- * there are several, this best-effort pass connects none and leaves the
- * choice to Manual Connect in Settings > Catalog (same "nothing granted
- * yet, Manual Connect is the path" shape as the two functions above).
- */
-async function discoverAndSaveCatalog(accountId: string, userId: string, businessToken: string) {
-  const result = { catalogConnected: false, catalogName: "" }
-  try {
-    const businessesRes = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/me/businesses?fields=id,name`, {
-      headers: { Authorization: `Bearer ${businessToken}` },
-      cache: "no-store",
-    })
-    const businessesData = (await businessesRes.json()) as { data?: Array<{ id: string; name: string }> }
-    const business = businessesData.data?.[0]
-    if (!business) return result
-
-    const catalogs = await listOwnedCatalogs({ businessId: business.id, accessToken: businessToken })
-    if (catalogs.length !== 1) return result // 0 or ambiguous — Manual Connect decides
-    const catalog = catalogs[0]
-
-    const now = new Date()
-    await prisma.catalogConfig.upsert({
-      where: { account_id: accountId },
-      create: {
-        account_id: accountId,
-        user_id: userId,
-        catalog_id: catalog.id,
-        business_id: business.id,
-        access_token: encrypt(businessToken),
-        status: "connected",
-        connected_at: now,
-        last_tested_at: now,
-      },
-      update: {
-        catalog_id: catalog.id,
-        business_id: business.id,
-        access_token: encrypt(businessToken),
-        status: "connected",
-        last_tested_at: now,
-      },
-    })
-    result.catalogConnected = true
-    result.catalogName = catalog.name
-  } catch (err) {
-    console.error("[embedded-signup] Catalog discovery skipped (non-fatal):", err)
-  }
-  return result
-}

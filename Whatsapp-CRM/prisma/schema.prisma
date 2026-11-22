@@ -977,11 +977,75 @@ model MetaPlatformConfig {
   messenger_config_id String?
   /// Instagram + Page webhook verify token, sealed (migration 181). Never returned by any API after it is generated.
   webhook_verify_token String?
+  /// Facebook Login for Business configuration for "Connect Ads" (migration 190).
+  ads_config_id String?
+  /// Facebook Login for Business configuration for "Connect Catalog" (migration 190).
+  catalog_config_id String?
   updated_by String?  @db.Uuid
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
 
   @@map("meta_platform_config")
+}
+
+/// One Meta login made by "Connect Ads" or "Connect Catalog" (migration 190).
+/// The token is sealed; it never leaves the server.
+model MetaAssetConnection {
+  id           String   @id @default(uuid()) @db.Uuid
+  account_id   String   @db.Uuid
+  kind         String
+  business_id  String?
+  access_token String
+  scopes       Json     @default("[]")
+  status       String   @default("connected")
+  last_error   String?
+  connected_by String?  @db.Uuid
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([account_id, kind])
+  @@map("meta_asset_connections")
+}
+
+/// A connected ad account; several per workspace, one may be the default (migration 190).
+model MetaAdAccount {
+  id              String    @id @default(uuid()) @db.Uuid
+  account_id      String    @db.Uuid
+  connection_id   String    @db.Uuid
+  /// Digits only (no "act_").
+  ad_account_id   String
+  name            String?
+  currency        String?
+  timezone_name   String?
+  account_status  Int?
+  is_default      Boolean   @default(false)
+  last_checked_at DateTime? @db.Timestamptz(6)
+  last_synced_at  DateTime? @db.Timestamptz(6)
+  last_error      String?
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@unique([account_id, ad_account_id])
+  @@map("meta_ad_accounts")
+}
+
+/// A connected product catalog; several per workspace, one may be the default (migration 190).
+model MetaCatalog {
+  id              String    @id @default(uuid()) @db.Uuid
+  account_id      String    @db.Uuid
+  connection_id   String    @db.Uuid
+  catalog_id      String
+  name            String?
+  product_count   Int?
+  is_default      Boolean   @default(false)
+  last_checked_at DateTime? @db.Timestamptz(6)
+  last_synced_at  DateTime? @db.Timestamptz(6)
+  last_error      String?
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@unique([account_id, catalog_id])
+  @@map("meta_catalogs")
 }
 
 /// Between Meta's redirect and the owner choosing a Page / Instagram account

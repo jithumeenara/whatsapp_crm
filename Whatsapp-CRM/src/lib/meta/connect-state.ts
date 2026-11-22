@@ -31,12 +31,22 @@ export function isSocialChannel(v: unknown): v is SocialChannel {
   return v === 'facebook' || v === 'instagram'
 }
 
+/** What a one-click login connects: a messaging channel, ad accounts or catalogs. */
+export type ConnectKind = SocialChannel | 'ads' | 'catalog'
+export type AssetKind = 'ads' | 'catalog'
+export function isConnectKind(v: unknown): v is ConnectKind {
+  return isSocialChannel(v) || v === 'ads' || v === 'catalog'
+}
+export function isAssetKind(v: unknown): v is AssetKind {
+  return v === 'ads' || v === 'catalog'
+}
+
 export interface ConnectState {
   accountId: string
   userId: string
   nonce: string
-  /** Signed with the rest, so the callback saves only this channel. */
-  channel?: SocialChannel
+  /** Signed with the rest, so the callback saves only this channel / asset kind. */
+  channel?: ConnectKind
   exp: number
 }
 
@@ -65,7 +75,7 @@ export function verifyConnectState(state: unknown, cookieNonce: unknown, now = D
     const body = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as ConnectState
     if (typeof body.exp !== 'number' || body.exp < now) return null
     if (typeof body.accountId !== 'string' || typeof body.userId !== 'string' || typeof body.nonce !== 'string') return null
-    if (body.channel !== undefined && !isSocialChannel(body.channel)) return null
+    if (body.channel !== undefined && !isConnectKind(body.channel)) return null
     const n1 = Buffer.from(body.nonce)
     const n2 = Buffer.from(cookieNonce)
     if (n1.length !== n2.length || !crypto.timingSafeEqual(n1, n2)) return null

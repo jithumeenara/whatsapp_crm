@@ -4,7 +4,7 @@ import { auditCtx } from '@/lib/audit'
 import { auditConfigChange } from '@/lib/audit/config-change'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { GRAPH_API_VERSION } from '@/lib/meta/versions'
-import { CONNECT_NONCE_COOKIE, CONNECT_STATE_TTL_MS, isSocialChannel, newNonce, signConnectState } from '@/lib/meta/connect-state'
+import { CONNECT_NONCE_COOKIE, CONNECT_STATE_TTL_MS, isConnectKind, newNonce, signConnectState } from '@/lib/meta/connect-state'
 import { CONNECT_CALLBACK_PATH, connectOrigin, loadSocialApp } from '@/lib/meta/social-connect-server'
 
 /**
@@ -23,11 +23,11 @@ export async function POST(req: NextRequest) {
 
     const body = (await req.json().catch(() => null)) as { channel?: unknown } | null
     const channel = body?.channel
-    if (!isSocialChannel(channel)) return NextResponse.json({ error: 'Choose Instagram or Messenger.' }, { status: 400 })
+    if (!isConnectKind(channel)) return NextResponse.json({ error: 'Choose what to connect.' }, { status: 400 })
 
     const app = await loadSocialApp(channel)
     if (!app) {
-      const which = channel === 'instagram' ? 'Instagram' : 'Messenger'
+      const which = channel === 'instagram' ? 'Instagram' : channel === 'facebook' ? 'Messenger' : channel === 'ads' ? 'Ads' : 'Catalog'
       return NextResponse.json({ error: `The server owner must first add the Meta App and its ${which} configuration ID (Settings → Embedded Signup).` }, { status: 400 })
     }
     const origin = connectOrigin()
