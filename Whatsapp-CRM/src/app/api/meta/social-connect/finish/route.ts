@@ -25,7 +25,9 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/meta/social-connect/finish — body { session, page_id, instagram_id }
  * (either may be null). Only ids offered in this owner's own session are
- * accepted; the session is used once.
+ * accepted; the session is used once. A session started by "Connect
+ * Instagram" accepts only an Instagram account, one started by "Connect
+ * Messenger" only a Page.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -37,11 +39,11 @@ export async function POST(req: NextRequest) {
     const igId = typeof body?.instagram_id === 'string' && NUMERIC_ID.test(body.instagram_id) ? body.instagram_id : null
     if (!pageId && !igId) return NextResponse.json({ error: 'Choose a Facebook Page, an Instagram account, or both.' }, { status: 400 })
 
-    const app = await loadSocialApp()
-    if (!app) return NextResponse.json({ error: 'The Meta App is not set up on this server.' }, { status: 400 })
-
     const session = await claimConnectSession(id, ctx.accountId, ctx.userId)
     if (!session) return NextResponse.json({ error: 'This choice has expired or was already used. Press Connect again.' }, { status: 410 })
+    if ((session.channel === 'instagram' && pageId) || (session.channel === 'facebook' && igId)) {
+      return NextResponse.json({ error: session.channel === 'instagram' ? 'Connect Instagram connects an Instagram account only. Press Connect again.' : 'Connect Messenger connects a Facebook Page only. Press Connect again.' }, { status: 400 })
+    }
 
     // Only what this session offered — never an id from the request alone.
     const page = pageId ? session.pages.find((p) => p.id === pageId && p.token) ?? null : null
@@ -50,11 +52,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'That Page or account was not part of this connection. Press Connect again.' }, { status: 400 })
     }
 
-    const saved = await saveSocialConnection({ accountId: ctx.accountId, token: session.token, app, page, instagram, scopes: session.scopes, expiresAt: session.expiresAt })
+    const app = await loadSocialApp(session.channel ?? undefined)
+    if (!app) return NextResponse.json({ error: 'The Meta App is not set up on this server.' }, { status: 400 })
+
+    // The Page this Instagram account is linked to, noted (never connected).
+    const instagramPageId = instagram ? session.pages.find((p) => p.igId === instagram.id)?.id ?? null : null
+    const saved = await saveSocialConnection({ accountId: ctx.accountId, token: session.token, app, page, instagram, instagramPageId, scopes: session.scopes, expiresAt: session.expiresAt })
     await auditConfigChange(auditCtx(req, ctx), 'config.channel_changed', {
       area: 'meta_social_connect',
       fields: [...(saved.facebook?.connected ? ['facebook'] : []), ...(saved.instagram?.connected ? ['instagram'] : [])],
-      meta: { step: 'connected', via: 'login', page_id: page?.id ?? null, instagram_id: instagram?.id ?? null },
+      meta: { step: 'connected', via: 'login', channel: session.channel ?? null, page_id: page?.id ?? null, instagram_id: instagram?.id ?? null },
     })
     return NextResponse.json(saved)
   } catch (err) {

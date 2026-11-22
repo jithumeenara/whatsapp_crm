@@ -1,5 +1,5 @@
 /**
- * "Connect Facebook & Instagram" — the server side of the one-click flow.
+ * "Connect Instagram" / "Connect Messenger" — the server side of the one-click flow.
  *
  * Meta (Nov 2026): Facebook Login for Business with a configuration
  * (`config_id`) returns a Business Integration System User token that
@@ -107,15 +107,61 @@ export async function discoverAssets(token: string, app: MetaApp): Promise<{ pag
   return { pages, instagram }
 }
 
-/** Subscribe a Page or an Instagram account to our webhooks. */
-export async function subscribeWebhooks(kind: 'page' | 'instagram', id: string, token: string, app: MetaApp): Promise<{ ok: true } | { ok: false; error: string }> {
+/** Fields Meta delivers without any extra permission beyond messaging. */
+const PAGE_CORE_FIELDS = ['messages', 'messaging_postbacks'] as const
+const INSTAGRAM_CORE_FIELDS = ['messages', 'messaging_postbacks'] as const
+
+const has = (scopes: string[], any: string[]) => any.some((s) => scopes.includes(s))
+
+/**
+ * The webhook fields to ask for. Without `scopes` (unknown): every field we
+ * handle. With the permissions Meta granted: only the fields they cover —
+ * Meta refuses the WHOLE subscription when one field lacks its permission
+ * (e.g. story_insights without insights), and then not even messages arrive.
+ */
+export function webhookFieldsFor(kind: 'page' | 'instagram', scopes?: string[]): string[] {
+  if (!scopes) return [...(kind === 'page' ? PAGE_WEBHOOK_FIELDS : INSTAGRAM_WEBHOOK_FIELDS)]
+  if (kind === 'page') {
+    return PAGE_WEBHOOK_FIELDS.filter((f) => {
+      if (f === 'leadgen') return has(scopes, ['leads_retrieval'])
+      if (f === 'feed') return has(scopes, ['pages_read_engagement', 'pages_read_user_content', 'pages_manage_engagement'])
+      return true
+    })
+  }
+  return INSTAGRAM_WEBHOOK_FIELDS.filter((f) => {
+    if (f === 'comments' || f === 'live_comments' || f === 'mentions') return has(scopes, ['instagram_manage_comments', 'instagram_business_manage_comments'])
+    if (f === 'story_insights') return has(scopes, ['instagram_manage_insights', 'instagram_business_manage_insights'])
+    return true
+  })
+}
+
+function subscribeError(e: MetaError | undefined): string {
+  if (e?.code === 190) return 'the connection expired — press Reconnect'
+  if (e?.code === 10 || e?.code === 200) return 'Meta did not allow it — press Reconnect and allow every permission Meta asks for'
+  return "Meta refused it — press Reconnect; if it happens again, check the app's Webhooks setup in the Meta dashboard"
+}
+
+/**
+ * Subscribe a Page or an Instagram account to our webhooks. If Meta refuses
+ * the full set, messages alone are tried, so a missing optional permission
+ * never stops the Inbox. `limited` says only messages are delivered.
+ */
+export async function subscribeWebhooks(kind: 'page' | 'instagram', id: string, token: string, app: MetaApp, scopes?: string[]): Promise<{ ok: true; limited?: boolean } | { ok: false; error: string }> {
   if (!NUMERIC_ID.test(id)) return { ok: false, error: 'Invalid account id.' }
-  const fields = (kind === 'page' ? PAGE_WEBHOOK_FIELDS : INSTAGRAM_WEBHOOK_FIELDS).join(',')
-  const r = await graph('POST', `/${id}/subscribed_apps`, token, app, { subscribed_fields: fields })
+  const fields = webhookFieldsFor(kind, scopes)
+  const r = await graph('POST', `/${id}/subscribed_apps`, token, app, { subscribed_fields: fields.join(',') })
   if (r.ok) return { ok: true }
+  // Meta's wording stays in the log; the owner gets plain words.
   console.error(`[meta connect] ${kind} subscription failed:`, r.error?.code, r.error?.message)
-  // Meta's wording stays in the log above; the owner gets plain words.
-  return { ok: false, error: r.error?.code === 190 ? 'the connection expired — press Reconnect' : 'Meta refused the webhook subscription — check the app has the Messenger / Instagram webhook product added' }
+  if (r.error?.code === 190) return { ok: false, error: subscribeError(r.error) }
+  const core = [...(kind === 'page' ? PAGE_CORE_FIELDS : INSTAGRAM_CORE_FIELDS)]
+  if (core.length < fields.length) {
+    const retry = await graph('POST', `/${id}/subscribed_apps`, token, app, { subscribed_fields: core.join(',') })
+    if (retry.ok) return { ok: true, limited: true }
+    console.error(`[meta connect] ${kind} messages-only subscription failed:`, retry.error?.code, retry.error?.message)
+    return { ok: false, error: subscribeError(retry.error) }
+  }
+  return { ok: false, error: subscribeError(r.error) }
 }
 
 export async function unsubscribeWebhooks(id: string, token: string, app: MetaApp): Promise<void> {
@@ -123,7 +169,7 @@ export async function unsubscribeWebhooks(id: string, token: string, app: MetaAp
   await graph('DELETE', `/${id}/subscribed_apps`, token, app).catch(() => undefined)
 }
 
-export type SaveResult = { connected: boolean; name?: string | null; error?: string; webhook?: string }
+export type SaveResult = { connected: boolean; name?: string | null; error?: string; webhook?: string; limited?: boolean }
 
 /**
  * Save the chosen Page and/or Instagram account for this workspace. Refuses
@@ -135,6 +181,8 @@ export async function saveSocialConnection(input: {
   app: MetaApp
   page: PageAsset | null
   instagram: InstagramAsset | null
+  /** The Page an Instagram-only connection is linked to, noted but not connected. */
+  instagramPageId?: string | null
   scopes: string[]
   expiresAt: Date | null
 }): Promise<{ facebook: SaveResult | null; instagram: SaveResult | null }> {
@@ -157,15 +205,17 @@ export async function saveSocialConnection(input: {
           access_token = EXCLUDED.access_token, page_id = EXCLUDED.page_id, page_name = EXCLUDED.page_name,
           status = 'connected', test_error = null, last_tested_at = now(), connected_via = 'login',
           token_kind = 'page', granted_permissions = EXCLUDED.granted_permissions, token_expires_at = null, updated_at = now()`
-      const sub = await subscribeWebhooks('page', page.id, page.token, input.app)
-      facebook = { connected: true, name: page.name, ...(sub.ok ? {} : { webhook: sub.error }) }
+      const sub = await subscribeWebhooks('page', page.id, page.token, input.app, input.scopes)
+      facebook = { connected: true, name: page.name, ...(sub.ok ? (sub.limited ? { limited: true } : {}) : { webhook: sub.error }) }
     }
   }
 
   if (input.instagram) {
     const ig = input.instagram
     await ensureInstagramConfigTable()
-    const linkedPage = input.page && input.page.igId === ig.id ? input.page.id : null
+    const linkedPage = input.page && input.page.igId === ig.id
+      ? input.page.id
+      : (input.instagramPageId && NUMERIC_ID.test(input.instagramPageId) ? input.instagramPageId : null)
     const taken = await prisma.$queryRaw<{ n: number }[]>`
       SELECT 1 AS n FROM instagram_config WHERE account_id <> ${input.accountId}::uuid AND instagram_account_id = ${ig.id} LIMIT 1`
     if (taken.length > 0) {
@@ -179,8 +229,8 @@ export async function saveSocialConnection(input: {
           ig_username = EXCLUDED.ig_username, ig_name = EXCLUDED.ig_name, status = 'connected', test_error = null,
           last_tested_at = now(), connected_via = 'login', token_kind = 'system_user',
           granted_permissions = EXCLUDED.granted_permissions, token_expires_at = EXCLUDED.token_expires_at, updated_at = now()`
-      const sub = await subscribeWebhooks('instagram', ig.id, input.token, input.app)
-      instagram = { connected: true, name: ig.username ?? ig.name, ...(sub.ok ? {} : { webhook: sub.error }) }
+      const sub = await subscribeWebhooks('instagram', ig.id, input.token, input.app, input.scopes)
+      instagram = { connected: true, name: ig.username ?? ig.name, ...(sub.ok ? (sub.limited ? { limited: true } : {}) : { webhook: sub.error }) }
     }
   }
   return { facebook, instagram }

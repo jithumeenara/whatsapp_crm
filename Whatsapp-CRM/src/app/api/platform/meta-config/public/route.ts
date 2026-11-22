@@ -17,7 +17,9 @@ export async function GET() {
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const config = await loadMetaPlatformConfig()
-  if (!config) return NextResponse.json({ configured: false })
+  // WhatsApp Embedded Signup needs its own configuration; a server set up
+  // only for Instagram / Messenger shows no WhatsApp button.
+  if (!config || !config.configId) return NextResponse.json({ configured: false })
 
   return NextResponse.json({ configured: true, appId: config.appId, configId: config.configId })
 }

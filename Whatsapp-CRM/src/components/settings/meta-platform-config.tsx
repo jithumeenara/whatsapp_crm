@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, ChevronDown, ChevronUp, ExternalLink, ShieldCheck } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, Copy, ExternalLink, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { apiFetch, errorText } from '@/lib/api-fetch';
 
 const MASKED = '••••••••••••••••';
+const INPUT = 'h-9 text-[13px] font-mono border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20';
 
 interface Props {
   /** Expanded on mount — used by its own dedicated Settings tab, where
@@ -16,140 +18,196 @@ interface Props {
   defaultOpen?: boolean;
 }
 
+interface Addresses { redirect_uri: string | null; instagram_webhook: string | null; messenger_webhook: string | null }
+
 /**
- * One-time, platform-wide setup for Embedded Signup — the Meta "Tech
- * Provider" App's own ID/Secret/Configuration ID, NOT a per-tenant config.
- * Owner-only.
+ * One-time, server-wide Meta App setup — NOT per tenant. Server owner only
+ * (the API checks). One Facebook Login for Business configuration per
+ * channel, each optional: WhatsApp (Embedded Signup), Instagram (Connect
+ * Instagram), Messenger (Connect Messenger). Shows the exact addresses to
+ * paste in the Meta dashboard, taken from this server's own setting.
  */
 export function MetaPlatformConfig({ defaultOpen = false }: Props) {
+  const uid = useId();
   const [open, setOpen] = useState(defaultOpen);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [configured, setConfigured] = useState(false);
   const [appId, setAppId] = useState('');
   const [configId, setConfigId] = useState('');
-  const [socialConfigId, setSocialConfigId] = useState('');
+  const [igConfigId, setIgConfigId] = useState('');
+  const [fbConfigId, setFbConfigId] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [secretEdited, setSecretEdited] = useState(false);
+  const [addresses, setAddresses] = useState<Addresses | null>(null);
 
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch('/api/platform/meta-config');
-      const data = await res.json();
-      if (res.ok && data.configured) {
+      const res = await apiFetch('/api/platform/meta-config');
+      const data = (await res.json()) as Partial<Addresses> & {
+        configured?: boolean; app_id?: string; config_id?: string; instagram_config_id?: string; messenger_config_id?: string
+      };
+      setAddresses({ redirect_uri: data.redirect_uri ?? null, instagram_webhook: data.instagram_webhook ?? null, messenger_webhook: data.messenger_webhook ?? null });
+      if (data.configured) {
         setConfigured(true);
         setAppId(data.app_id ?? '');
         setConfigId(data.config_id ?? '');
-        setSocialConfigId(data.social_config_id ?? '');
+        setIgConfigId(data.instagram_config_id ?? '');
+        setFbConfigId(data.messenger_config_id ?? '');
         setAppSecret(MASKED);
         setSecretEdited(false);
       }
+    } catch (err) {
+      console.error('[platform meta app] load failed:', err);
+      toast.error(errorText(err, 'Could not load the Meta App settings.'));
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => { if (open) load(); }, [open]);
+  useEffect(() => { if (open) void load(); }, [open]);
 
   async function onSave() {
-    if (!appId.trim() || !configId.trim()) { toast.error('App ID and Configuration ID are required'); return; }
+    if (saving) return;
+    if (!appId.trim()) { toast.error('Enter the App ID.'); return; }
+    if (!configId.trim() && !igConfigId.trim() && !fbConfigId.trim()) {
+      toast.error('Add at least one configuration ID (WhatsApp, Instagram or Messenger).');
+      return;
+    }
     setSaving(true);
     try {
-      const res = await fetch('/api/platform/meta-config', {
+      await apiFetch('/api/platform/meta-config', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           app_id: appId.trim(),
           config_id: configId.trim(),
-          social_config_id: socialConfigId.trim(),
+          instagram_config_id: igConfigId.trim(),
+          messenger_config_id: fbConfigId.trim(),
           app_secret: secretEdited ? appSecret.trim() : MASKED,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) { toast.error(data.error || 'Failed to save'); return; }
-      toast.success('Platform Meta App saved — Embedded Signup is now live for every tenant');
+      toast.success('Meta App saved.');
       await load();
+    } catch (err) {
+      console.error('[platform meta app] save failed:', err);
+      toast.error(errorText(err, 'Could not save the Meta App settings.'));
     } finally {
       setSaving(false);
     }
   }
 
+  async function copy(text: string) {
+    try { await navigator.clipboard.writeText(text); toast.success('Copied.'); }
+    catch { toast.error('Could not copy. Select the text and copy it by hand.'); }
+  }
+
+  const digitsOnly = (v: string) => v.replace(/\D/g, '');
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <button type="button" onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-slate-50 transition-colors">
-        <div className="flex items-center gap-2.5">
-          <ShieldCheck className="h-4 w-4 text-slate-400" />
-          <div>
-            <h3 className="text-[14px] font-semibold text-slate-800">Platform Meta App (Embedded Signup)</h3>
-            <p className="text-[12px] text-slate-500 mt-0.5">
-              {configured ? 'Configured — the "Connect with Facebook" button is live.' : 'One-time setup, done once for the whole platform, not per tenant.'}
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
+        className="flex w-full items-center justify-between px-6 py-4 text-left transition-colors hover:bg-slate-50">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <ShieldCheck className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+          <div className="min-w-0">
+            <h3 className="text-[14px] font-semibold text-slate-800">Platform Meta App</h3>
+            <p className="mt-0.5 text-[12px] text-slate-500">
+              {configured ? 'Configured. Each channel’s connect button appears once its configuration ID is set.' : 'One-time setup for the whole server, not per workspace.'}
             </p>
           </div>
         </div>
-        {open ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+        {open ? <ChevronUp className="h-4 w-4 text-slate-400" aria-hidden="true" /> : <ChevronDown className="h-4 w-4 text-slate-400" aria-hidden="true" />}
       </button>
 
       {open && (
-        <div className="border-t border-slate-100 px-6 py-5 space-y-4">
+        <div className="space-y-5 border-t border-slate-100 px-6 py-5">
           {loading ? (
-            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-400" aria-label="Loading" /></div>
           ) : (
             <>
-              <p className="text-[12px] text-slate-500 leading-relaxed">
-                These three values come from your own Meta App&apos;s dashboard, after it&apos;s approved as a{' '}
-                <a href="https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/get-started-for-tech-providers" target="_blank" rel="noopener noreferrer" className="text-[#4A5CE8] hover:underline inline-flex items-center gap-0.5">
-                  Tech Provider <ExternalLink className="h-3 w-3" />
-                </a>. Set once here — every tenant who clicks &quot;Connect with Facebook&quot; uses this same App.
+              <p className="text-[12px] leading-relaxed text-slate-500">
+                Values from your Meta App&apos;s dashboard. Set once here: every workspace on this server uses this App. Each
+                configuration is optional; a channel&apos;s connect button appears only when its own configuration ID is set.{' '}
+                <a href="https://developers.facebook.com/docs/facebook-login/facebook-login-for-business" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[#4A5CE8] hover:underline">
+                  Facebook Login for Business <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                </a>
               </p>
 
               <div className="space-y-1.5">
-                <Label className="text-[13px] font-medium text-slate-700">App ID</Label>
-                <Input value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="1234567890123456"
-                  className="h-9 text-[13px] font-mono border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20" />
+                <Label htmlFor={`${uid}-app`} className="text-[13px] font-medium text-slate-700">App ID</Label>
+                <Input id={`${uid}-app`} name="meta-app-id" autoComplete="off" inputMode="numeric" value={appId} onChange={(e) => setAppId(digitsOnly(e.target.value))} placeholder="1234567890123456" className={INPUT} />
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-[13px] font-medium text-slate-700">App Secret</Label>
+                <Label htmlFor={`${uid}-secret`} className="text-[13px] font-medium text-slate-700">App Secret</Label>
                 <Input
+                  id={`${uid}-secret`}
+                  name="meta-app-secret"
                   type="password"
                   autoComplete="new-password"
                   value={appSecret}
                   onFocus={() => { if (!secretEdited) { setAppSecret(''); setSecretEdited(true); } }}
                   onChange={(e) => setAppSecret(e.target.value)}
-                  placeholder="From App Dashboard → Settings → Basic"
-                  className="h-9 text-[13px] font-mono border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20"
+                  placeholder="From App Dashboard → App settings → Basic"
+                  className={INPUT}
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-[13px] font-medium text-slate-700">Configuration ID</Label>
-                <Input value={configId} onChange={(e) => setConfigId(e.target.value)} placeholder="From Facebook Login for Business → Configurations"
-                  className="h-9 text-[13px] font-mono border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20" />
-                <p className="text-[11px] text-slate-400">Create this using the &quot;WhatsApp Embedded Signup Configuration With 60 Expiration Token&quot; template.</p>
-              </div>
+              <ConfigField id={`${uid}-wa`} label="WhatsApp configuration ID" value={configId} onChange={(v) => setConfigId(digitsOnly(v))}
+                help={<>Optional. Turns on <strong>Connect WhatsApp</strong>. Create it from the &quot;WhatsApp Embedded Signup&quot; template.</>} />
 
-              <div className="space-y-1.5">
-                <Label htmlFor="meta-social-config" className="text-[13px] font-medium text-slate-700">Messenger &amp; Instagram configuration ID</Label>
-                <Input id="meta-social-config" name="meta-social-config" autoComplete="off" inputMode="numeric" value={socialConfigId}
-                  onChange={(e) => setSocialConfigId(e.target.value.replace(/\D/g, ''))} placeholder="Optional — for Connect Facebook & Instagram"
-                  className="h-9 text-[13px] font-mono border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20" />
-                <p className="text-[11px] text-slate-500">
-                  Facebook Login for Business → Configurations → a configuration with a <strong>system-user access token</strong> (never expires) and the
-                  Messenger and Instagram permissions. Turns on the one-click Connect Facebook &amp; Instagram button for every workspace.
-                </p>
-              </div>
+              <ConfigField id={`${uid}-ig`} label="Instagram configuration ID" value={igConfigId} onChange={(v) => setIgConfigId(digitsOnly(v))}
+                help={<>Optional. Turns on <strong>Connect Instagram</strong>. Assets: <strong>Instagram accounts</strong> only. Permissions: instagram_basic, instagram_manage_messages, instagram_manage_comments, instagram_content_publish, instagram_manage_insights, business_management. Token: system-user, never expires.</>} />
+
+              <ConfigField id={`${uid}-fb`} label="Messenger configuration ID" value={fbConfigId} onChange={(v) => setFbConfigId(digitsOnly(v))}
+                help={<>Optional. Turns on <strong>Connect Messenger</strong>. Assets: <strong>Pages</strong> only. Permissions: pages_show_list, pages_manage_metadata, pages_messaging, pages_read_engagement, business_management. Token: system-user, never expires.</>} />
+
+              {addresses && (addresses.redirect_uri || addresses.instagram_webhook) && (
+                <div className="space-y-2 rounded-xl border border-slate-100 bg-slate-50 p-3">
+                  <p className="text-[12px] font-semibold text-slate-700">Paste these in the Meta dashboard</p>
+                  {addresses.redirect_uri && <CopyRow label="Valid OAuth Redirect URI (Facebook Login for Business → Settings)" value={addresses.redirect_uri} onCopy={copy} />}
+                  {addresses.instagram_webhook && <CopyRow label="Instagram webhook callback URL" value={addresses.instagram_webhook} onCopy={copy} />}
+                  {addresses.messenger_webhook && <CopyRow label="Messenger (Page) webhook callback URL" value={addresses.messenger_webhook} onCopy={copy} />}
+                  <p className="text-[11px] text-slate-500">Webhook verify tokens are set on the server (INSTAGRAM_VERIFY_TOKEN, FACEBOOK_VERIFY_TOKEN), never here.</p>
+                </div>
+              )}
 
               <div className="flex justify-end pt-1">
-                <Button onClick={onSave} disabled={saving} className="h-9 px-5 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
-                  {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : 'Save'}
+                <Button type="button" onClick={() => void onSave()} disabled={saving} className="h-9 bg-[#4A5CE8] px-5 text-[13px] text-white hover:bg-[#3D4FD6]">
+                  {saving ? <><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />Saving…</> : 'Save'}
                 </Button>
               </div>
             </>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function ConfigField({ id, label, value, onChange, help }: Readonly<{ id: string; label: string; value: string; onChange: (v: string) => void; help: React.ReactNode }>) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className="text-[13px] font-medium text-slate-700">{label}</Label>
+      <Input id={id} name={id} autoComplete="off" inputMode="numeric" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Optional" className={INPUT} />
+      <p className="text-[11px] leading-relaxed text-slate-500">{help}</p>
+    </div>
+  );
+}
+
+function CopyRow({ label, value, onCopy }: Readonly<{ label: string; value: string; onCopy: (v: string) => void }>) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] text-slate-500">{label}</p>
+      <div className="mt-0.5 flex min-w-0 items-center gap-2">
+        <code className="min-w-0 flex-1 truncate rounded-md border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-700" title={value}>{value}</code>
+        <button type="button" onClick={() => onCopy(value)} aria-label={`Copy ${label}`}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 hover:text-slate-800">
+          <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      </div>
     </div>
   );
 }

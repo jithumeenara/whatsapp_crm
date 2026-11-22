@@ -40,7 +40,7 @@ export function hintsFor(channel: SocialChannelKey, input: {
 }): string[] {
   const hints: string[] = []
   const name = channel === 'facebook' ? 'Messenger' : 'Instagram'
-  if (!input.connected) return [`${name} is not connected. Press Connect Facebook & Instagram.`]
+  if (!input.connected) return [`${name} is not connected. Press Connect ${name}.`]
   if (input.tokenValid === false) hints.push(`The ${name} connection stopped working (the app was removed or the account moved). Press Reconnect.`)
   const messages = input.features.find((f) => f.key === 'messages')
   if (messages?.granted === false) hints.push(`Messages were not allowed. Press Reconnect and allow messaging for ${name}.`)

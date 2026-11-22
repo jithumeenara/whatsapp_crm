@@ -4,14 +4,16 @@ import { auditCtx } from '@/lib/audit'
 import { auditConfigChange } from '@/lib/audit/config-change'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { GRAPH_API_VERSION } from '@/lib/meta/versions'
-import { CONNECT_NONCE_COOKIE, CONNECT_STATE_TTL_MS, newNonce, signConnectState } from '@/lib/meta/connect-state'
+import { CONNECT_NONCE_COOKIE, CONNECT_STATE_TTL_MS, isSocialChannel, newNonce, signConnectState } from '@/lib/meta/connect-state'
 import { CONNECT_CALLBACK_PATH, connectOrigin, loadSocialApp } from '@/lib/meta/social-connect-server'
 
 /**
- * POST /api/meta/social-connect/start — the workspace owner presses
- * "Connect Facebook & Instagram". Returns Meta's login address (Facebook
- * Login for Business, our config_id) with a signed state, and sets the
- * matching nonce in an httpOnly cookie for this browser only.
+ * POST /api/meta/social-connect/start — body { channel: 'instagram' | 'facebook' }.
+ * The workspace owner presses "Connect Instagram" (Instagram card) or
+ * "Connect Messenger" (Facebook card). Returns Meta's login address
+ * (Facebook Login for Business with that channel's configuration) with a
+ * signed state naming the channel, and sets the matching nonce in an
+ * httpOnly cookie for this browser only.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -19,15 +21,20 @@ export async function POST(req: NextRequest) {
     const limited = checkRateLimit(`meta-connect:${ctx.userId}`, { limit: 10, windowMs: 10 * 60_000 })
     if (!limited.success) return NextResponse.json({ error: 'Too many attempts. Wait a few minutes and try again.' }, { status: 429 })
 
-    const app = await loadSocialApp()
+    const body = (await req.json().catch(() => null)) as { channel?: unknown } | null
+    const channel = body?.channel
+    if (!isSocialChannel(channel)) return NextResponse.json({ error: 'Choose Instagram or Messenger.' }, { status: 400 })
+
+    const app = await loadSocialApp(channel)
     if (!app) {
-      return NextResponse.json({ error: 'The server owner must first add the Meta App and its Messenger & Instagram configuration ID (Settings → Platform → Meta App).' }, { status: 400 })
+      const which = channel === 'instagram' ? 'Instagram' : 'Messenger'
+      return NextResponse.json({ error: `The server owner must first add the Meta App and its ${which} configuration ID (Settings → Embedded Signup).` }, { status: 400 })
     }
     const origin = connectOrigin()
     if (!origin) return NextResponse.json({ error: "This server's public https address is not set (NEXT_PUBLIC_APP_URL)." }, { status: 500 })
 
     const nonce = newNonce()
-    const state = signConnectState({ accountId: ctx.accountId, userId: ctx.userId, nonce })
+    const state = signConnectState({ accountId: ctx.accountId, userId: ctx.userId, nonce, channel })
     const url = new URL(`https://www.facebook.com/${GRAPH_API_VERSION}/dialog/oauth`)
     url.searchParams.set('client_id', app.appId)
     url.searchParams.set('config_id', app.configId)
@@ -36,7 +43,7 @@ export async function POST(req: NextRequest) {
     url.searchParams.set('override_default_response_type', 'true')
     url.searchParams.set('state', state)
 
-    await auditConfigChange(auditCtx(req, ctx), 'config.channel_changed', { area: 'meta_social_connect', fields: [], meta: { step: 'started' } })
+    await auditConfigChange(auditCtx(req, ctx), 'config.channel_changed', { area: 'meta_social_connect', fields: [], meta: { step: 'started', channel } })
 
     const res = NextResponse.json({ url: url.toString() })
     res.cookies.set(CONNECT_NONCE_COOKIE, nonce, {

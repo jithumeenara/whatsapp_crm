@@ -1,5 +1,5 @@
 /**
- * The `state` for "Connect Facebook & Instagram" — signed, short-lived and
+ * The `state` for "Connect Instagram" / "Connect Messenger" — signed, short-lived and
  * tied to the browser that started it.
  *
  * Meta sends the browser back to our callback with ?code&state. Without a
@@ -24,10 +24,19 @@ function key(): Buffer {
   return crypto.createHash('sha256').update(`${value}:meta-social-connect`).digest()
 }
 
+/** Which button started it: "Connect Instagram" or "Connect Messenger". */
+export type SocialChannel = 'facebook' | 'instagram'
+export const SOCIAL_CHANNELS: readonly SocialChannel[] = ['facebook', 'instagram']
+export function isSocialChannel(v: unknown): v is SocialChannel {
+  return v === 'facebook' || v === 'instagram'
+}
+
 export interface ConnectState {
   accountId: string
   userId: string
   nonce: string
+  /** Signed with the rest, so the callback saves only this channel. */
+  channel?: SocialChannel
   exp: number
 }
 
@@ -56,6 +65,7 @@ export function verifyConnectState(state: unknown, cookieNonce: unknown, now = D
     const body = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as ConnectState
     if (typeof body.exp !== 'number' || body.exp < now) return null
     if (typeof body.accountId !== 'string' || typeof body.userId !== 'string' || typeof body.nonce !== 'string') return null
+    if (body.channel !== undefined && !isSocialChannel(body.channel)) return null
     const n1 = Buffer.from(body.nonce)
     const n2 = Buffer.from(cookieNonce)
     if (n1.length !== n2.length || !crypto.timingSafeEqual(n1, n2)) return null

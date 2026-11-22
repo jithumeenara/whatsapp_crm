@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db'
 import type { Prisma } from '@prisma/client'
 import { decrypt, openStoredSecret, sealSecret } from '@/lib/whatsapp/encryption'
 import type { MetaApp, PageAsset, InstagramAsset } from './social-connect'
+import type { SocialChannel } from './connect-state'
 
 export const CONNECT_CALLBACK_PATH = '/api/meta/social-connect/callback'
 export const SESSION_TTL_MS = 15 * 60_000
@@ -25,20 +26,61 @@ export function connectOrigin(): string | null {
   }
 }
 
-/** The server's Meta App (Settings → Platform) with the Messenger + Instagram configuration. */
-export async function loadSocialApp(): Promise<(MetaApp & { configId: string }) | null> {
+type ConfigRow = { app_id: string; app_secret: string; instagram_config_id: string | null; messenger_config_id: string | null }
+
+function configFor(row: ConfigRow, channel: SocialChannel): string | null {
+  const v = channel === 'instagram' ? row.instagram_config_id : row.messenger_config_id
+  return v && /^\d{5,30}$/.test(v) ? v : null
+}
+
+async function loadConfigRow(): Promise<ConfigRow | null> {
   const row = await prisma.metaPlatformConfig.findUnique({
     where: { id: 'singleton' },
-    select: { app_id: true, app_secret: true, social_config_id: true },
+    select: { app_id: true, app_secret: true, instagram_config_id: true, messenger_config_id: true },
   })
-  if (!row?.app_id || !row.app_secret || !row.social_config_id) return null
-  return { appId: row.app_id, appSecret: decrypt(row.app_secret), configId: row.social_config_id }
+  return row?.app_id && row.app_secret ? row : null
+}
+
+/**
+ * The server's Meta App with the Facebook Login for Business configuration
+ * for one channel ("Connect Instagram" or "Connect Messenger"). Without a
+ * channel: the app, when either channel is set up.
+ */
+export async function loadSocialApp(channel?: SocialChannel): Promise<(MetaApp & { configId: string }) | null> {
+  const row = await loadConfigRow()
+  if (!row) return null
+  const configId = channel ? configFor(row, channel) : configFor(row, 'instagram') ?? configFor(row, 'facebook')
+  if (!configId) return null
+  return { appId: row.app_id, appSecret: decrypt(row.app_secret), configId }
+}
+
+/** Which one-click buttons this server can show. */
+export async function socialConnectReady(): Promise<Record<SocialChannel, boolean>> {
+  const row = await loadConfigRow()
+  return { instagram: Boolean(row && configFor(row, 'instagram')), facebook: Boolean(row && configFor(row, 'facebook')) }
 }
 
 export async function loadMetaAppOnly(): Promise<MetaApp | null> {
   const row = await prisma.metaPlatformConfig.findUnique({ where: { id: 'singleton' }, select: { app_id: true, app_secret: true } })
   if (!row?.app_id || !row.app_secret) return null
   return { appId: row.app_id, appSecret: decrypt(row.app_secret) }
+}
+
+/**
+ * What a button may connect: "Connect Instagram" only Instagram accounts,
+ * "Connect Messenger" only Pages. No channel (a link started before the
+ * buttons were separate): both, as then.
+ */
+export function assetsForChannel(channel: SocialChannel | null | undefined, pages: PageAsset[], instagram: InstagramAsset[]): { pages: PageAsset[]; instagram: InstagramAsset[] } {
+  if (channel === 'instagram') return { pages: [], instagram }
+  if (channel === 'facebook') return { pages, instagram: [] }
+  return { pages, instagram }
+}
+
+/** The Page an Instagram account is linked to, if Meta listed it (noted, never connected). */
+export function linkedPageId(pages: Array<{ id: string; igId: string | null }>, igId: string | null | undefined): string | null {
+  if (!igId) return null
+  return pages.find((p) => p.igId === igId)?.id ?? null
 }
 
 /** Where Settings shows the result. */
@@ -48,6 +90,8 @@ export function settingsUrl(origin: string, params: Record<string, string>): str
 }
 
 type StoredOptions = {
+  /** Absent on sessions made before channels were separate (both offered). */
+  channel?: SocialChannel
   pages: Array<{ id: string; name: string; igId: string | null; token: string }>
   instagram: InstagramAsset[]
   scopes: string[]
@@ -56,11 +100,12 @@ type StoredOptions = {
 
 /** Keep the choices for 15 minutes (tokens sealed) and return the session id. */
 export async function createConnectSession(input: {
-  accountId: string; userId: string; token: string; pages: PageAsset[]; instagram: InstagramAsset[]; scopes: string[]; expiresAt: Date | null
+  accountId: string; userId: string; token: string; pages: PageAsset[]; instagram: InstagramAsset[]; scopes: string[]; expiresAt: Date | null; channel?: SocialChannel
 }): Promise<string> {
   // Old sessions of this workspace go first: one pending choice at a time.
   await prisma.metaConnectSession.deleteMany({ where: { account_id: input.accountId } })
   const options: StoredOptions = {
+    ...(input.channel ? { channel: input.channel } : {}),
     pages: input.pages.map((p) => ({ id: p.id, name: p.name, igId: p.igId, token: sealSecret(p.token) ?? '' })),
     instagram: input.instagram,
     scopes: input.scopes,
@@ -87,9 +132,12 @@ export async function readConnectChoices(id: string, accountId: string, userId: 
   })
   if (!row) return null
   const o = row.options as unknown as StoredOptions
+  // Only the button's own channel is offered (pages stay server side for an
+  // Instagram session: they are used only to note the linked Page).
   return {
-    pages: (o.pages ?? []).map((p) => ({ id: p.id, name: p.name, igId: p.igId })),
-    instagram: o.instagram ?? [],
+    channel: o.channel ?? null,
+    pages: o.channel === 'instagram' ? [] : (o.pages ?? []).map((p) => ({ id: p.id, name: p.name, igId: p.igId })),
+    instagram: o.channel === 'facebook' ? [] : o.instagram ?? [],
   }
 }
 
@@ -111,6 +159,7 @@ export async function claimConnectSession(id: string, accountId: string, userId:
   if (!token) return null
   return {
     token,
+    channel: o.channel ?? null,
     pages: (o.pages ?? []).map((p) => ({ id: p.id, name: p.name, igId: p.igId, token: openStoredSecret(p.token) ?? '' })),
     instagram: o.instagram ?? [],
     scopes: o.scopes ?? [],

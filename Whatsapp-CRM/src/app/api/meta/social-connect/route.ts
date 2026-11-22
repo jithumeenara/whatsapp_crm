@@ -10,7 +10,7 @@ import { GRAPH_API_VERSION } from '@/lib/meta/versions'
 import { isFacebookToken } from '@/lib/meta/social-messaging'
 import { featuresFor, hintsFor, type SocialChannelKey } from '@/lib/meta/social-features'
 import { tokenInfo, unsubscribeWebhooks, type MetaApp } from '@/lib/meta/social-connect'
-import { loadMetaAppOnly, loadSocialApp } from '@/lib/meta/social-connect-server'
+import { loadMetaAppOnly, socialConnectReady } from '@/lib/meta/social-connect-server'
 
 type Row = {
   access_token: string | null
@@ -89,9 +89,9 @@ export async function GET() {
   try {
     const ctx = await requireRole('owner')
     const app = await loadMetaAppOnly()
-    const social = await loadSocialApp()
-    const [facebook, instagram] = await Promise.all([statusFor('facebook', ctx.accountId, app), statusFor('instagram', ctx.accountId, app)])
-    return NextResponse.json({ oneClickReady: Boolean(social), facebook, instagram })
+    const [ready, facebook, instagram] = await Promise.all([socialConnectReady(), statusFor('facebook', ctx.accountId, app), statusFor('instagram', ctx.accountId, app)])
+    // Each card shows its own button only when its configuration is set.
+    return NextResponse.json({ oneClickReady: ready.instagram || ready.facebook, oneClick: ready, facebook, instagram })
   } catch (err) {
     return toErrorResponse(err)
   }

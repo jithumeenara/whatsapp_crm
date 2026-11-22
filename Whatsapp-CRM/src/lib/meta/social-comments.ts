@@ -250,7 +250,7 @@ export async function replyPublicly(c: CommentRow, auth: ChannelAuth, text: stri
     // Someone else's post: answered through our account's /mentions edge
     // (Facebook-login connections only; graph.instagram.com has no such edge).
     if (!auth.igAccountId || !auth.token.startsWith('EAA') || !c.post_id) {
-      return { ok: false, error: 'Replying to a mention needs the "Connect Facebook & Instagram" connection.' }
+      return { ok: false, error: 'Replying to a mention needs the "Connect Instagram" connection.' }
     }
     const body: Record<string, string> = { media_id: c.post_id, message: text }
     if (c.comment_id !== c.post_id) body.comment_id = c.comment_id

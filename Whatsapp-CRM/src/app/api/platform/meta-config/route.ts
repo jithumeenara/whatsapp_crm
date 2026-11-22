@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { encrypt } from "@/lib/whatsapp/encryption"
 import { auditCtx } from "@/lib/audit"
 import { auditConfigChange } from "@/lib/audit/config-change"
+import { CONNECT_CALLBACK_PATH, connectOrigin } from "@/lib/meta/social-connect-server"
 
 const MASKED = "••••••••••••••••"
 
@@ -36,35 +37,65 @@ export async function GET() {
   try {
     await requirePlatformOwner()
     const config = await prisma.metaPlatformConfig.findUnique({ where: { id: "singleton" } })
-    if (!config) return NextResponse.json({ configured: false })
+    // The exact addresses to paste in the Meta dashboard, from this server's
+    // own setting (www vs no www matters: Meta matches them letter by letter).
+    const origin = connectOrigin()
+    const addresses = {
+      redirect_uri: origin ? `${origin}${CONNECT_CALLBACK_PATH}` : null,
+      instagram_webhook: origin ? `${origin}/api/instagram/webhook` : null,
+      messenger_webhook: origin ? `${origin}/api/facebook/webhook` : null,
+    }
+    if (!config) return NextResponse.json({ configured: false, ...addresses })
 
     return NextResponse.json({
       configured: true,
       app_id: config.app_id,
       config_id: config.config_id,
-      social_config_id: config.social_config_id ?? "",
+      instagram_config_id: config.instagram_config_id ?? "",
+      messenger_config_id: config.messenger_config_id ?? "",
       app_secret: MASKED,
       updated_at: config.updated_at,
+      ...addresses,
     })
   } catch (err) {
     return toErrorResponse(err)
   }
 }
 
-/** PATCH /api/platform/meta-config — body: { app_id, app_secret, config_id } */
+/** A Facebook Login for Business configuration id: digits, or "" to clear. undefined = not sent. */
+function configIdField(v: unknown): string | undefined | null {
+  if (v === undefined) return undefined
+  if (typeof v !== "string") return null
+  const t = v.trim()
+  return t === "" || /^\d{5,30}$/.test(t) ? t : null
+}
+
+/**
+ * PATCH /api/platform/meta-config — body: { app_id, app_secret, config_id,
+ * instagram_config_id, messenger_config_id }. Each configuration is
+ * optional (WhatsApp Embedded Signup, Connect Instagram, Connect
+ * Messenger); at least one is needed.
+ */
 export async function PATCH(req: NextRequest) {
   try {
     const ctx = await requirePlatformOwner()
     const body = await req.json().catch(() => ({}))
-    const { app_id, app_secret, config_id, social_config_id } = body as { app_id?: string; app_secret?: string; config_id?: string; social_config_id?: string }
-    // Messenger + Instagram (Facebook Login for Business) configuration — optional, digits only.
-    const socialConfig = typeof social_config_id === "string" ? social_config_id.trim() : undefined
-    if (socialConfig && !/^\d{5,30}$/.test(socialConfig)) {
-      return NextResponse.json({ error: "The Messenger & Instagram configuration ID is a number from the App Dashboard." }, { status: 400 })
+    const { app_id, app_secret, config_id } = body as { app_id?: unknown; app_secret?: unknown; config_id?: unknown }
+    const appId = typeof app_id === "string" ? app_id.trim() : ""
+    if (!appId || appId.length > 64) return NextResponse.json({ error: "App ID is required" }, { status: 400 })
+    const waConfig = typeof config_id === "string" ? config_id.trim() : ""
+    if (waConfig.length > 64) return NextResponse.json({ error: "The WhatsApp configuration ID is too long." }, { status: 400 })
+    if (app_secret !== undefined && (typeof app_secret !== "string" || app_secret.length > 256)) {
+      return NextResponse.json({ error: "The App Secret is not valid." }, { status: 400 })
     }
 
-    if (!app_id?.trim() || !config_id?.trim()) {
-      return NextResponse.json({ error: "App ID and Configuration ID are required" }, { status: 400 })
+    // Old screens sent one shared social_config_id for both.
+    const legacy = configIdField((body as { social_config_id?: unknown }).social_config_id)
+    let igConfig = configIdField((body as { instagram_config_id?: unknown }).instagram_config_id)
+    let fbConfig = configIdField((body as { messenger_config_id?: unknown }).messenger_config_id)
+    if (igConfig === undefined && fbConfig === undefined && legacy !== undefined) { igConfig = legacy; fbConfig = legacy }
+    if (igConfig === null || fbConfig === null) {
+      return NextResponse.json({ error: "A Messenger or Instagram configuration ID is a number from the App Dashboard." }, { status: 400 })
     }
 
     const existing = await prisma.metaPlatformConfig.findUnique({ where: { id: "singleton" } })
@@ -72,19 +103,32 @@ export async function PATCH(req: NextRequest) {
     if (keepSecret && !existing) {
       return NextResponse.json({ error: "App Secret is required" }, { status: 400 })
     }
-    const secretToSave = keepSecret ? existing!.app_secret : encrypt(app_secret!.trim())
+    const secretToSave = keepSecret ? existing!.app_secret : encrypt((app_secret as string).trim())
 
+    const nextIg = igConfig !== undefined ? igConfig : (existing?.instagram_config_id ?? "")
+    const nextFb = fbConfig !== undefined ? fbConfig : (existing?.messenger_config_id ?? "")
+    if (!waConfig && !nextIg && !nextFb) {
+      return NextResponse.json({ error: "Add at least one configuration ID (WhatsApp, Instagram or Messenger)." }, { status: 400 })
+    }
+
+    const channelConfigs = {
+      ...(igConfig !== undefined ? { instagram_config_id: igConfig || null } : {}),
+      ...(fbConfig !== undefined ? { messenger_config_id: fbConfig || null } : {}),
+      // The old shared value is replaced by the two fields above (migration 179).
+      ...(igConfig !== undefined || fbConfig !== undefined ? { social_config_id: null } : {}),
+    }
     await prisma.metaPlatformConfig.upsert({
       where: { id: "singleton" },
-      create: { id: "singleton", app_id: app_id.trim(), app_secret: secretToSave, config_id: config_id.trim(), social_config_id: socialConfig || null, updated_by: ctx.userId },
-      update: { app_id: app_id.trim(), app_secret: secretToSave, config_id: config_id.trim(), ...(socialConfig !== undefined ? { social_config_id: socialConfig || null } : {}), updated_by: ctx.userId },
+      create: { id: "singleton", app_id: appId, app_secret: secretToSave, config_id: waConfig, ...channelConfigs, updated_by: ctx.userId },
+      update: { app_id: appId, app_secret: secretToSave, config_id: waConfig, ...channelConfigs, updated_by: ctx.userId },
     })
 
     // Which fields changed — never the App Secret or any value.
     const fields = [
-      ...(existing?.app_id !== app_id.trim() ? ["app_id"] : []),
-      ...(existing?.config_id !== config_id.trim() ? ["config_id"] : []),
-      ...(socialConfig !== undefined && (existing?.social_config_id ?? "") !== socialConfig ? ["social_config_id"] : []),
+      ...(existing?.app_id !== appId ? ["app_id"] : []),
+      ...(existing?.config_id !== waConfig ? ["config_id"] : []),
+      ...(igConfig !== undefined && (existing?.instagram_config_id ?? "") !== igConfig ? ["instagram_config_id"] : []),
+      ...(fbConfig !== undefined && (existing?.messenger_config_id ?? "") !== fbConfig ? ["messenger_config_id"] : []),
       ...(!keepSecret ? ["app_secret"] : []),
     ]
     await auditConfigChange(auditCtx(req, ctx), "config.platform_changed", {

@@ -347,15 +347,19 @@ function ConnectionAction({
   )
     return (
       <div className="flex w-full flex-col gap-2.5 sm:w-auto">
-        {/* Messenger + Instagram: Meta's one-click login (appears once the
-            server owner has set it up); token paste stays below. */}
-        {channel !== 'whatsapp' && (
-          <MetaSocialConnectButton className="h-11 w-full rounded-xl bg-[#5B5CF6] px-5 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(91,92,246,0.22)] hover:bg-[#4949E8] sm:w-auto" />
+        {/* One button per card, each connecting only its own channel:
+            WhatsApp → Embedded Signup; Instagram → Connect Instagram;
+            Facebook → Connect Messenger (each appears once the server
+            owner has set up its configuration). Token paste stays below. */}
+        {channel === 'whatsapp' ? (
+          <EmbeddedSignupButton
+            onConnected={onConnected}
+            label="Connect WhatsApp"
+            className="h-11 w-full rounded-xl bg-[#5B5CF6] px-5 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(91,92,246,0.22)] hover:bg-[#4949E8] sm:w-auto"
+          />
+        ) : (
+          <MetaSocialConnectButton channel={channel} className="h-11 w-full rounded-xl bg-[#5B5CF6] px-5 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(91,92,246,0.22)] hover:bg-[#4949E8] sm:w-auto" />
         )}
-        <EmbeddedSignupButton
-          onConnected={onConnected}
-          className="h-11 w-full rounded-xl bg-[#5B5CF6] px-5 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(91,92,246,0.22)] hover:bg-[#4949E8] sm:w-auto"
-        />
         {/* Goes straight to the real manual credential form (via
             defaultConnectMethod="manual") — this used to land on
             WhatsAppConfig/FacebookConfig/InstagramConfig's own Quick/

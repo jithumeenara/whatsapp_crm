@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { toast } from "sonner"
 import { Eye, EyeOff, Copy, CheckCircle2, XCircle, Loader2, ExternalLink, RefreshCw } from "lucide-react"
-import { EmbeddedSignupButton } from "@/components/settings/embedded-signup-button"
+import { MetaSocialConnectButton } from "@/components/settings/meta-social-connect"
 import { ConnectChannelScreen } from "@/components/settings/connect-channel-screen"
 import { FacebookIcon } from "@/components/icons/brand-icons"
 
@@ -143,7 +143,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
           channelName="Facebook"
           method={connectMethod}
           onMethodChange={setConnectMethod}
-          quickConnect={<EmbeddedSignupButton onConnected={load} />}
+          quickConnect={<MetaSocialConnectButton channel="facebook" unavailableText="One-click Messenger connect is not set up on this server yet. Use Manual Connect, or ask the server owner to add the Messenger configuration ID (Settings → Embedded Signup)." />}
           manualConnect={null}
         />
       )}

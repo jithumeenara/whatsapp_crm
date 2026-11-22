@@ -26,6 +26,8 @@ const FB_API_VERSION = GRAPH_API_VERSION // the shared Graph API version (src/li
 interface Props {
   onConnected?: () => void;
   className?: string;
+  /** Button text; "Connect WhatsApp" on the WhatsApp card. */
+  label?: string;
 }
 
 /**
@@ -41,7 +43,7 @@ interface Props {
  * They can arrive in either order, so both are stashed in a ref and
  * tryFinish() only actually calls the backend once all three are present.
  */
-export function EmbeddedSignupButton({ onConnected, className }: Props) {
+export function EmbeddedSignupButton({ onConnected, className, label = 'Connect with Facebook' }: Props) {
   const [ready, setReady] = useState(false);
   const [platformConfigured, setPlatformConfigured] = useState<boolean | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -171,9 +173,9 @@ export function EmbeddedSignupButton({ onConnected, className }: Props) {
       className={className ?? 'h-11 px-5 text-[14px] font-semibold bg-[#1877F2] hover:bg-[#166FE0] text-white'}
     >
       {connecting ? (
-        <><Loader2 className="h-4 w-4 animate-spin" />Connecting…</>
+        <><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />Connecting…</>
       ) : (
-        <><Link2 className="h-4 w-4" />Connect with Facebook</>
+        <><Link2 className="h-4 w-4" aria-hidden="true" />{label}</>
       )}
     </Button>
   );

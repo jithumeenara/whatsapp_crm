@@ -1,8 +1,10 @@
 'use client';
 
 /**
- * "Connect Facebook & Instagram" — the one-click way (Facebook Login for
- * Business), the chooser when several Pages / accounts were shared, and the
+ * "Connect Instagram" (Instagram card) and "Connect Messenger" (Facebook
+ * card) — the one-click way (Facebook Login for Business, one configuration
+ * per channel; each button connects only its own channel), the chooser when
+ * several Pages / accounts were shared, and the
  * connection health card: what works, what to do, Reconnect, Human agent
  * replies, Disconnect. The token paste (Manual Connect) stays beside it.
  * Everything is checked again on the server (/api/meta/social-connect/*).
@@ -24,43 +26,55 @@ interface ChannelStatus {
   connected: boolean; name: string | null; via: string | null; humanAgent: boolean
   tokenValid: boolean | null; features: Feature[]; hints: string[]
 }
-interface Status { oneClickReady: boolean; facebook: ChannelStatus; instagram: ChannelStatus }
+interface Status { oneClickReady: boolean; oneClick?: Record<Channel, boolean>; facebook: ChannelStatus; instagram: ChannelStatus }
 
 const LABEL: Record<Channel, string> = { facebook: 'Messenger', instagram: 'Instagram' };
 
-async function startConnect(): Promise<void> {
-  const res = await apiFetch('/api/meta/social-connect/start', { method: 'POST' });
+/** Whether this channel's one-click button can be shown on this server. */
+function canConnect(s: Status, channel: Channel): boolean {
+  return s.oneClick ? s.oneClick[channel] === true : s.oneClickReady === true;
+}
+
+async function startConnect(channel: Channel): Promise<void> {
+  const res = await apiFetch('/api/meta/social-connect/start', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel }),
+  });
   const { url } = (await res.json()) as { url?: string };
   if (!url || !url.startsWith('https://www.facebook.com/')) throw new Error('Meta did not return a login address.');
   window.location.assign(url);
 }
 
-/** The one-click button (shown only when the server owner has set it up). */
-export function MetaSocialConnectButton({ className }: Readonly<{ className?: string }>) {
+/**
+ * "Connect Instagram" / "Connect Messenger" — shown only when the server
+ * owner has set up that channel's configuration. `unavailableText` is shown
+ * instead when it is not (otherwise nothing).
+ */
+export function MetaSocialConnectButton({ channel, className, unavailableText }: Readonly<{ channel: Channel; className?: string; unavailableText?: string }>) {
   const [ready, setReady] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let alive = true;
     apiFetch('/api/meta/social-connect')
       .then((r) => r.json())
-      .then((s: Status) => { if (alive) setReady(s.oneClickReady === true); })
+      .then((s: Status) => { if (alive) setReady(canConnect(s, channel)); })
       .catch(() => { if (alive) setReady(false); });
     return () => { alive = false; };
-  }, []);
+  }, [channel]);
+  if (ready === false && unavailableText) return <p className="text-[12.5px] text-slate-500">{unavailableText}</p>;
   if (!ready) return null;
   return (
     <Button type="button" disabled={busy} className={className}
       onClick={async () => {
         if (busy) return;
         setBusy(true);
-        try { await startConnect(); } catch (err) {
+        try { await startConnect(channel); } catch (err) {
           console.error('[meta connect] start failed:', err);
           toast.error(errorText(err, 'Could not start the connection.'));
           setBusy(false);
         }
       }}>
       {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Plug className="h-4 w-4" aria-hidden="true" />}
-      Connect Facebook &amp; Instagram
+      Connect {LABEL[channel]}
     </Button>
   );
 }
@@ -76,7 +90,9 @@ const CONNECT_ERRORS: Record<string, string> = {
   no_code: 'Meta did not finish the sign-in. Press Connect again.',
   no_app: 'The Meta App is not set up on this server yet.',
   bad_token: 'Meta returned a sign-in that is not valid. Press Connect again.',
-  nothing_shared: 'No Facebook Page or Instagram professional account was shared. Press Connect again and tick your Page and Instagram account.',
+  nothing_shared: 'No Facebook Page or Instagram professional account was shared. Press Connect again and tick your Page or Instagram account.',
+  no_instagram: 'No Instagram professional account was shared. Press Connect Instagram again and tick your Instagram account.',
+  no_page: 'No Facebook Page was shared. Press Connect Messenger again and tick your Page.',
   failed: 'The connection did not finish. Press Connect again.',
 };
 
@@ -88,7 +104,7 @@ export function MetaConnectReturn({ onDone }: Readonly<{ onDone: () => void }>) 
   const session = params.get('session');
   const code = params.get('code');
   const shown = useRef(false);
-  const [choices, setChoices] = useState<{ pages: Array<{ id: string; name: string; igId: string | null }>; instagram: Array<{ id: string; username: string | null; name: string | null }> } | null>(null);
+  const [choices, setChoices] = useState<{ channel: Channel | null; pages: Array<{ id: string; name: string; igId: string | null }>; instagram: Array<{ id: string; username: string | null; name: string | null }> } | null>(null);
   const [pageId, setPageId] = useState<string>('');
   const [igId, setIgId] = useState<string>('');
   const [saving, setSaving] = useState(false);
@@ -98,7 +114,7 @@ export function MetaConnectReturn({ onDone }: Readonly<{ onDone: () => void }>) 
   useEffect(() => {
     if (!result || shown.current) return;
     shown.current = true;
-    if (result === 'connected') { toast.success('Facebook & Instagram connected.'); onDone(); clearQuery(); }
+    if (result === 'connected') { toast.success('Connected.'); onDone(); clearQuery(); }
     else if (result === 'partial') { toast.warning('Connected, but something needs attention — see the status below.'); onDone(); clearQuery(); }
     else if (result === 'cancelled') { toast.info('Connection cancelled — nothing was changed.'); clearQuery(); }
     else if (result === 'error') { toast.error((code && Object.hasOwn(CONNECT_ERRORS, code) ? CONNECT_ERRORS[code] : null) ?? CONNECT_ERRORS.failed); clearQuery(); }
@@ -106,11 +122,12 @@ export function MetaConnectReturn({ onDone }: Readonly<{ onDone: () => void }>) 
       apiFetch(`/api/meta/social-connect/finish?session=${encodeURIComponent(session)}`)
         .then((r) => r.json())
         .then((c: NonNullable<typeof choices>) => {
-          const pages = Array.isArray(c?.pages) ? c.pages : [];
-          const instagram = Array.isArray(c?.instagram) ? c.instagram : [];
-          setChoices({ pages, instagram });
+          const channel = c?.channel === 'facebook' || c?.channel === 'instagram' ? c.channel : null;
+          const pages = channel === 'instagram' ? [] : Array.isArray(c?.pages) ? c.pages : [];
+          const instagram = channel === 'facebook' ? [] : Array.isArray(c?.instagram) ? c.instagram : [];
+          setChoices({ channel, pages, instagram });
           setPageId(pages[0]?.id ?? '');
-          setIgId(pages[0]?.igId ?? instagram[0]?.id ?? '');
+          setIgId(channel === 'instagram' ? instagram[0]?.id ?? '' : pages[0]?.igId ?? instagram[0]?.id ?? '');
         })
         .catch((err) => { console.error('[meta connect] choices failed:', err); toast.error(errorText(err, 'This choice has expired. Press Connect again.')); clearQuery(); });
     }
@@ -123,7 +140,11 @@ export function MetaConnectReturn({ onDone }: Readonly<{ onDone: () => void }>) 
     try {
       const res = await apiFetch('/api/meta/social-connect/finish', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session, page_id: pageId || null, instagram_id: igId || null }),
+        body: JSON.stringify({
+          session,
+          page_id: choices?.channel === 'instagram' ? null : pageId || null,
+          instagram_id: choices?.channel === 'facebook' ? null : igId || null,
+        }),
       });
       const out = (await res.json()) as { facebook?: { connected: boolean; error?: string } | null; instagram?: { connected: boolean; error?: string } | null };
       const problems = [out.facebook?.error, out.instagram?.error].filter(Boolean);
@@ -143,32 +164,42 @@ export function MetaConnectReturn({ onDone }: Readonly<{ onDone: () => void }>) 
     <Dialog open onOpenChange={(o) => { if (!o && !saving) { setChoices(null); clearQuery(); } }}>
       <DialogContent className="bg-white sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Choose what to connect</DialogTitle>
-          <DialogDescription>You shared more than one. Pick the Facebook Page and Instagram account for this workspace.</DialogDescription>
+          <DialogTitle>{choices.channel === 'instagram' ? 'Choose the Instagram account' : choices.channel === 'facebook' ? 'Choose the Facebook Page' : 'Choose what to connect'}</DialogTitle>
+          <DialogDescription>
+            {choices.channel === 'instagram'
+              ? 'You shared more than one. Pick the Instagram account for this workspace.'
+              : choices.channel === 'facebook'
+                ? 'You shared more than one. Pick the Page whose Messenger chats come to this workspace.'
+                : 'You shared more than one. Pick the Facebook Page and Instagram account for this workspace.'}
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <fieldset className="space-y-1.5">
+          {choices.channel !== 'instagram' && (
+          <fieldset className="min-w-0 space-y-1.5">
             <legend className="mb-1 text-[12px] font-semibold text-slate-600">Facebook Page (Messenger)</legend>
-            {[{ id: '', name: 'Do not connect a Page', igId: null }, ...choices.pages].map((p) => (
+            {[...(choices.channel === null ? [{ id: '', name: 'Do not connect a Page', igId: null }] : []), ...choices.pages].map((p) => (
               <label key={p.id || 'none'} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-[13px] hover:bg-slate-50">
-                <input type="radio" name="meta-page" value={p.id} checked={pageId === p.id} onChange={() => { setPageId(p.id); if (p.igId) setIgId(p.igId); }} />
-                <span className="min-w-0 truncate">{p.name}</span>
+                <input type="radio" name="meta-page" value={p.id} checked={pageId === p.id} onChange={() => { setPageId(p.id); if (p.igId && choices.channel === null) setIgId(p.igId); }} />
+                <span className="min-w-0 truncate" title={p.name}>{p.name}</span>
               </label>
             ))}
           </fieldset>
-          <fieldset className="space-y-1.5">
+          )}
+          {choices.channel !== 'facebook' && (
+          <fieldset className="min-w-0 space-y-1.5">
             <legend className="mb-1 text-[12px] font-semibold text-slate-600">Instagram account</legend>
-            {[{ id: '', username: null, name: 'Do not connect Instagram' }, ...choices.instagram].map((a) => (
+            {[...(choices.channel === null ? [{ id: '', username: null, name: 'Do not connect Instagram' }] : []), ...choices.instagram].map((a) => (
               <label key={a.id || 'none'} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-[13px] hover:bg-slate-50">
                 <input type="radio" name="meta-ig" value={a.id} checked={igId === a.id} onChange={() => setIgId(a.id)} />
                 <span className="min-w-0 truncate">{a.username ? `@${a.username}` : a.name}</span>
               </label>
             ))}
           </fieldset>
+          )}
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" disabled={saving} onClick={() => { setChoices(null); clearQuery(); }}>Cancel</Button>
-          <Button type="button" disabled={saving || (!pageId && !igId)} onClick={() => void save()}>
+          <Button type="button" disabled={saving || (choices.channel === 'instagram' ? !igId : choices.channel === 'facebook' ? !pageId : !pageId && !igId)} onClick={() => void save()}>
             {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />} Connect
           </Button>
         </DialogFooter>
@@ -259,14 +290,14 @@ export function MetaSocialHealth({ channel }: Readonly<{ channel: Channel }>) {
           <h3 id={`meta-health-${channel}`} className="text-[14px] font-semibold text-slate-800">{LABEL[channel]} connection</h3>
           <p className="mt-0.5 text-[12px] text-slate-500">
             {s.connected
-              ? <>Connected{s.name ? <> to <span className="font-medium text-slate-700">{s.name}</span></> : null}{s.via === 'login' ? ' with Connect Facebook & Instagram' : ' with a pasted token'}.</>
+              ? <>Connected{s.name ? <> to <span className="font-medium text-slate-700">{s.name}</span></> : null}{s.via === 'login' ? ` with Connect ${LABEL[channel]}` : ' with a pasted token'}.</>
               : 'Not connected.'}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {status.oneClickReady && (
+          {canConnect(status, channel) && (
             <Button type="button" variant="outline" size="sm" disabled={busy !== null}
-              onClick={async () => { setBusy('reconnect'); try { await startConnect(); } catch (err) { console.error(err); toast.error(errorText(err, 'Could not start the connection.')); setBusy(null); } }}>
+              onClick={async () => { setBusy('reconnect'); try { await startConnect(channel); } catch (err) { console.error(err); toast.error(errorText(err, 'Could not start the connection.')); setBusy(null); } }}>
               {busy === 'reconnect' ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
               {s.connected ? 'Reconnect' : 'Connect'}
             </Button>
