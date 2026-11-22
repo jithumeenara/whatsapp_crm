@@ -12,6 +12,7 @@
 import { prisma } from '@/lib/db'
 import type { ReportPeriod } from '../period'
 import { median } from './activity'
+import { ASSISTANT_SOURCES } from '@/lib/ai/history'
 
 export interface HandoverRow { reason: string; source: string; outside: boolean; takenMin: number | null; takenBy: string | null }
 
@@ -113,8 +114,9 @@ export async function loadAutomation(a: { accountId: string; period: ReportPerio
   const QUESTION_REASONS = new Set(['low_confidence', 'unsupported_details', 'turn_limit'])
   return {
     replies: {
-      ai: replies.filter((r) => r.source === 'ai_auto_reply').reduce((x, r) => x + n(r.n), 0),
-      chatbot: replies.filter((r) => r.source !== 'ai_auto_reply').reduce((x, r) => x + n(r.n), 0),
+      // The assistant's own messages include its clarifying questions.
+      ai: replies.filter((r) => r.source != null && ASSISTANT_SOURCES.has(r.source)).reduce((x, r) => x + n(r.n), 0),
+      chatbot: replies.filter((r) => r.source == null || !ASSISTANT_SOURCES.has(r.source)).reduce((x, r) => x + n(r.n), 0),
     },
     handoversReady: handovers.ok,
     handovers: summariseHandovers(hRows),

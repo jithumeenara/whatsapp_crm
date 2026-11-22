@@ -66,8 +66,12 @@ export const TEAM_MEMBER_RULE = [
   `- Never begin your own reply with ${TEAM_MEMBER_MARKER}.`,
 ].join('\n')
 
+/** bot_source values written by the assistant itself (not a chatbot flow):
+ *  its replies, and the clarifying question it asks before handing over. */
+export const ASSISTANT_SOURCES: ReadonlySet<string> = new Set(['ai_auto_reply', 'ai_clarify'])
+
 function isAssistantReply(row: HistoryRow): boolean {
-  return row.sender_type === 'bot' && (row.bot_source === 'ai_auto_reply' || Boolean(row.ai_meta && typeof row.ai_meta === 'object'))
+  return row.sender_type === 'bot' && ((row.bot_source != null && ASSISTANT_SOURCES.has(row.bot_source)) || Boolean(row.ai_meta && typeof row.ai_meta === 'object'))
 }
 
 /** Rows oldest first → the turns the model is shown. */

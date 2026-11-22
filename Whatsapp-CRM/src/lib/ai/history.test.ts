@@ -40,6 +40,17 @@ describe('what the assistant is shown of its own replies', () => {
     expect(turns[1].text).not.toContain('Leadership')
   })
 
+  // The clarifying question (clarify.ts) is the assistant's own words too:
+  // the customer's next message answers it, and the model must see that
+  // it asked.
+  it('counts its own clarifying question as its own turn', () => {
+    const turns = historyTurns([
+      { sender_type: 'customer', content_text: 'fees?' },
+      { sender_type: 'bot', bot_source: 'ai_clarify', content_text: 'Which course do you mean?' },
+    ])
+    expect(turns[1]).toMatchObject({ role: 'model', byAssistant: true })
+  })
+
   it('keeps a reply with no explanation as it was', () => {
     const turns = historyTurns([{ sender_type: 'bot', bot_source: 'ai_auto_reply', content_text: REPLY }])
     expect(turns[0].text).toBe(REPLY)
