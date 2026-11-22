@@ -38,12 +38,18 @@ export interface AdRow {
   channels: string[]
   arrivals: number
   leads: number
+  /** Leads marked qualified (or won) — "good" leads. */
+  qualified: number
   won: number
   lost: number
   revenue: MoneyAmount[]
   spend: number | null
+  /** The currency of this ad's account (several accounts may differ). */
+  currency: string | null
   clicks: number | null
   costPerLead: number | null
+  costPerQualified: number | null
+  costPerSale: number | null
   /** Revenue ÷ spend, only when both are in the ad account's currency. */
   roas: number | null
 }
@@ -54,10 +60,13 @@ export interface CampaignRow {
   ads: number
   arrivals: number
   leads: number
+  qualified: number
   won: number
   revenue: MoneyAmount[]
   spend: number | null
   costPerLead: number | null
+  costPerQualified: number | null
+  costPerSale: number | null
   roas: number | null
 }
 
@@ -70,16 +79,19 @@ export interface SpendRow {
   campaignName: string | null
   spend: number
   clicks: number
+  /** Which connected ad account, and its currency (several accounts). */
+  adAccountId?: string
+  currency?: string | null
 }
 
 export type SpendResult =
-  | { status: 'ok'; currency: string | null; rows: SpendRow[] }
+  | { status: 'ok'; currency: string | null; rows: SpendRow[]; note?: string }
   | { status: 'not_connected' | 'no_ad_account' | 'error'; message: string }
 
 export interface AdPerformance {
   ads: AdRow[]
   campaigns: CampaignRow[]
-  totals: { arrivals: number; leads: number; won: number; revenue: MoneyAmount[]; spend: number | null; costPerLead: number | null; roas: number | null }
+  totals: { arrivals: number; leads: number; qualified: number; won: number; revenue: MoneyAmount[]; spend: number | null; costPerLead: number | null; costPerQualified: number | null; costPerSale: number | null; roas: number | null }
   /** Leads in the period with no ad (other sources), for the share. */
   otherLeads: number
   currency: string | null
@@ -90,7 +102,7 @@ export interface AdPerformance {
 
 // ── Pure assembly ────────────────────────────────────────────────────────
 
-export interface LeadAgg { ad_id: string; leads: number; won: number; lost: number }
+export interface LeadAgg { ad_id: string; leads: number; won: number; lost: number; qualified?: number }
 export interface RevenueAgg { ad_id: string; currency: string; amount: number }
 export interface TouchAgg { ad_id: string; arrivals: number; channels: string[]; headline: string | null }
 export interface CatalogRow { ad_id: string; ad_name: string | null; adset_name: string | null; campaign_id: string | null; campaign_name: string | null; thumbnail_url: string | null }
@@ -103,11 +115,11 @@ function addMoney(list: MoneyAmount[], m: MoneyAmount) {
   else list.push({ currency: m.currency, amount: round2(m.amount) })
 }
 
-function ratios(spend: number | null, leads: number, revenue: MoneyAmount[], currency: string | null) {
-  const costPerLead = spend != null && leads > 0 ? round2(spend / leads) : null
+function ratios(spend: number | null, leads: number, revenue: MoneyAmount[], currency: string | null, qualified = 0, won = 0) {
+  const per = (n: number) => (spend != null && n > 0 ? round2(spend / n) : null)
   const same = currency ? revenue.find((r) => r.currency === currency) : undefined
   const roas = spend != null && spend > 0 && same ? round2(same.amount / spend) : null
-  return { costPerLead, roas }
+  return { costPerLead: per(leads), costPerQualified: per(qualified), costPerSale: per(won), roas }
 }
 
 export function assemble(input: {
@@ -117,14 +129,20 @@ export function assemble(input: {
   catalog: CatalogRow[]
   spend: SpendResult
   otherLeads: number
+  /** Only these ads (one ad account chosen). */
+  onlyAds?: Set<string>
 }): AdPerformance {
   const spendOk = input.spend.status === 'ok' ? input.spend : null
   const currency = spendOk?.currency ?? null
+  // Several ad accounts in different currencies: per-ad figures stay in
+  // each ad's own currency; totals of money are not added together.
+  const mixed = Boolean(spendOk && new Set(spendOk.rows.map((r) => r.currency ?? currency).filter(Boolean)).size > 1)
   const ids = new Set<string>([
     ...input.leads.map((r) => r.ad_id),
     ...input.touches.map((r) => r.ad_id),
     ...(spendOk ? spendOk.rows.filter((r) => r.spend > 0).map((r) => r.adId) : []),
   ])
+  if (input.onlyAds) for (const id of [...ids]) if (!input.onlyAds.has(id)) ids.delete(id)
   const cat = new Map(input.catalog.map((c) => [c.ad_id, c]))
   const sp = new Map((spendOk?.rows ?? []).map((r) => [r.adId, r]))
   const ld = new Map(input.leads.map((r) => [r.ad_id, r]))
@@ -139,6 +157,9 @@ export function assemble(input: {
     for (const r of input.revenue) if (r.ad_id === adId) addMoney(revenue, { currency: r.currency, amount: r.amount })
     const spend = spendOk ? (s ? round2(s.spend) : 0) : null
     const leads = l?.leads ?? 0
+    const qualified = l?.qualified ?? 0
+    const won = l?.won ?? 0
+    const adCurrency = s?.currency ?? currency
     return {
       adId,
       adName: s?.adName ?? c?.ad_name ?? null,
@@ -150,12 +171,14 @@ export function assemble(input: {
       channels: t?.channels ?? [],
       arrivals: t?.arrivals ?? 0,
       leads,
-      won: l?.won ?? 0,
+      qualified,
+      won,
       lost: l?.lost ?? 0,
       revenue,
       spend,
+      currency: adCurrency,
       clicks: s ? s.clicks : spendOk ? 0 : null,
-      ...ratios(spend, leads, revenue, currency),
+      ...ratios(spend, leads, revenue, adCurrency, qualified, won),
     }
   })
   ads.sort((a, b) => b.leads - a.leads || (b.spend ?? 0) - (a.spend ?? 0) || b.arrivals - a.arrivals)
@@ -163,32 +186,37 @@ export function assemble(input: {
   const byCampaign = new Map<string, CampaignRow>()
   for (const a of ads) {
     const key = a.campaignId ?? `name:${a.campaignName ?? ''}`
-    const row = byCampaign.get(key) ?? { campaignId: a.campaignId, campaignName: a.campaignName, ads: 0, arrivals: 0, leads: 0, won: 0, revenue: [], spend: spendOk ? 0 : null, costPerLead: null, roas: null }
-    row.ads++; row.arrivals += a.arrivals; row.leads += a.leads; row.won += a.won
+    const row = byCampaign.get(key) ?? { campaignId: a.campaignId, campaignName: a.campaignName, ads: 0, arrivals: 0, leads: 0, qualified: 0, won: 0, revenue: [], spend: spendOk ? 0 : null, costPerLead: null, costPerQualified: null, costPerSale: null, roas: null }
+    row.ads++; row.arrivals += a.arrivals; row.leads += a.leads; row.qualified += a.qualified; row.won += a.won
     for (const r of a.revenue) addMoney(row.revenue, r)
     if (row.spend != null && a.spend != null) row.spend = round2(row.spend + a.spend)
     byCampaign.set(key, row)
   }
-  const campaigns = [...byCampaign.values()].map((c) => ({ ...c, ...ratios(c.spend, c.leads, c.revenue, currency) }))
+  const campaigns = [...byCampaign.values()].map((c) => ({ ...c, ...ratios(mixed ? null : c.spend, c.leads, c.revenue, currency, c.qualified, c.won) }))
   campaigns.sort((a, b) => b.leads - a.leads || (b.spend ?? 0) - (a.spend ?? 0))
 
   const totRevenue: MoneyAmount[] = []
   for (const a of ads) for (const r of a.revenue) addMoney(totRevenue, r)
-  const totSpend = spendOk ? round2(ads.reduce((s, a) => s + (a.spend ?? 0), 0)) : null
+  const totSpend = spendOk && !mixed ? round2(ads.reduce((s, a) => s + (a.spend ?? 0), 0)) : null
   const totLeads = ads.reduce((s, a) => s + a.leads, 0)
+  const totQualified = ads.reduce((s, a) => s + a.qualified, 0)
+  const totWon = ads.reduce((s, a) => s + a.won, 0)
   const totals = {
     arrivals: ads.reduce((s, a) => s + a.arrivals, 0),
     leads: totLeads,
-    won: ads.reduce((s, a) => s + a.won, 0),
+    qualified: totQualified,
+    won: totWon,
     revenue: totRevenue,
     spend: totSpend,
-    ...ratios(totSpend, totLeads, totRevenue, currency),
+    ...ratios(totSpend, totLeads, totRevenue, currency, totQualified, totWon),
   }
 
   const result: AdPerformance = {
     ads, campaigns, totals, otherLeads: input.otherLeads, currency,
     spendStatus: input.spend.status,
-    spendMessage: input.spend.status === 'ok' ? null : input.spend.message,
+    spendMessage: input.spend.status === 'ok'
+      ? (mixed ? 'Your ad accounts use different currencies, so money is shown per ad and not added up.' : input.spend.note ?? null)
+      : input.spend.message,
     findings: [],
   }
   result.findings = findings(result)
@@ -251,7 +279,72 @@ export async function spendByAd(accountId: string, since: string, until: string)
   return value
 }
 
+export interface SpendAccount { adAccountId: string; token: string; currency: string | null }
+
+/** The connected ad accounts with their tokens (Connect Ads); [] when none or not set up. */
+export async function spendAccounts(accountId: string): Promise<SpendAccount[]> {
+  const rows = await prisma.metaAdAccount.findMany({ where: { account_id: accountId }, select: { ad_account_id: true, connection_id: true, currency: true }, take: 50 })
+  if (rows.length === 0) return []
+  const conns = await prisma.metaAssetConnection.findMany({ where: { account_id: accountId, id: { in: [...new Set(rows.map((r) => r.connection_id))] } }, select: { id: true, access_token: true } })
+  const out: SpendAccount[] = []
+  for (const r of rows) {
+    const c = conns.find((x) => x.id === r.connection_id)
+    if (!c || !/^\d{1,30}$/.test(r.ad_account_id)) continue
+    try { out.push({ adAccountId: r.ad_account_id, token: decrypt(c.access_token), currency: r.currency }) } catch { /* unreadable token: skip */ }
+  }
+  return out
+}
+
+async function readAccountSpend(acct: SpendAccount, since: string, until: string): Promise<{ ok: true; rows: SpendRow[]; currency: string | null } | { ok: false }> {
+  const fields = 'ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,spend,clicks,account_currency'
+  let next: string | null = `${GRAPH}/act_${acct.adAccountId}/insights?level=ad&limit=500&fields=${fields}&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}`
+  const rows: SpendRow[] = []
+  let currency: string | null = acct.currency
+  for (let page = 0; next && page < 10; page++) {
+    const res: Response = await fetch(next, { headers: { Authorization: `Bearer ${acct.token}` }, signal: AbortSignal.timeout(10_000) })
+    if (!res.ok) {
+      console.error('[ads] Meta refused ad insights:', res.status, (await res.text().catch(() => '')).slice(0, 200))
+      return { ok: false }
+    }
+    const body = (await res.json()) as { data?: Array<Record<string, string>>; paging?: { next?: string } }
+    for (const r of body.data ?? []) {
+      if (!/^\d{5,30}$/.test(r.ad_id ?? '')) continue
+      if (/^[A-Z]{3}$/.test(r.account_currency ?? '')) currency = r.account_currency
+      rows.push({
+        adId: r.ad_id, adName: r.ad_name || null, adsetId: r.adset_id || null, adsetName: r.adset_name || null,
+        campaignId: r.campaign_id || null, campaignName: r.campaign_name || null,
+        spend: Number(r.spend ?? 0) || 0, clicks: Number(r.clicks ?? 0) || 0, adAccountId: acct.adAccountId, currency,
+      })
+    }
+    next = body.paging?.next && body.paging.next.startsWith(`${GRAPH}/`) ? body.paging.next : null
+  }
+  return { ok: true, rows: rows.map((r) => ({ ...r, currency })), currency }
+}
+
 async function readSpend(accountId: string, since: string, until: string): Promise<SpendResult> {
+  const many = await spendAccounts(accountId).catch(() => [] as SpendAccount[])
+  if (many.length > 0) {
+    try {
+      const results = await Promise.all(many.map((a) => readAccountSpend(a, since, until).catch(() => ({ ok: false as const }))))
+      const good = results.filter((r): r is { ok: true; rows: SpendRow[]; currency: string | null } => r.ok)
+      if (good.length === 0) {
+        // Meta unreachable: our own daily copy (migration 192), when there is one.
+        const saved = await import('./insights-snapshots').then((m) => m.savedSpend(accountId, since, until)).catch(() => null)
+        if (saved) return { status: 'ok', currency: saved.currency, rows: saved.rows, note: 'Meta could not be reached — showing the figures saved here.' }
+        return { status: 'error', message: 'Could not read ad spend from Meta. Check your ad accounts in Settings → Ads.' }
+      }
+      const rows = good.flatMap((r) => r.rows)
+      const currencies = [...new Set(good.map((r) => r.currency).filter((c): c is string => Boolean(c)))]
+      void saveNames(accountId, rows)
+      return {
+        status: 'ok', currency: currencies.length === 1 ? currencies[0] : null, rows,
+        ...(good.length < results.length ? { note: 'Some ad accounts could not be read — press Check on them in Settings → Ads.' } : {}),
+      }
+    } catch (err) {
+      console.error('[ads] ad insights failed:', err instanceof Error ? err.message : err)
+      return { status: 'error', message: 'Could not read ad spend from Meta. Check your ad accounts in Settings → Ads.' }
+    }
+  }
   const config = await prisma.metaAdsConfig.findUnique({ where: { account_id: accountId }, select: { status: true, access_token: true, ad_account_id: true } })
   if (!config || config.status !== 'connected') return { status: 'not_connected', message: 'Connect your ad account in Settings → Ads to see spend next to each ad.' }
   const account = (config.ad_account_id ?? '').trim()
@@ -316,13 +409,14 @@ async function saveNames(accountId: string, rows: SpendRow[]) {
 
 type Db = Pick<typeof prisma, '$queryRaw'> & { adCatalog: Pick<typeof prisma.adCatalog, 'findMany'> }
 
-export async function adPerformance(a: { accountId: string; from: Date; to: Date; firstDay: string; lastDay: string; db?: Db; spend?: SpendResult }): Promise<AdPerformance> {
+export async function adPerformance(a: { accountId: string; from: Date; to: Date; firstDay: string; lastDay: string; db?: Db; spend?: SpendResult; adAccountId?: string }): Promise<AdPerformance> {
   const acc = a.accountId
   const db: Db = a.db ?? prisma
   const cohort = Prisma.sql`l.account_id = ${acc}::uuid AND l.is_hidden = false AND l.ai_suggested = false AND l.created_at >= ${a.from} AND l.created_at < ${a.to}`
   const [leads, revenue, touches, other, spend] = await Promise.all([
-    db.$queryRaw<Array<{ ad_id: string; leads: bigint; won: bigint; lost: bigint }>>`
+    db.$queryRaw<Array<{ ad_id: string; leads: bigint; won: bigint; lost: bigint; qualified?: bigint }>>`
       SELECT l.ad_id, count(*) AS leads,
+        count(*) FILTER (WHERE l.lead_quality = 'qualified' OR l.converted_at IS NOT NULL) AS qualified,
         count(*) FILTER (WHERE l.status = 'closed' AND l.converted_at IS NOT NULL) AS won,
         count(*) FILTER (WHERE l.status = 'closed' AND l.converted_at IS NULL AND btrim(coalesce(l.lost_reason, '')) <> '') AS lost
       FROM leads l WHERE ${cohort} AND l.ad_id IS NOT NULL GROUP BY l.ad_id`,
@@ -349,11 +443,14 @@ export async function adPerformance(a: { accountId: string; from: Date; to: Date
   if (unnamed.length) void import('./ad-names').then((m) => m.ensureAdNames(acc, unnamed)).catch(() => {})
 
   return assemble({
-    leads: leads.map((r) => ({ ad_id: r.ad_id, leads: Number(r.leads), won: Number(r.won), lost: Number(r.lost) })),
+    leads: leads.map((r) => ({ ad_id: r.ad_id, leads: Number(r.leads), won: Number(r.won), lost: Number(r.lost), qualified: Number(r.qualified ?? 0) })),
     revenue: revenue.map((r) => ({ ad_id: r.ad_id, currency: r.currency ?? 'INR', amount: Number(r.amount ?? 0) })),
     touches: touches.map((r) => ({ ad_id: r.ad_id, arrivals: Number(r.arrivals), channels: r.channels ?? [], headline: r.headline })),
     catalog,
     spend,
     otherLeads: Number(other[0]?.n ?? 0),
+    ...(a.adAccountId && spend.status === 'ok'
+      ? { onlyAds: new Set(spend.rows.filter((r) => r.adAccountId === a.adAccountId).map((r) => r.adId)) }
+      : {}),
   })
 }

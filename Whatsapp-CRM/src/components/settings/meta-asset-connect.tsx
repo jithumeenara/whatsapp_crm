@@ -200,8 +200,8 @@ export function MetaAssetPanel({ kind, onChanged }: Readonly<{ kind: Kind; onCha
       ) : (
         <ul className="mt-3 space-y-2">
           {items.map((it) => (
-            <li key={it.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2.5">
-              <div className="min-w-0 flex-1">
+            <li key={it.id} className="flex flex-col gap-2 rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
+              <div className="w-full min-w-0 sm:flex-1">
                 <p className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-slate-800">
                   <span className="truncate" title={it.name ?? it.externalId}>{it.name ?? it.externalId}</span>
                   {it.isDefault && <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-indigo-700"><Star className="h-3 w-3" aria-hidden="true" />Default</span>}
@@ -214,7 +214,7 @@ export function MetaAssetPanel({ kind, onChanged }: Readonly<{ kind: Kind; onCha
                   {it.health.text}
                 </p>
               </div>
-              <div className="flex shrink-0 flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1.5 sm:shrink-0">
                 {!it.isDefault && (
                   <Button type="button" variant="outline" size="sm" disabled={busy !== null} onClick={() => void act(it, 'default')}>
                     {busy === `default:${it.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Star className="h-3.5 w-3.5" aria-hidden="true" />} Make default

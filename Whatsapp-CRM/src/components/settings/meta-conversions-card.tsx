@@ -112,13 +112,13 @@ export function MetaConversionsCard() {
         ) : (
           <ul className="mt-2 divide-y divide-slate-100">
             {data.events.map((e) => (
-              <li key={e.id} className="flex flex-wrap items-start gap-x-3 gap-y-1 py-2 text-[12px]">
+              <li key={e.id} className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-0.5 py-2 text-[12px] sm:grid-cols-[auto_minmax(0,1fr)_auto]">
                 <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS[e.status]?.cls ?? 'bg-slate-100 text-slate-700'}`}>{STATUS[e.status]?.text ?? e.status}</span>
-                <span className="min-w-0 flex-1 text-slate-700">
+                <span className="min-w-0 text-slate-700 [overflow-wrap:anywhere]">
                   {STAGE_LABEL[e.stage] ?? e.stage} · {e.target === 'crm' ? 'Lead Ads' : e.channel === 'messenger' ? 'Messenger' : e.channel === 'instagram' ? 'Instagram' : 'WhatsApp'}
                   {e.last_error && e.status !== 'sent' ? <span className="block text-slate-500">{e.last_error}</span> : null}
                 </span>
-                <time className="shrink-0 text-slate-400" dateTime={e.created_at}>{fmt.format(new Date(e.created_at))}</time>
+                <time className="col-start-2 text-slate-400 sm:col-start-auto" dateTime={e.created_at}>{fmt.format(new Date(e.created_at))}</time>
               </li>
             ))}
           </ul>

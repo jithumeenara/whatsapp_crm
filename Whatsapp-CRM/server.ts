@@ -16,6 +16,7 @@ import { sweepSocialConnections } from "./src/lib/meta/social-health-sweep";
 import { takeFollowerSnapshots } from "./src/lib/meta/social-insights";
 import { sweepScheduledPosts } from "./src/lib/meta/social-publish";
 import { sendDueConversions } from "./src/lib/meta-ads/conversions";
+import { snapshotAdInsights } from "./src/lib/ads/insights-snapshots";
 import { sweepAutoTags } from "./src/lib/ai/auto-tag";
 import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
 import { sweepTwoWaySheets } from "./src/lib/google/sheet-two-way";
@@ -240,6 +241,14 @@ app.prepare().then(() => {
 
   // Results sent back to Meta (src/lib/meta-ads/conversions.ts): retries
   // with back-off; a row is claimed before sending, so never sent twice.
+  // Our own daily copy of ad spend (Meta deletes history): every 6 hours.
+  const adSnapshotsOnce = singleFlight(() => snapshotAdInsights());
+  every(() => {
+    adSnapshotsOnce().catch((err) => {
+      console.error("[ad-snapshots] sweep failed:", err);
+    });
+  }, 6 * 60 * 60_000);
+
   const conversionsOnce = singleFlight(() => sendDueConversions());
   every(() => {
     conversionsOnce().catch((err) => {

@@ -12,7 +12,7 @@ import { AlertTriangle, Lightbulb, Loader2, RefreshCw } from "lucide-react"
 import type { AdPerformance, AdRow, CampaignRow, MoneyAmount } from "@/lib/ads/performance"
 
 type Kind = "today" | "week" | "month"
-type Response = AdPerformance & { period: { kind: Kind; firstDay: string; lastDay: string } }
+type Response = AdPerformance & { period: { kind: Kind; firstDay: string; lastDay: string }; adAccounts?: Array<{ id: string; name: string | null; currency: string | null }>; account?: string | null }
 
 const PERIODS: Array<{ key: Kind; label: string }> = [
   { key: "today", label: "Today" },
@@ -41,14 +41,15 @@ export function AdsByAd() {
   const [hidden, setHidden] = useState(false)
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<"campaigns" | "ads">("campaigns")
+  const [account, setAccount] = useState<string>("")
   const seq = useRef(0)
 
-  const load = useCallback(async (k: Kind) => {
+  const load = useCallback(async (k: Kind, acct: string) => {
     const mine = ++seq.current
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/ads/performance?period=${k}`)
+      const res = await fetch(`/api/ads/performance?period=${k}${acct ? `&account=${encodeURIComponent(acct)}` : ""}`)
       if (mine !== seq.current) return
       // Not an owner/admin, or the Ads page not allowed: this part simply is not theirs.
       if (res.status === 403) { setHidden(true); return }
@@ -64,7 +65,7 @@ export function AdsByAd() {
     }
   }, [])
 
-  useEffect(() => { void load(kind) }, [kind, load])
+  useEffect(() => { void load(kind, account) }, [kind, account, load])
 
   if (hidden) return null
   const cur = data?.currency ?? null
@@ -75,8 +76,16 @@ export function AdsByAd() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id="ads-by-ad" className="text-[15px] font-semibold text-slate-900">From click to sale</h2>
-          <p className="text-[12px] text-slate-500">Each ad's cost, the people it brought, who was won and what they paid.</p>
+          <p className="text-[12px] text-slate-500">Each ad&apos;s cost, the people it brought, who was won and what they paid.</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        {data?.adAccounts && data.adAccounts.length > 1 && (
+          <select aria-label="Ad account" value={account} onChange={(e) => setAccount(e.target.value)}
+            className="h-8 max-w-[220px] truncate rounded-lg border border-slate-200 bg-white px-2 text-[12.5px] text-slate-700">
+            <option value="">All ad accounts</option>
+            {data.adAccounts.map((a) => <option key={a.id} value={a.id}>{a.name ?? `Ad account ${a.id}`}{a.currency ? ` (${a.currency})` : ""}</option>)}
+          </select>
+        )}
         <div role="tablist" aria-label="Period" className="flex rounded-lg bg-slate-100 p-0.5">
           {PERIODS.map((p) => (
             <button key={p.key} type="button" role="tab" aria-selected={kind === p.key} onClick={() => setKind(p.key)}
@@ -85,25 +94,28 @@ export function AdsByAd() {
             </button>
           ))}
         </div>
+        </div>
       </div>
 
       {error ? (
         <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
           <span className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />{error}</span>
-          <button type="button" onClick={() => void load(kind)} className="flex items-center gap-1 font-medium"><RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />Retry</button>
+          <button type="button" onClick={() => void load(kind, account)} className="flex items-center gap-1 font-medium"><RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />Retry</button>
         </div>
       ) : loading && !data ? (
         <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-slate-400" aria-label="Loading" /></div>
       ) : data && t ? (
         <div className={loading ? "opacity-60" : ""} aria-busy={loading}>
-          <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
             {[
               ["Spent", cash(t.spend, cur)],
               ["Came in from ads", n(t.arrivals)],
               ["Leads", n(t.leads)],
+              ["Qualified", n(t.qualified ?? 0)],
               ["Won", n(t.won)],
               ["Cost per lead", cash(t.costPerLead, cur)],
-              ["Return on spend", roas(t.roas)],
+              ["Cost per qualified lead", cash(t.costPerQualified ?? null, cur)],
+              ["Cost per sale", cash(t.costPerSale ?? null, cur)],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl bg-slate-50 px-3 py-2.5">
                 <dt className="text-[11.5px] text-slate-500">{label}</dt>
@@ -112,7 +124,7 @@ export function AdsByAd() {
             ))}
           </dl>
           <p className="mt-2 text-[12px] text-slate-500">
-            Revenue from these leads: {revenue(t.revenue)} · Leads from other sources: {n(data.otherLeads)}
+            Revenue from these leads: {revenue(t.revenue)} · Return on spend: {roas(t.roas)} · Leads from other sources: {n(data.otherLeads)}
           </p>
           {data.spendMessage && <p className="mt-2 text-[12.5px] text-amber-700">{data.spendMessage}</p>}
 
@@ -145,26 +157,31 @@ export function AdsByAd() {
   )
 }
 
-function Cells({ r, currency }: { r: Pick<CampaignRow, "arrivals" | "leads" | "won" | "revenue" | "spend" | "costPerLead" | "roas">; currency: string | null }) {
+function Cells({ r, currency }: { r: Pick<CampaignRow, "arrivals" | "leads" | "qualified" | "won" | "revenue" | "spend" | "costPerLead" | "costPerQualified" | "costPerSale" | "roas"> & { currency?: string | null }; currency: string | null }) {
+  // An ad shows money in its own ad account's currency.
+  const cur = r.currency ?? currency
   return (
     <>
-      <td className="px-3 py-2.5 text-right tabular-nums">{cash(r.spend, currency)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums">{cash(r.spend, cur)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums">{n(r.arrivals)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums">{n(r.leads)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums">{n(r.qualified ?? 0)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums">{n(r.won)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums">{revenue(r.revenue)}</td>
-      <td className="px-3 py-2.5 text-right tabular-nums">{cash(r.costPerLead, currency)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums">{cash(r.costPerLead, cur)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums">{cash(r.costPerQualified ?? null, cur)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums">{cash(r.costPerSale ?? null, cur)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums">{roas(r.roas)}</td>
     </>
   )
 }
 
-const HEAD = ["Spent", "Came in", "Leads", "Won", "Revenue", "Per lead", "Return"]
+const HEAD = ["Spent", "Came in", "Leads", "Qualified", "Won", "Revenue", "Per lead", "Per qualified", "Per sale", "Return"]
 
 function Table({ first, children }: { first: string; children: React.ReactNode }) {
   return (
     <div className="mt-3 overflow-x-auto">
-      <table className="w-full min-w-[720px] text-[12.5px] text-slate-700">
+      <table className="w-full min-w-[960px] text-[12.5px] text-slate-700">
         <thead>
           <tr className="text-left text-[11.5px] text-slate-500">
             <th scope="col" className="px-3 py-2 font-medium">{first}</th>

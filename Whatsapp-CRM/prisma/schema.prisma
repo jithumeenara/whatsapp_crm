@@ -1029,6 +1029,25 @@ model MetaAdAccount {
   @@map("meta_ad_accounts")
 }
 
+/// Our own daily copy of ad spend per ad account, ad and day (migration 192).
+model AdInsightDaily {
+  id            String   @id @default(uuid()) @db.Uuid
+  account_id    String   @db.Uuid
+  ad_account_id String
+  ad_id         String
+  day           DateTime @db.Date
+  spend         Decimal  @default(0) @db.Decimal(14, 2)
+  impressions   BigInt   @default(0)
+  clicks        BigInt   @default(0)
+  currency      String?
+  attribution   String   @default("meta_default")
+  fetched_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([account_id, ad_account_id, ad_id, day])
+  @@index([account_id, day])
+  @@map("ad_insights_daily")
+}
+
 /// Results sent back to Meta: per-workspace settings (migration 191).
 model ConversionSettings {
   account_id     String   @id @db.Uuid

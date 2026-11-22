@@ -48,7 +48,7 @@ vi.mock('@/lib/db', () => ({
       createMany: async ({ data }: { data: Array<Record<string, unknown>> }) => {
         for (const d of data) {
           if (h.events.some((e) => e.account_id === d.account_id && e.event_id === d.event_id)) continue
-          h.events.push({ id: `ev-${++seq}`, status: 'pending', attempts: 0, next_attempt_at: new Date(0), created_at: new Date(), ...d } as Ev)
+          h.events.push({ id: `ev-${++seq}`, status: 'pending', attempts: 0, next_attempt_at: new Date(0), created_at: new Date(), ...d } as unknown as Ev)
         }
         return { count: data.length }
       },
