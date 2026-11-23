@@ -261,12 +261,65 @@ export function chunkDocument(doc: KnowledgeDocument, maxChunkChars = 800): Arra
       chunks.push(para)
       continue
     }
-    for (let i = 0; i < para.length; i += maxChunkChars) {
-      chunks.push(para.slice(i, i + maxChunkChars))
-    }
+    chunks.push(...splitLongParagraph(para, maxChunkChars))
   }
   // sourceId rides along for attribution only; hashes read title and text.
   return chunks.map((text) => ({ title: doc.title, text, sourceId: doc.id }))
+}
+
+/**
+ * A paragraph longer than one chunk, cut where a sentence ends.
+ *
+ * It was cut every 800 characters wherever that fell, so a fee, a date or
+ * a phone number could be split across two chunks and neither half
+ * matched the question or made sense to the model. Now:
+ *   - pieces end at a sentence end (. ! ? । or a line break);
+ *   - each piece after the first repeats the previous piece's last
+ *     sentence, so a fact that spans the cut is whole in one of them;
+ *   - when the paragraph opens with a short heading line ("Fees:",
+ *     "Refund policy"), later pieces start with it, so a piece read on
+ *     its own still says what it is about.
+ * Only long paragraphs change — every paragraph that already fits stays
+ * byte-for-byte the same, so its saved embedding is still found.
+ */
+export function splitLongParagraph(para: string, max: number): string[] {
+  const firstBreak = para.indexOf('\n')
+  const headingLine = firstBreak > 0 ? para.slice(0, firstBreak).trim() : ''
+  const heading = headingLine && headingLine.length <= 80 && !/[.!?।]$/.test(headingLine) ? headingLine : ''
+
+  // Sentences, keeping their end mark; a sentence longer than a chunk is
+  // cut by length, the old way, as a last resort.
+  const sentences = para
+    .split(/(?<=[.!?।])\s+|\n+/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .flatMap((x) => {
+      if (x.length <= max) return [x]
+      const parts: string[] = []
+      for (let i = 0; i < x.length; i += max) parts.push(x.slice(i, i + max))
+      return parts
+    })
+
+  const out: string[] = []
+  let current: string[] = []
+  let length = 0
+  for (const sentence of sentences) {
+    if (length > 0 && length + 1 + sentence.length > max) {
+      out.push(current.join(' '))
+      const last = current[current.length - 1]
+      // Carry the last sentence over when it is short enough to leave room.
+      const carry = last && last.length <= max / 3 && last !== heading ? [last] : []
+      const prefix = heading && carry[0] !== heading ? [heading] : []
+      current = [...prefix, ...carry]
+      length = current.join(' ').length
+    }
+    current.push(sentence)
+    length += (length > 0 ? 1 : 0) + sentence.length
+  }
+  if (current.length > 0) out.push(current.join(' '))
+  // Never cut here: a piece may run a little over `max` (heading + carried
+  // sentence + one sentence), which is better than losing words.
+  return out
 }
 
 /** Every Q&A pair and passage with at least `minScore` of the question's
