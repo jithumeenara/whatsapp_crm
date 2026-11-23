@@ -123,6 +123,8 @@ interface FbMessage {
   text?: string
   attachments?: Array<{ type: string; payload: { url?: string } }>
   is_echo?: boolean
+  /** Set only on a message the Page sent (an echo) — e.g. a Business Suite instant reply. */
+  app_id?: number | string
   /** The message the customer replied to. */
   reply_to?: { mid?: string }
   /** Meta Business AI hand-over notice (not a customer message). */
@@ -289,9 +291,14 @@ async function processFacebookWebhook(body: FbWebhookBody, scope: SocialWebhookS
       // A malformed event must not stop the rest of the batch.
       if (!senderPsid) continue
       const pageSelf = config.page_id ?? pageId
-      // A reply typed in the Messenger app or Business Suite (an echo):
-      // added to the chat unless this CRM sent it (same Meta id).
-      if (event.message?.is_echo || senderPsid === pageSelf) {
+      // A reply typed in the Messenger app or Business Suite, or an instant
+      // reply / away message the Page sent (an echo): added to the chat as
+      // the business's message unless this CRM sent it (same Meta id) —
+      // never as the customer's. Any of these marks it: is_echo, an app_id
+      // (only echoes carry one), or the Page itself as the sender (the
+      // saved Page or this webhook entry's Page).
+      const fromPage = senderPsid === pageSelf || senderPsid === pageId
+      if (event.message?.is_echo || event.message?.app_id != null || fromPage) {
         if (event.message?.mid && event.recipient?.id) await processFbEcho(config.account_id, event.recipient.id, event.message, event.timestamp)
         continue
       }
@@ -770,6 +777,35 @@ async function processFbMessage({
   }
 }
 
+const nameTried = new Map<string, number>()
+const NAME_RETRY_MS = 6 * 60 * 60_000
+
+/** True at most once per 6 h per Messenger contact (keeps Graph calls rare). */
+function nameRetryDue(accountId: string, psid: string): boolean {
+  const key = `${accountId}:${psid}`
+  const last = nameTried.get(key) ?? 0
+  if (Date.now() - last < NAME_RETRY_MS) return false
+  nameTried.set(key, Date.now())
+  if (nameTried.size > 5000) nameTried.delete(nameTried.keys().next().value as string)
+  return true
+}
+
+/** The person's name from Meta, or null (permission missing, network). */
+async function fetchMessengerName(psid: string, accessToken: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${psid}?fields=name,first_name,last_name`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" }
+    )
+    if (!res.ok) return null
+    const data = await res.json() as { name?: string; first_name?: string; last_name?: string }
+    const full = (data.name ?? [data.first_name, data.last_name].filter(Boolean).join(" ")).trim()
+    return full ? full.slice(0, 100) : null
+  } catch {
+    return null
+  }
+}
+
 async function findOrCreateFbContact(
   accountId: string,
   ownerUserId: string,
@@ -777,21 +813,21 @@ async function findOrCreateFbContact(
   accessToken: string,
   isNew: boolean,
 ) {
-  // The real name, fetched once for a new contact (not on every message).
+  // The real name, fetched for a new contact; for one still called
+  // "Messenger User" (the name was not shared then — e.g. Business Asset
+  // User Profile Access added later) it is tried again, at most every 6 h.
   // Requires "Business Asset User Profile Access" feature on the Meta app.
   let displayName: string | null = null
-  if (accessToken && isNew && /^\d{1,30}$/.test(psid)) {
-    try {
-      const res = await fetch(
-        `https://graph.facebook.com/${GRAPH_API_VERSION}/${psid}?fields=name,first_name,last_name&access_token=${encodeURIComponent(accessToken)}`,
-        { cache: "no-store" }
-      )
-      if (res.ok) {
-        const data = await res.json() as { name?: string; first_name?: string; last_name?: string }
-        const full = data.name ?? [data.first_name, data.last_name].filter(Boolean).join(" ")
-        if (full) displayName = full.slice(0, 100)
+  if (accessToken && /^\d{1,30}$/.test(psid)) {
+    if (isNew) {
+      displayName = await fetchMessengerName(psid, accessToken)
+    } else if (nameRetryDue(accountId, psid)) {
+      const name = await fetchMessengerName(psid, accessToken)
+      if (name) {
+        // Only a placeholder name is replaced — never one an agent typed.
+        await prisma.contact.updateMany({ where: { account_id: accountId, facebook_id: psid, name: "Messenger User" }, data: { name } }).catch(() => {})
       }
-    } catch { /* non-critical */ }
+    }
   }
 
   // Fallback: "Messenger User" is more readable than a raw numeric PSID

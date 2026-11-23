@@ -4,7 +4,7 @@ import { PeopleOnNumber } from "@/components/contacts/people-on-number"
 import { useState, useEffect, useCallback } from "react"
 import type { Contact, ContactNote, Tag } from "@/types"
 import { Phone, Copy, Check, Plus, ExternalLink, Tag as TagIcon, FileText, X, User, Mail, MessageSquare, Radio, Search, Globe, Sparkles } from "lucide-react"
-import { isPlaceholderPhone, usablePhone } from "@/lib/contacts/validate"
+import { isPlaceholderPhone, isPlatformIdPhone, platformIdLabel, usablePhone } from "@/lib/contacts/validate"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import { readableTextColor } from "@/lib/readable-color"
@@ -279,7 +279,8 @@ export function ContactSidebarV2({ contact, channel = "whatsapp", conversationId
   // get a "email:<address>" placeholder in contact.phone — Contact.phone has
   // no NULL option in the schema. Treat that placeholder as "no real phone"
   // everywhere in this component rather than showing it as if it were one.
-  const hasRealPhone = Boolean(contact.phone) && !isPlaceholderPhone(contact.phone)
+  const platformId = isPlatformIdPhone(contact as unknown as { phone?: string; facebook_id?: string | null; instagram_id?: string | null })
+  const hasRealPhone = Boolean(contact.phone) && !isPlaceholderPhone(contact.phone) && !platformId
   // The number to call: their own, or the one a website visitor typed in
   // (kept as the alternate — it never becomes their identity).
   const callPhone = usablePhone(contact)
@@ -289,6 +290,7 @@ export function ContactSidebarV2({ contact, channel = "whatsapp", conversationId
   const grad = avatarGrad(contact.id)
 
   const infoRows: { label: string; value: string; isPhone?: boolean }[] = []
+  if (platformId) infoRows.push({ label: platformIdLabel(contact as unknown as { phone?: string; facebook_id?: string | null; instagram_id?: string | null }), value: contact.phone })
   if (hasRealPhone) infoRows.push({ label: "Phone", value: contact.phone, isPhone: true })
   else if (callPhone) infoRows.push({ label: "Phone (given in chat)", value: callPhone, isPhone: true })
   if (contact.preferred_language) infoRows.push({ label: "Language", value: contact.preferred_language })

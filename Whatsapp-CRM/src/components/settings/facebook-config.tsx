@@ -19,6 +19,8 @@ type ConfigData = {
   page_name?: string | null
   last_tested_at?: string | null
   test_error?: string | null
+  /** 'login' when connected with the one-click button. */
+  connected_via?: string | null
 }
 
 export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConnectMethod?: 'quick' | 'manual' }) {
@@ -133,6 +135,8 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
   }
 
   const isConnected = cfg?.status === "connected"
+  // Connected with the one-click button: the token form below does not apply.
+  const viaLogin = isConnected && cfg?.connected_via === "login"
   const hasError    = cfg?.status === "error"
 
   return (
@@ -187,6 +191,12 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
         </div>
       )}
 
+      {viaLogin ? (
+        <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[12.5px] text-slate-600">
+          Connected with <b>Connect Messenger</b>. Use <b>Reconnect</b> or <b>Disconnect</b> above — no token to paste here.
+          To use a pasted token instead, press Disconnect above first.
+        </p>
+      ) : (<>
       {/* Step 1 — Page Access Token */}
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
         <div className="flex items-start gap-2.5 px-4 py-3 bg-slate-50 border-b border-slate-100">
@@ -373,6 +383,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
           <RefreshCw className="h-3.5 w-3.5" /> Refresh
         </button>
       </div>
+      </>)}
       </>
       )}
     </div>

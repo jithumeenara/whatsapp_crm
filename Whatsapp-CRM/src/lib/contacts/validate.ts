@@ -25,14 +25,34 @@ export function isPlaceholderPhone(phone: string | null | undefined): boolean {
   return typeof phone === 'string' && (phone.startsWith('email:') || phone.startsWith('web:') || phone.startsWith('tg:'))
 }
 
+type PlatformIds = { phone?: string | null; facebook_id?: string | null; instagram_id?: string | null }
+
+/**
+ * A Messenger / Instagram contact keeps its Meta id in the phone field —
+ * not a number anyone can call. True when the phone is that id, or longer
+ * than any real number (E.164 allows at most 15 digits).
+ */
+export function isPlatformIdPhone(contact: PlatformIds | null | undefined): boolean {
+  const p = contact?.phone
+  if (!p || !/^\d+$/.test(p)) return false
+  return p.length > 15 || p === contact?.facebook_id || p === contact?.instagram_id
+}
+
+/** "Messenger ID" / "Instagram ID" for such a contact. */
+export function platformIdLabel(contact: PlatformIds | null | undefined): string {
+  if (contact?.phone && contact.phone === contact.instagram_id) return 'Instagram ID'
+  if (contact?.phone && contact.phone === contact.facebook_id) return 'Messenger ID'
+  return 'Messenger / Instagram ID'
+}
+
 /**
  * The number to call or put on a registration: the contact's own phone
  * when it is one, otherwise the alternate a website visitor typed in
  * (src/lib/contacts/update-field.ts). Null when there is neither.
  */
-export function usablePhone(contact: { phone?: string | null; alternate_phone?: string | null } | null | undefined): string | null {
+export function usablePhone(contact: { phone?: string | null; alternate_phone?: string | null; facebook_id?: string | null; instagram_id?: string | null } | null | undefined): string | null {
   if (!contact) return null
-  if (contact.phone && !isPlaceholderPhone(contact.phone)) return contact.phone
+  if (contact.phone && !isPlaceholderPhone(contact.phone) && !isPlatformIdPhone(contact)) return contact.phone
   return contact.alternate_phone?.trim() || null
 }
 

@@ -12,7 +12,7 @@ import {
   ExternalLink, Clock,
 } from "lucide-react"
 import { format } from "date-fns"
-import { checkEmail, checkPhone, isPlaceholderPhone } from "@/lib/contacts/validate"
+import { checkEmail, checkPhone, isPlaceholderPhone, isPlatformIdPhone } from "@/lib/contacts/validate"
 import { readableTextColor } from "@/lib/readable-color"
 import dynamic from "next/dynamic"
 
@@ -188,7 +188,8 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
   // A contact that only ever wrote by email has no number: its phone is a
   // placeholder, not something to show, call, copy or require.
   const emailOnly = isPlaceholderPhone(contact?.phone)
-  const realPhone = contact && !emailOnly ? contact.phone : null
+  // A Messenger / Instagram id in the phone field is not a number to call.
+  const realPhone = contact && !emailOnly && !isPlatformIdPhone(contact as unknown as { phone?: string; facebook_id?: string | null; instagram_id?: string | null }) ? contact.phone : null
 
   // Checked as they are typed, with the server's own rules (validate.ts),
   // and only once something differs from what is saved — a stored value

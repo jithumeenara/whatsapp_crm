@@ -22,6 +22,7 @@ type RawRow = {
   page_name: string | null
   last_tested_at: Date | null
   test_error: string | null
+  connected_via?: string | null
 }
 
 export async function GET() {
@@ -43,6 +44,7 @@ export async function GET() {
       page_name: row.page_name,
       last_tested_at: row.last_tested_at,
       test_error: row.test_error,
+      connected_via: row.connected_via ?? null,
     })
   } catch (err) {
     return toErrorResponse(err)

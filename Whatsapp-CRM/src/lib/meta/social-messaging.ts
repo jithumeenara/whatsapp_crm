@@ -126,6 +126,9 @@ export function explainMetaError(err: { message?: string; code?: number; error_s
   if (code === 10 && (sub === 2018278 || sub === 2534022)) return 'Outside Meta\'s reply window: the customer must message again first.'
   if (code === 10 && sub === 2018300) return 'Meta Business AI is handling this chat. Take the chat back in Meta Business Suite, or wait for it to hand over.'
   if (code === 100 && sub === 2534037) return 'Meta Business AI owns this chat. Turn on "Take control of conversations with your Business AI" or wait for the handover.'
+  if (code === 10 && /not admins, developers or testers|until .*permission is reviewed|App Review/i.test(err?.message ?? '')) {
+    return 'Meta allows replies only to people with a role on your Meta app (admins, developers, testers) until App Review approves messaging. Add this person as a Tester, or finish App Review.'
+  }
   if (code === 551) return 'This person is not available on Messenger/Instagram right now.'
   if (code === 613 || code === 4) return 'Meta is limiting how fast messages can be sent. Try again in a minute.'
   // Meta's own wording (with trace ids) stays in the server log; callers log it.
