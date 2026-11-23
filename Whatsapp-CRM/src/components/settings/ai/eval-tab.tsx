@@ -234,6 +234,22 @@ export function EvalTab({ configured }: { configured: boolean }) {
   // how many replies actually drew on it. Low = a retrieval problem.
   const sourceChecked = results.filter((r) => r.retrieval_hit === true || r.retrieval_hit === false);
   const sourceFound = sourceChecked.filter((r) => r.retrieval_hit === true).length;
+  // The same run read by area ("pricing 4/5, booking 1/3"), so a weak spot
+  // is visible instead of averaged away, and how long an answer took.
+  const byCategory = (() => {
+    const m = new Map<string, { passed: number; total: number }>();
+    for (const r of results) {
+      const c = cases.find((x) => x.id === r.case_id);
+      const key = c?.category?.trim() || 'other';
+      const e = m.get(key) ?? { passed: 0, total: 0 };
+      e.total += 1;
+      if (r.passed) e.passed += 1;
+      m.set(key, e);
+    }
+    return [...m.entries()].sort((a, b) => a[1].passed / a[1].total - b[1].passed / b[1].total);
+  })();
+  const timed = results.filter((r) => typeof r.latency_ms === 'number' && r.latency_ms > 0);
+  const avgSeconds = timed.length > 0 ? timed.reduce((sum, r) => sum + (r.latency_ms ?? 0), 0) / timed.length / 1000 : null;
   const enabledCount = cases.filter((c) => c.enabled).length;
 
   if (!configured) {
@@ -363,6 +379,23 @@ export function EvalTab({ configured }: { configured: boolean }) {
                       </AiBadge>
                     )}
                   </div>
+                  {(byCategory.length > 1 || avgSeconds !== null) && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {byCategory.length > 1 && byCategory.map(([cat, v]) => (
+                        <span
+                          key={cat}
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums ${v.passed === v.total ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}
+                        >
+                          {cat} {v.passed}/{v.total}
+                        </span>
+                      ))}
+                      {avgSeconds !== null && (
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] tabular-nums text-slate-600">
+                          avg {avgSeconds.toFixed(1)} s per answer
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {sourceChecked.length > 0 && (
                     <p className="mt-1 text-[12px] text-slate-600">
                       Right knowledge found in {sourceFound} of {sourceChecked.length} tests that name a source

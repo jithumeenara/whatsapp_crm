@@ -30,6 +30,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { recordAiUsage } from '../usage'
 import { normalizeMalayalam } from '../term-bridge'
 import { cleanPhrases, ensureEvalColumns } from './schema'
+import { retrievalSettingsFor } from '../retrieval-settings'
 import { tokensFromGemini } from '../pricing'
 
 /**
@@ -99,6 +100,10 @@ export async function runEvalSuite(args: {
         retrieval_mode: aiConfig.retrieval_mode,
         max_context_results: aiConfig.max_context_results,
         system_prompt_chars: aiConfig.system_prompt?.length ?? 0,
+        // Knowledge-search settings that change what is retrieved, so a
+        // score that moves can be traced to them (rerank.ts, knowledge.ts).
+        rerank: (await retrievalSettingsFor(args.accountId)).rerank,
+        chunking: 'sentence-overlap-v1',
       },
     },
   })
