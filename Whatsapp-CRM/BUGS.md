@@ -32,9 +32,8 @@ _(none known)_
 
 ## Green
 
-- **Two tests fail on Windows only** — `src/app/api/files/[...path]/route.test.ts` (a file name with `"` cannot exist on Windows) and `src/lib/db/db-scripts.test.ts` backup mode check (no chmod 600 on Windows). They pass on the Linux servers.
 - **Messenger replies reach only people with an app role** — Meta App Review (pages_messaging, instagram_manage_messages) is needed before real customers get replies. Not a code bug.
 
 ## Fixed
 
-_(move fixed bugs here with their commit)_
+- **Two tests failed on Windows only** (files route `page".html`; backup file modes) — fixed in 2dd880c; the full suite is green on Windows.
