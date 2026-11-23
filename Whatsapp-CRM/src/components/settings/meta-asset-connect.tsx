@@ -144,6 +144,19 @@ export function MetaAssetPanel({ kind, onChanged }: Readonly<{ kind: Kind; onCha
     } finally { setBusy(null); }
   }
 
+  async function syncProducts(item: Item) {
+    if (busy) return;
+    setBusy(`sync:${item.id}`);
+    try {
+      const res = await apiFetch(`/api/catalog/products/sync?catalog_id=${encodeURIComponent(item.externalId)}`, { method: 'POST' });
+      const out = (await res.json()) as { pulled?: number; synced?: number };
+      toast.success(`Products synced${typeof (out.pulled ?? out.synced) === 'number' ? ` (${out.pulled ?? out.synced})` : ''}.`);
+    } catch (err) {
+      console.error(`[meta catalog] sync failed:`, err);
+      toast.error(errorText(err, 'Could not sync the products.'));
+    } finally { setBusy(null); }
+  }
+
   async function remove(item: Item) {
     if (busy) return;
     const ok = await confirm({
@@ -218,6 +231,11 @@ export function MetaAssetPanel({ kind, onChanged }: Readonly<{ kind: Kind; onCha
                 {!it.isDefault && (
                   <Button type="button" variant="outline" size="sm" disabled={busy !== null} onClick={() => void act(it, 'default')}>
                     {busy === `default:${it.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Star className="h-3.5 w-3.5" aria-hidden="true" />} Make default
+                  </Button>
+                )}
+                {kind === 'catalog' && (
+                  <Button type="button" variant="outline" size="sm" disabled={busy !== null} onClick={() => void syncProducts(it)} aria-label={`Sync products of ${it.name ?? it.externalId}`}>
+                    {busy === `sync:${it.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />} Sync products
                   </Button>
                 )}
                 <Button type="button" variant="outline" size="sm" disabled={busy !== null} onClick={() => void act(it, 'check')} aria-label={`Check ${it.name ?? it.externalId}`}>

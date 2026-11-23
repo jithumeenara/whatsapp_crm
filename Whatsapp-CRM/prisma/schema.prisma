@@ -1227,9 +1227,26 @@ model Product {
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
-  @@unique([account_id, retailer_id])
+  /// The same SKU may exist in two catalogs (migration 193).
+  @@unique([account_id, catalog_id, retailer_id], map: "catalog_products_account_catalog_retailer_key")
   @@index([account_id, catalog_id])
   @@map("catalog_products")
+}
+
+/// Which connected catalog each WhatsApp Business Account uses (one per WABA, Meta's rule) — migration 193.
+model WabaCatalog {
+  id              String   @id @default(uuid()) @db.Uuid
+  account_id      String   @db.Uuid
+  waba_id         String
+  catalog_id      String
+  catalog_visible Boolean  @default(true)
+  cart_enabled    Boolean  @default(true)
+  linked_by       String?  @db.Uuid
+  linked_at       DateTime @default(now()) @db.Timestamptz(6)
+  last_error      String?
+
+  @@unique([account_id, waba_id])
+  @@map("waba_catalogs")
 }
 
 // An order a customer placed from a WhatsApp cart, parsed from an inbound

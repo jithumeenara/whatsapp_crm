@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { catalogForWaba } from '@/lib/catalog/for-number'
 import { envelopeFor, humanAgentEnabled, lastInboundAt, loadSocialTarget, socialPost, socialSendAttachment, windowDecision, type SocialChannel, type SocialTarget } from '@/lib/meta/social-messaging'
 import { checkParams, renderTemplate, sendUtilityTemplate } from '@/lib/meta/messenger-templates'
 import { auth } from '@/auth'
@@ -666,11 +667,12 @@ async function sendPost(request: Request, onSender: (who: SentBy) => void): Prom
 
     let catalogId: string | null = null
     if (['catalog', 'single_product', 'multi_product'].includes(message_type)) {
-      const catalogConfig = await prisma.catalogConfig.findUnique({ where: { account_id: accountId } })
-      if (!catalogConfig) {
+      // The catalog of the number this chat is on (one per WhatsApp
+      // Business Account), else the default catalog.
+      catalogId = await catalogForWaba(accountId, (config as { waba_id?: string | null }).waba_id ?? null)
+      if (!catalogId) {
         return NextResponse.json({ error: 'No catalog connected. Connect one in Settings > Catalog first.' }, { status: 400 })
       }
-      catalogId = catalogConfig.catalog_id
     }
 
     // Self-heal legacy CBC-encrypted tokens. Fire-and-forget: we

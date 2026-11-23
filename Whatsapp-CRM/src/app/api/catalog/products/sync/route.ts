@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
+import { catalogAccess } from "@/lib/catalog/for-number"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { audit, auditCtx } from "@/lib/audit"
 import { prisma } from "@/lib/db"
-import { decrypt } from "@/lib/whatsapp/encryption"
 import { fetchCatalogProducts, type MetaCatalogProduct } from "@/lib/whatsapp/catalog-api"
 
 /**
@@ -18,10 +18,13 @@ export async function POST(request?: Request) {
   try {
     const ctx = await requireRole("agent")
 
-    const config = await prisma.catalogConfig.findUnique({ where: { account_id: ctx.accountId } })
-    if (!config) return NextResponse.json({ error: "No catalog connected." }, { status: 400 })
-
-    const accessToken = decrypt(config.access_token)
+    // ?catalog_id= syncs one of this workspace's connected catalogs; none: the default.
+    const wanted = request ? new URL(request.url).searchParams.get("catalog_id") : null
+    if (wanted !== null && !/^\d{1,30}$/.test(wanted)) return NextResponse.json({ error: "Unknown catalog." }, { status: 400 })
+    const target = await catalogAccess(ctx.accountId, wanted)
+    if (!target) return NextResponse.json({ error: wanted ? "That catalog is not connected to this workspace." : "No catalog connected." }, { status: 400 })
+    const config = { catalog_id: target.catalogId }
+    const accessToken = target.token
 
     // Upserting one product at a time, awaited sequentially, meant a large
     // catalog (thousands of SKUs) paid one full DB round-trip per product
@@ -47,7 +50,7 @@ export async function POST(request?: Request) {
             seenRetailerIds.add(p.retailer_id)
             const [priceAmount, priceCurrency] = parsePrice(p.price)
             return prisma.product.upsert({
-              where: { account_id_retailer_id: { account_id: ctx.accountId, retailer_id: p.retailer_id } },
+              where: { account_id_catalog_id_retailer_id: { account_id: ctx.accountId, catalog_id: config.catalog_id, retailer_id: p.retailer_id } },
               create: {
                 account_id: ctx.accountId,
                 catalog_id: config.catalog_id,

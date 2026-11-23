@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
 import { MetaAssetPanel } from '@/components/settings/meta-asset-connect';
+import { WabaCatalogs } from '@/components/settings/waba-catalogs';
 import { apiFetch, errorText } from "@/lib/api-fetch"
 
 const META_BLUE = '#0866FF';
@@ -231,6 +232,8 @@ export function CatalogTab() {
       </div>
 
       <MetaAssetPanel kind="catalog" onChanged={() => void fetchConfig()} />
+
+      <WabaCatalogs />
 
       {!connected || !config ? (
         <>

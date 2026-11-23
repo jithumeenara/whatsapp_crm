@@ -40,6 +40,8 @@ interface CatalogPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSend: (payload: CatalogSendPayload) => void;
+  /** The chat: products come from the catalog its WhatsApp number uses. */
+  conversationId?: string;
 }
 
 type Mode = "catalog" | "single_product" | "multi_product";
@@ -52,7 +54,7 @@ const MODES: { key: Mode; label: string; icon: typeof ShoppingBag; hint: string 
 
 const MAX_MULTI = 30;
 
-export function CatalogPicker({ open, onOpenChange, onSend }: CatalogPickerProps) {
+export function CatalogPicker({ open, onOpenChange, onSend, conversationId }: CatalogPickerProps) {
   const [mode, setMode] = useState<Mode>("catalog");
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
@@ -79,13 +81,16 @@ export function CatalogPicker({ open, onOpenChange, onSend }: CatalogPickerProps
     let cancelled = false;
     setLoadingProducts(true);
     const q = search.trim();
-    fetch(`/api/catalog/products${q ? `?search=${encodeURIComponent(q)}` : ""}`)
+    const qs = new URLSearchParams();
+    if (q) qs.set("search", q);
+    if (conversationId) qs.set("conversation_id", conversationId);
+    fetch(`/api/catalog/products${qs.toString() ? `?${qs.toString()}` : ""}`)
       .then((r) => r.json())
       .then((data) => { if (!cancelled) setProducts(data.products ?? []); })
       .catch(() => { if (!cancelled) setProducts([]); })
       .finally(() => { if (!cancelled) setLoadingProducts(false); });
     return () => { cancelled = true; };
-  }, [open, mode, search]);
+  }, [open, mode, search, conversationId]);
 
   const selectedProducts = useMemo(
     () => products.filter((p) => selectedIds.has(p.id)),

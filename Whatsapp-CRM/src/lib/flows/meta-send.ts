@@ -1,4 +1,5 @@
 import { readFile } from 'fs/promises'
+import { catalogForWaba } from '@/lib/catalog/for-number'
 import { basename } from 'path'
 import { lookup as mimeLookup } from 'mime-types'
 import {
@@ -752,8 +753,10 @@ export async function engineSendCatalog(
   const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
 
-  const catalogConfig = await prisma.catalogConfig.findUnique({ where: { account_id: args.accountId } })
-  if (!catalogConfig) throw new Error('No catalog connected for this account')
+  // The catalog of the number this chat is on (one per WhatsApp Business
+  // Account), else the default — the flow author still never picks one.
+  const catalogId = await catalogForWaba(args.accountId, (config as { waba_id?: string | null }).waba_id ?? null)
+  if (!catalogId) throw new Error('No catalog connected for this account')
 
   let contentText = args.bodyText
   let preview = args.bodyText
@@ -765,7 +768,7 @@ export async function engineSendCatalog(
         phoneNumberId: config.phone_number_id,
         accessToken,
         to: phone,
-        catalogId: catalogConfig.catalog_id,
+        catalogId,
         productRetailerId: args.productRetailerId,
         bodyText: args.bodyText || undefined,
         footerText: args.footerText,
@@ -780,7 +783,7 @@ export async function engineSendCatalog(
         phoneNumberId: config.phone_number_id,
         accessToken,
         to: phone,
-        catalogId: catalogConfig.catalog_id,
+        catalogId,
         headerText: args.headerText || 'Take a look at these',
         bodyText: args.bodyText,
         footerText: args.footerText,

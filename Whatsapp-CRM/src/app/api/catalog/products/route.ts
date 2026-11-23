@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { catalogForConversation } from "@/lib/catalog/for-number"
 import { NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { audit, auditCtx } from "@/lib/audit"
@@ -12,10 +13,15 @@ export async function GET(request: Request) {
     const ctx = await requireRole("agent")
     const { searchParams } = new URL(request.url)
     const search = searchParams.get("search")?.trim()
+    // From a chat: only the products of the catalog that chat's number uses.
+    const conversationId = searchParams.get("conversation_id")
+    if (conversationId !== null && !/^[0-9a-f-]{36}$/i.test(conversationId)) return NextResponse.json({ error: "Unknown conversation." }, { status: 400 })
+    const catalogId = conversationId ? await catalogForConversation(ctx.accountId, conversationId) : null
 
     const products = await prisma.product.findMany({
       where: {
         account_id: ctx.accountId,
+        ...(catalogId ? { catalog_id: catalogId } : {}),
         ...(search
           ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { retailer_id: { contains: search, mode: "insensitive" } }] }
           : {}),

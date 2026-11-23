@@ -1532,6 +1532,7 @@ export function MessageThread({
         open={catalogModalOpen}
         onOpenChange={setCatalogModalOpen}
         onSend={handleSendCatalog}
+        conversationId={conversation?.id}
       />
 
       {conversation && (
