@@ -156,7 +156,11 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   return (
     <SidebarCollapseCtx.Provider value={sidebarCollapseCtx}>
     <MobileBarCtx.Provider value={mobileBarCtx}>
-      <div className="flex h-dvh overflow-hidden bg-slate-50 text-slate-900" style={{ fontFamily: "Inter, sans-serif", ...LIGHT_VARS }}>
+      {/* Pinned to the window (fixed inset-0), not just as tall as it
+          (h-dvh): the document behind it could still grow taller and
+          scroll, which slid the whole app up and left a blank band below
+          it on Settings and other pages. Each page scrolls in <main>. */}
+      <div className="fixed inset-0 flex overflow-hidden bg-slate-50 text-slate-900" style={{ fontFamily: "Inter, sans-serif", ...LIGHT_VARS }}>
         <SidebarV2
           open={sidebarOpen}
           onClose={closeSidebar}
