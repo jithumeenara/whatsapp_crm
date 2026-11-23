@@ -262,8 +262,19 @@ export async function buildCustomerSystemPrompt(args: {
       toolsAvailable: args.toolsAvailable,
     }))
 
-  const parts: string[] = [nowBlock, companyBlock, customerContext, aiConfig.system_prompt ?? '', knowledgeBlock]
-    .filter((p) => Boolean(p && p.trim()))
+  // ── Same-for-every-message first, then this message's parts ───────
+  //
+  // Gemini (and Claude) reuse the work on a prompt's opening when it is
+  // identical to a recent request ("implicit caching"): cheaper input
+  // tokens and a faster first word. The prompt opened with today's time
+  // and this customer's details, so no two requests ever shared an
+  // opening and nothing was reused. Everything that is the same for every
+  // customer of this business now comes first (`stable`): the business,
+  // its own prompt and its rules. The time, the customer, the knowledge
+  // found for this question and this turn's instructions follow (`parts`).
+  // The content is unchanged; only the order is.
+  const stable: string[] = [companyBlock, aiConfig.system_prompt ?? ''].filter((p) => Boolean(p && p.trim()))
+  const parts: string[] = [nowBlock, customerContext, knowledgeBlock].filter((p) => Boolean(p && p.trim()))
 
   // ── "What is coming up" is not "what do you offer" ────────────────
   //
@@ -273,7 +284,7 @@ export async function buildCustomerSystemPrompt(args: {
   // everything the institute offers, and the model had no rule telling
   // it that being described is not the same as being on the calendar.
   //
-  // It can tell now, because it is told today's date (nowBlock above).
+  // It can tell now, because it is told today's date (nowBlock).
   // Anything without a date in the knowledge, or with one already past,
   // is still something the business does — it is just not upcoming, and
   // saying so is the honest answer.
@@ -290,17 +301,17 @@ export async function buildCustomerSystemPrompt(args: {
 
   // Its own earlier replies are not a source (see list-grounding.ts,
   // which also checks the reply's list in code).
-  parts.push(GROUNDING_RULES)
+  stable.push(GROUNDING_RULES)
 
   // The business's own rules: prices, promises, regulated topics,
   // phrases it never uses. Checked again in code on the reply.
-  parts.push(accuracyPromptBlock(accuracyRules ?? DEFAULT_ACCURACY_RULES))
+  stable.push(accuracyPromptBlock(accuracyRules ?? DEFAULT_ACCURACY_RULES))
 
   // Prompt-level guidance, not code-enforced — a model can ignore an
   // instruction. The validator below is the part that cannot be ignored.
   if (aiConfig.fallback_answer) {
-    parts.push(
-      `If the knowledge above doesn't contain a confident answer to the user's question, respond with exactly: "${aiConfig.fallback_answer}" — do not guess or make up an answer.`,
+    stable.push(
+      `If the knowledge base and reference material in this prompt don't contain a confident answer to the user's question, respond with exactly: "${aiConfig.fallback_answer}" — do not guess or make up an answer.`,
     )
   }
 
@@ -308,7 +319,7 @@ export async function buildCustomerSystemPrompt(args: {
     ? (aiConfig.escalation_topics as string[])
     : []
   if (escalationTopics.length > 0) {
-    parts.push(
+    stable.push(
       `If the user asks about any of: ${escalationTopics.join(', ')} — say a team member will follow up, and don't try to answer it yourself.`,
     )
   }
@@ -393,7 +404,7 @@ export async function buildCustomerSystemPrompt(args: {
   // A language pinned in settings still wins when explicitly set;
   // otherwise it is inferred from what this customer actually wrote.
   if (aiConfig.reply_language) {
-    parts.push(`Always reply in ${aiConfig.reply_language}, regardless of which language the customer writes in.`)
+    stable.push(`Always reply in ${aiConfig.reply_language}, regardless of which language the customer writes in.`)
   } else if (args.image) {
     // From the customer's own words: an image's text is in whatever
     // language the document was printed in, which says nothing about
@@ -415,12 +426,12 @@ export async function buildCustomerSystemPrompt(args: {
   // registration is how one gets offered where none exists.
   if (toolInstruction) parts.push(toolInstruction)
 
-  parts.push(TEAM_MEMBER_RULE)
+  stable.push(TEAM_MEMBER_RULE)
 
-  parts.push(WHATSAPP_REPLY_STYLE)
+  stable.push(WHATSAPP_REPLY_STYLE)
 
   return {
-    systemPrompt: parts.join('\n\n') || 'You are a helpful assistant.',
+    systemPrompt: [...stable, ...parts].join('\n\n') || 'You are a helpful assistant.',
     knowledgeBlock,
     companyBlock,
     nowBlock,
