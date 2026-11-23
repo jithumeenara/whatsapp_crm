@@ -134,6 +134,8 @@ export async function recordAiUsage(args: RecordUsageArgs): Promise<void> {
     outputTokens: args.tokens?.outputTokens ?? 0,
     totalTokens:
       args.tokens?.totalTokens ?? (args.tokens?.inputTokens ?? 0) + (args.tokens?.outputTokens ?? 0),
+    // Billed at the cached rate (pricing.ts CACHED_INPUT_SHARE).
+    ...(args.tokens?.cachedInputTokens ? { cachedInputTokens: args.tokens.cachedInputTokens } : {}),
   }
 
   try {

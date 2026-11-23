@@ -12,7 +12,19 @@ export interface TokenCounts {
   inputTokens: number
   outputTokens: number
   totalTokens: number
+  /** The part of inputTokens the provider served from its cache (Gemini
+   *  `cachedContentTokenCount`), billed at a fraction of the input rate. */
+  cachedInputTokens?: number
 }
+
+/**
+ * Cached input costs this share of the normal input rate. Google bills
+ * cached tokens on Gemini 2.5 and later at 10% of the input price (implicit
+ * and explicit caching); Anthropic's cache reads are also 10%. Since the
+ * customer prompt was reordered so its business part is reused, a large
+ * share of input is cached, and charging it in full overstated the cost.
+ */
+export const CACHED_INPUT_SHARE = 0.1
 
 /** The fields of Gemini's `usageMetadata` that bear on the bill. */
 export interface GeminiUsageMetadata {
@@ -20,6 +32,7 @@ export interface GeminiUsageMetadata {
   candidatesTokenCount?: number
   thoughtsTokenCount?: number
   totalTokenCount?: number
+  cachedContentTokenCount?: number
 }
 
 /**
@@ -37,7 +50,14 @@ export function tokensFromGemini(meta?: GeminiUsageMetadata | null): TokenCounts
   const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0)
   const inputTokens = n(meta?.promptTokenCount)
   const outputTokens = n(meta?.candidatesTokenCount) + n(meta?.thoughtsTokenCount)
-  return { inputTokens, outputTokens, totalTokens: Math.max(n(meta?.totalTokenCount), inputTokens + outputTokens) }
+  // Part of the prompt, never more than it.
+  const cachedInputTokens = Math.min(n(meta?.cachedContentTokenCount), inputTokens)
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens: Math.max(n(meta?.totalTokenCount), inputTokens + outputTokens),
+    ...(cachedInputTokens > 0 ? { cachedInputTokens } : {}),
+  }
 }
 
 /**
@@ -293,8 +313,11 @@ export function estimateCostUsd(
 ): number {
   const price = priceFor(model, at)
   if (!price) return 0
+  const cached = Math.min(Math.max(0, tokens.cachedInputTokens ?? 0), tokens.inputTokens)
+  const fresh = tokens.inputTokens - cached
   const cost =
-    (tokens.inputTokens / 1_000_000) * price.input +
+    (fresh / 1_000_000) * price.input +
+    (cached / 1_000_000) * price.input * CACHED_INPUT_SHARE +
     (tokens.outputTokens / 1_000_000) * price.output
   // 6dp matches the column; below that a single cheap call rounds away
   // to nothing and the daily total under-reports.
