@@ -50,6 +50,10 @@ new feature or fix against all ten before calling it done.
 - Never edit, delete, skip or loosen an existing test to make it pass. If a test looks wrong, stop and ask.
 - Fix the cause with the smallest change; don't hard-code the expected answer or special-case the test's input. List other problems found; leave them alone.
 - Before saying "fixed": run that test, then the whole suite (`npm test`), and show both. Commit the test with the fix, naming the bug it covers. Run `npm test` before starting a new feature; if anything is red, stop and say so.
+- **Three tries, then stop.** If the same fix fails twice, don't try a third: say what was tried, why each failed, and suggest going back to the last good commit.
+- **Triage before features.** Open bugs live in `BUGS.md` (red = blocks users today, yellow = this week, green = later). Before starting a new feature, say if any red bug is open.
+- **Done means proven.** A change to a screen or flow is "done" only after it was run like a customer would (browser, `playwright-cli`, 360px) and the result shown — passing unit tests alone is not done. A red console error is a failed check.
+- **Dangerous git is never run unasked:** `git push --force`, `git reset --hard`, `git clean -fd`, `git checkout -- .`, `git branch -D`. Explain what would be lost and stop.
 
 # UI work
 

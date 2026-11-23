@@ -5,6 +5,7 @@ import { DashboardShellV2 } from "@/components/layout-v2/dashboard-shell-v2";
 import { getCurrentAccount } from "@/lib/auth/account";
 import { canOpenPath, firstAllowedPage } from "@/lib/auth/page-access";
 import { ErrorReporter } from "@/components/error-reporter";
+import { isDevelopment } from "@/lib/dev/send-guard";
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
@@ -75,6 +76,14 @@ export default async function V2DashboardLayout({
 
   return (
     <DashboardShellV2>
+      {/* A development server looks different at a glance, so nobody
+          clicks Delete in the wrong tab (APP_ENV=development, where
+          sends and jobs are stopped — src/lib/dev/send-guard.ts). */}
+      {isDevelopment(process.env) && (
+        <div role="status" className="sticky top-0 z-50 bg-red-600 px-3 py-0.5 text-center text-[11px] font-semibold tracking-wide text-white">
+          DEV · development server, no messages leave it
+        </div>
+      )}
       <ErrorReporter />
       {children}
     </DashboardShellV2>

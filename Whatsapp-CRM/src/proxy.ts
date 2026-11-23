@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { clientIpKey } from '@/lib/net/client-ip'
+import { isCrossSiteWrite } from '@/lib/net/same-origin'
 import { makeNonce, strictCsp, reportingEndpoints } from '@/lib/security/csp'
 import { getToken } from 'next-auth/jwt'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
@@ -292,6 +293,21 @@ async function route(req: NextRequest, forwarded: Headers) {
   // via an explicit client-triggered session update, so this reflects real
   // inactivity, not just "the tab is open."
   if (isIdle(token)) return idleResponse(req, pathname)
+
+  // CSRF, second lock (src/lib/net/same-origin.ts): a signed-in request
+  // that changes something must come from this app's own pages.
+  if (
+    pathname.startsWith('/api/') &&
+    isCrossSiteWrite({
+      method: req.method,
+      origin: req.headers.get('origin'),
+      secFetchSite: req.headers.get('sec-fetch-site'),
+      requestHost: req.headers.get('x-forwarded-host') ?? req.headers.get('host'),
+      appUrl: process.env.NEXT_PUBLIC_APP_URL ?? null,
+    })
+  ) {
+    return NextResponse.json({ error: 'This request did not come from the app, so it was refused.' }, { status: 403 })
+  }
 
   return NextResponse.next({ request: { headers: forwarded } })
 }
