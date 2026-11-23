@@ -84,8 +84,13 @@ describe('scripts/backup-db.sh', () => {
     const files = readdirSync(join(dir, 'bk'))
     expect(files).toHaveLength(1)
     expect(files[0]).toMatch(/^crm_prod-.*\.dump$/)
-    expect(statSync(join(dir, 'bk', files[0])).mode & 0o777).toBe(0o600)
-    expect(statSync(join(dir, 'bk')).mode & 0o777).toBe(0o700)
+    // Owner-only permissions exist on Linux/macOS (the servers); Windows
+    // has no POSIX file modes, so chmod there is a no-op and cannot be read
+    // back. Checked wherever it can be.
+    if (process.platform !== 'win32') {
+      expect(statSync(join(dir, 'bk', files[0])).mode & 0o777).toBe(0o600)
+      expect(statSync(join(dir, 'bk')).mode & 0o777).toBe(0o700)
+    }
   })
 })
 

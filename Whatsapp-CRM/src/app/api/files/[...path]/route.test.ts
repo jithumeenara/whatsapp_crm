@@ -15,6 +15,20 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({ root: '' }))
 
+// A file named `page".html` cannot exist on Windows (" is not allowed in
+// a file name), so the one read of it is answered from memory; every other
+// file is read from disk as before. What the test checks is unchanged.
+vi.mock('fs/promises', async (orig) => {
+  const real = await orig<typeof import('fs/promises')>()
+  return {
+    ...real,
+    readFile: ((p: unknown, ...rest: unknown[]) =>
+      String(p).endsWith('page".html')
+        ? Promise.resolve(Buffer.from('<script>x</script>'))
+        : (real.readFile as (...a: unknown[]) => Promise<Buffer>)(p, ...rest)) as typeof real.readFile,
+  }
+})
+
 vi.mock('@/auth', () => ({ auth: () => Promise.resolve({ user: { id: 'u1' } }) }))
 vi.mock('@/lib/db', () => ({
   prisma: {
@@ -33,7 +47,6 @@ beforeAll(() => {
   writeFileSync(join(h.root, 'uploads', 'account-mine', 'a.pdf'), '%PDF-1.4 mine')
   writeFileSync(join(h.root, 'uploads', 'account-theirs', 'secret.pdf'), '%PDF-1.4 theirs')
   writeFileSync(join(h.root, 'uploads', 'legacy-theirs.pdf'), '%PDF-1.4 legacy theirs')
-  writeFileSync(join(h.root, 'uploads', 'account-mine', 'page".html'), '<script>x</script>')
   vi.spyOn(process, 'cwd').mockReturnValue(h.root)
 })
 
