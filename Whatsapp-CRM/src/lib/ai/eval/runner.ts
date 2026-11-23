@@ -133,6 +133,8 @@ export async function runEvalSuite(args: {
           confidence: outcome.confidence,
           verdict: outcome.verdict,
           latency_ms: outcome.latencyMs,
+          sources_used: outcome.sourcesUsed,
+          retrieval_hit: outcome.retrievalHit,
         },
       })
 
@@ -167,6 +169,23 @@ type CaseOutcome = {
   confidence: number
   verdict: string
   latencyMs: number
+  /** Knowledge source titles the reply used (migration 196). */
+  sourcesUsed?: string[]
+  /** Whether the case's expected source was among them; null when the
+   *  case names none. Scored apart from `passed`, so a run tells "never
+   *  found it" (retrieval) from "found it, answered wrong" (the reply). */
+  retrievalHit?: boolean | null
+}
+
+/**
+ * Did the reply draw on the knowledge source the case expects? Matched
+ * loosely (case, spacing), as part of a title, so "Fee list" finds
+ * "Fee list 2026 (updated)". Null when the case names no source.
+ */
+export function retrievalHit(expectedSource: string | null | undefined, sourcesUsed: string[]): boolean | null {
+  const want = (expectedSource ?? '').toLowerCase().replace(/\s+/g, ' ').trim()
+  if (!want) return null
+  return sourcesUsed.some((t) => t.toLowerCase().replace(/\s+/g, ' ').includes(want))
 }
 
 async function runOneCase(args: {
@@ -179,6 +198,7 @@ async function runOneCase(args: {
     expect_handoff: boolean
     must_include?: unknown
     must_not_include?: unknown
+    expected_source?: string | null
   }
   graderKey: string | null
   graderModel: string
@@ -214,6 +234,10 @@ async function runOneCase(args: {
   }
 
   const handedOff = turn.decision.action === 'handoff'
+  // Which knowledge the reply drew on, and whether it was the one the
+  // case expects (migration 196). Recorded on every outcome below.
+  const sourcesUsed = Array.isArray(turn.knowledgeUsed) ? turn.knowledgeUsed.slice(0, 20) : []
+  const extra = { sourcesUsed, retrievalHit: retrievalHit(args.testCase.expected_source, sourcesUsed) }
   const latencyMs = Date.now() - startedAt
 
   // ── Cases that should hand off ───────────────────────────────
@@ -229,6 +253,7 @@ async function runOneCase(args: {
         ? `Correctly handed off — ${describeHandoff(turn)}`
         : 'Should have handed off, but answered instead. Add this topic to your escalation list if it is a business rule rather than a safety one.',
       latencyMs,
+      ...extra,
     }
   }
 
@@ -241,6 +266,7 @@ async function runOneCase(args: {
       confidence: turn.effectiveConfidence,
       verdict: `Handed off instead of answering — ${describeHandoff(turn)}`,
       latencyMs,
+      ...extra,
     }
   }
 
@@ -258,6 +284,7 @@ async function runOneCase(args: {
       confidence: turn.effectiveConfidence,
       verdict: exact,
       latencyMs,
+      ...extra,
     }
   }
 
@@ -271,6 +298,7 @@ async function runOneCase(args: {
       confidence: turn.effectiveConfidence,
       verdict: 'Answered, with nothing unverifiable in it.',
       latencyMs,
+      ...extra,
     }
   }
 
@@ -282,6 +310,7 @@ async function runOneCase(args: {
       confidence: turn.effectiveConfidence,
       verdict: 'Cannot grade this case: no Gemini key is configured to grade with.',
       latencyMs,
+      ...extra,
     }
   }
 
@@ -301,6 +330,7 @@ async function runOneCase(args: {
     confidence: turn.effectiveConfidence,
     verdict: graded.reason,
     latencyMs,
+    ...extra,
   }
 }
 

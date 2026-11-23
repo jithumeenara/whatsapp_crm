@@ -31,6 +31,8 @@ type EvalCase = {
   enabled: boolean;
   must_include: string[] | null;
   must_not_include: string[] | null;
+  /** Knowledge source title (or part) the answer should come from (migration 196). */
+  expected_source?: string | null;
 };
 
 type QualityReport = {
@@ -70,6 +72,9 @@ type EvalResult = {
   confidence: number | null;
   verdict: string | null;
   latency_ms: number | null;
+  sources_used?: string[] | null;
+  /** null when the case names no expected source. */
+  retrieval_hit?: boolean | null;
 };
 
 export function EvalTab({ configured }: { configured: boolean }) {
@@ -93,7 +98,7 @@ export function EvalTab({ configured }: { configured: boolean }) {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [suggesting, setSuggesting] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft] = useState({ expected: '', mustInclude: '', mustNot: '' });
+  const [draft, setDraft] = useState({ expected: '', mustInclude: '', mustNot: '', source: '' });
 
   const load = useCallback(async () => {
     try {
@@ -201,6 +206,7 @@ export function EvalTab({ configured }: { configured: boolean }) {
       expected: c.expected ?? '',
       mustInclude: (c.must_include ?? []).join('\n'),
       mustNot: (c.must_not_include ?? []).join('\n'),
+      source: c.expected_source ?? '',
     });
   };
 
@@ -211,6 +217,7 @@ export function EvalTab({ configured }: { configured: boolean }) {
       expected: draft.expected || null,
       must_include: lines(draft.mustInclude),
       must_not_include: lines(draft.mustNot),
+      expected_source: draft.source.trim() || null,
     });
     if (ok) setEditing(null);
   };
@@ -223,6 +230,10 @@ export function EvalTab({ configured }: { configured: boolean }) {
   const delta = passRate !== null && previousRate !== null ? passRate - previousRate : null;
 
   const resultFor = (caseId: string) => results.find((r) => r.case_id === caseId);
+  // Scored apart from pass/fail: of the cases that name a knowledge source,
+  // how many replies actually drew on it. Low = a retrieval problem.
+  const sourceChecked = results.filter((r) => r.retrieval_hit === true || r.retrieval_hit === false);
+  const sourceFound = sourceChecked.filter((r) => r.retrieval_hit === true).length;
   const enabledCount = cases.filter((c) => c.enabled).length;
 
   if (!configured) {
@@ -352,6 +363,12 @@ export function EvalTab({ configured }: { configured: boolean }) {
                       </AiBadge>
                     )}
                   </div>
+                  {sourceChecked.length > 0 && (
+                    <p className="mt-1 text-[12px] text-slate-600">
+                      Right knowledge found in {sourceFound} of {sourceChecked.length} tests that name a source
+                      {sourceFound < sourceChecked.length ? ': the misses are a search problem, not a wording one.' : '.'}
+                    </p>
+                  )}
                   <p className="mt-1 text-[12px] text-slate-500">
                     Last run {new Date(latest.started_at).toLocaleString('en-IN', {
                       day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
@@ -592,6 +609,17 @@ export function EvalTab({ configured }: { configured: boolean }) {
                           Must not include: {c.must_not_include!.join(' · ')}
                         </p>
                       )}
+                      {c.expected_source && (
+                        <p className="mt-0.5 break-words text-[11.5px] text-slate-500">
+                          Should come from: {c.expected_source}
+                          {result && result.retrieval_hit === true && <span className="ml-1 text-emerald-700">· found</span>}
+                          {result && result.retrieval_hit === false && (
+                            <span className="ml-1 text-rose-700">
+                              · not found{result.sources_used && result.sources_used.length > 0 ? ' (used: ' + result.sources_used.slice(0, 3).join(', ') + ')' : ' (no knowledge used)'}
+                            </span>
+                          )}
+                        </p>
+                      )}
                       {!c.expect_handoff && !c.expected && !(c.must_include?.length) && c.category === 'from chats' && (
                         <p className="mt-0.5 text-[11.5px] text-amber-700">Asked by a customer — add what a correct answer must say.</p>
                       )}
@@ -622,6 +650,12 @@ export function EvalTab({ configured }: { configured: boolean }) {
                               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12.5px] outline-none focus:border-[#5B6CF9]"
                             />
                           </div>
+                          <AiInput
+                            aria-label="Should come from knowledge source (title or part of it)"
+                            placeholder="Should come from knowledge source… (optional, e.g. Price list)"
+                            value={draft.source}
+                            onChange={(e) => setDraft((d) => ({ ...d, source: e.target.value }))}
+                          />
                           <div className="flex gap-2">
                             <AiButton onClick={() => void saveEdit(c.id)}>Save</AiButton>
                             <AiButton tone="ghost" onClick={() => setEditing(null)}>Cancel</AiButton>

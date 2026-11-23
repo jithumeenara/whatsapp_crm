@@ -3689,6 +3689,8 @@ model AiEvalCase {
   /// code before the grader (migration 116). JSON arrays of strings.
   must_include     Json?
   must_not_include Json?
+  /// Migration 196 — the knowledge source title (or part) the answer should come from.
+  expected_source String?
   enabled        Boolean @default(true)
 
   created_at DateTime @default(now()) @db.Timestamptz(6)
@@ -3746,6 +3748,10 @@ model AiEvalResult {
   /// re-reading the full reply.
   verdict    String?
   latency_ms Int?
+  /// Migration 196 — source titles the reply used, and whether the case's
+  /// expected source was among them (null when the case names none).
+  sources_used  Json?
+  retrieval_hit Boolean?
 
   created_at DateTime @default(now()) @db.Timestamptz(6)
 

@@ -7,9 +7,13 @@ import { onceSchemaPatch } from '@/lib/db/schema-patch'
  * the accuracy screen and a test run call this first.
  */
 export function ensureEvalColumns(): Promise<void> {
-  return onceSchemaPatch('ai_eval_exact_checks', async () => {
+  return onceSchemaPatch('ai_eval_exact_checks_196', async () => {
     await prisma.$executeRawUnsafe('ALTER TABLE ai_eval_cases ADD COLUMN IF NOT EXISTS must_include JSONB')
     await prisma.$executeRawUnsafe('ALTER TABLE ai_eval_cases ADD COLUMN IF NOT EXISTS must_not_include JSONB')
+    // Migration 196
+    await prisma.$executeRawUnsafe('ALTER TABLE ai_eval_cases ADD COLUMN IF NOT EXISTS expected_source TEXT')
+    await prisma.$executeRawUnsafe('ALTER TABLE ai_eval_results ADD COLUMN IF NOT EXISTS sources_used JSONB')
+    await prisma.$executeRawUnsafe('ALTER TABLE ai_eval_results ADD COLUMN IF NOT EXISTS retrieval_hit BOOLEAN')
   })
 }
 

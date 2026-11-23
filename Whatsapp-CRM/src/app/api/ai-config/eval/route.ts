@@ -21,6 +21,11 @@ import { auditConfigChange } from '@/lib/audit/config-change'
 
 export const dynamic = 'force-dynamic'
 
+/** A knowledge source title (or part of one), as stored: a string of at most 200 characters, or null. */
+function cleanSource(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, 200) : null
+}
+
 /** GET — the cases, the last few runs, and one run's results. */
 export async function GET(req: Request) {
   let accountId: string
@@ -73,8 +78,8 @@ export async function GET(req: Request) {
 type PostBody =
   | { action: 'run'; label?: string }
   | { action: 'seed' }
-  | { action: 'create_case'; question: string; expected?: string | null; expect_handoff?: boolean; category?: string | null; notes?: string | null; must_include?: unknown; must_not_include?: unknown }
-  | { action: 'update_case'; id: string; question?: string; expected?: string | null; expect_handoff?: boolean; category?: string | null; notes?: string | null; enabled?: boolean; must_include?: unknown; must_not_include?: unknown }
+  | { action: 'create_case'; question: string; expected?: string | null; expect_handoff?: boolean; category?: string | null; notes?: string | null; must_include?: unknown; must_not_include?: unknown; expected_source?: unknown }
+  | { action: 'update_case'; id: string; question?: string; expected?: string | null; expect_handoff?: boolean; category?: string | null; notes?: string | null; enabled?: boolean; must_include?: unknown; must_not_include?: unknown; expected_source?: unknown }
   | { action: 'delete_case'; id: string }
   | { action: 'suggest_from_chats' }
   | { action: 'add_questions'; questions: unknown }
@@ -148,6 +153,7 @@ export async function POST(req: Request) {
           notes: body.notes?.trim() || null,
           must_include: cleanPhrases(body.must_include) ?? undefined,
           must_not_include: cleanPhrases(body.must_not_include) ?? undefined,
+          expected_source: cleanSource(body.expected_source),
         },
       })
       await auditCases('created', { id: created.id, count: 1 })
@@ -170,12 +176,13 @@ export async function POST(req: Request) {
           ...(body.must_not_include !== undefined
             ? { must_not_include: cleanPhrases(body.must_not_include) ?? Prisma.DbNull }
             : {}),
+          ...(body.expected_source !== undefined ? { expected_source: cleanSource(body.expected_source) } : {}),
         },
       })
       if (updated.count === 0) return NextResponse.json({ error: 'Test case not found.' }, { status: 404 })
       await auditCases('updated', {
         id: body.id,
-        fields: (['question', 'expected', 'expect_handoff', 'category', 'notes', 'enabled', 'must_include', 'must_not_include'] as const).filter((k) => body[k] !== undefined),
+        fields: (['question', 'expected', 'expect_handoff', 'category', 'notes', 'enabled', 'must_include', 'must_not_include', 'expected_source'] as const).filter((k) => body[k] !== undefined),
       })
       return NextResponse.json({ ok: true })
     }
