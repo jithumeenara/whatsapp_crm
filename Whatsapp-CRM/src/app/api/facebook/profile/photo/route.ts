@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { contentMatchesType } from "@/lib/files/account-files"
 import { explainMetaError } from "@/lib/meta/social-messaging"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { prisma } from "@/lib/db"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
 import { audit, auditCtx } from "@/lib/audit"
@@ -21,6 +22,8 @@ const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp"])
 export async function POST(req: NextRequest) {
   try {
     const ctx = await requireRole("owner")
+    const uploadLimit = checkRateLimit(`upload:${ctx.userId}`, RATE_LIMITS.upload)
+    if (!uploadLimit.success) return rateLimitResponse(uploadLimit)
 
     const rows = await prisma.$queryRaw<{ access_token: string | null; page_id: string | null }[]>`
       SELECT access_token, page_id FROM facebook_config WHERE account_id = ${ctx.accountId}::uuid LIMIT 1

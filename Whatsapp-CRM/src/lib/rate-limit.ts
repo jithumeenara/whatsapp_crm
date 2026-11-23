@@ -247,6 +247,10 @@ export const RATE_LIMITS = {
    *  knowledge re-index, reading an uploaded file. Per account, since
    *  the bill is the account's whichever admin clicks. */
   aiBatch: { limit: 10, windowMs: 10 * 60_000 },
+  /** File uploads and imports, per person: a script or a stuck page must
+   *  not fill the disk. Thirty a minute is far beyond anyone attaching
+   *  files by hand. */
+  upload: { limit: 30, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

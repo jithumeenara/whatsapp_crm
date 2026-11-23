@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import type { ExcelContactRow } from "@/lib/broadcasts/excel-row";
 
 /**
@@ -19,6 +20,8 @@ import type { ExcelContactRow } from "@/lib/broadcasts/excel-row";
 export async function POST(request: NextRequest) {
   try {
     const ctx = await requireRoleOrApiKey(request, "agent");
+    const uploadLimit = checkRateLimit(`upload:${ctx.userId}`, RATE_LIMITS.upload)
+    if (!uploadLimit.success) return rateLimitResponse(uploadLimit)
     // Broadcasts are a page an admin grants; the API keeps the same rule.
     assertPageAccess(ctx, "/broadcasts");
 

@@ -7,6 +7,7 @@ import { prisma } from '@/lib/db'
 import ExcelJS from 'exceljs'
 import { ensureDataStoreColumns } from '@/lib/data-store/schema'
 import { audit, auditCtx } from '@/lib/audit'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 async function requireTable(tableId: string, min: AccountRole) {
   const member = await dataStoreMember(min)
@@ -101,6 +102,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
     const { table, accountId } = guard
+    // Imports are heavy (a whole sheet parsed): per workspace, like uploads.
+    const importLimit = checkRateLimit(`upload:import:${accountId}`, RATE_LIMITS.upload)
+    if (!importLimit.success) return rateLimitResponse(importLimit)
     const dataFields = table.fields.filter(
       (f) => !['section_header', 'html_block', 'hidden', 'signature', 'file', 'image'].includes(f.field_type),
     )

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import { join, extname, basename } from "path";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { audit, auditCtx } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { contentMatchesType, extensionFor } from "@/lib/files/account-files";
@@ -35,6 +36,8 @@ const MIME_CATEGORY: Record<string, string> = {
 export async function POST(req: NextRequest) {
   try {
     const ctx = await requireRole("agent");
+    const uploadLimit = checkRateLimit(`upload:${ctx.userId}`, RATE_LIMITS.upload)
+    if (!uploadLimit.success) return rateLimitResponse(uploadLimit)
     const formData = await req.formData();
 
     const rawFiles = formData.getAll("files");
