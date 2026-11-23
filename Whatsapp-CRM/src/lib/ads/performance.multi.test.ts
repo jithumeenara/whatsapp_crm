@@ -49,7 +49,10 @@ describe('spend from several ad accounts', () => {
     if (r.status !== 'ok') throw new Error('not ok')
     expect(r.rows.map((x) => [x.adId, x.adAccountId, x.spend])).toEqual([[A, '111', 1000], [B, '222', 500]])
     const calls = (fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls
-    expect(calls.map(([, i]) => (i.headers as Record<string, string>).Authorization).sort()).toEqual(['Bearer TOK1', 'Bearer TOK2'])
+    // One insights read per account (the ad-status lookups are extra calls).
+    const insights = calls.filter(([u]) => u.includes('/insights'))
+    expect(insights.map(([u, i]) => [/act_(\d+)/.exec(u)?.[1], (i.headers as Record<string, string>).Authorization]).sort()).toEqual([['111', 'Bearer TOK1'], ['222', 'Bearer TOK2']])
+    // No token ever travels in a URL, on any call.
     for (const [u] of calls) expect(u).not.toContain('TOK')
   })
 

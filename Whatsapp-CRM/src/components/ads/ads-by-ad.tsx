@@ -32,6 +32,29 @@ function cash(v: number | null, currency: string | null): string {
 }
 const revenue = (list: MoneyAmount[]) => (list.length ? list.map((m) => cash(m.amount, m.currency)).join(" + ") : "—")
 const roas = (v: number | null) => (v == null ? "—" : `${v.toFixed(v >= 10 ? 0 : 1)}×`)
+const pct = (v: number | null) => (v == null ? "—" : `${v.toFixed(2)}%`)
+const cents = (v: number | null, currency: string | null) => {
+  if (v == null) return "—"
+  try {
+    return currency ? new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 2 }).format(v) : v.toFixed(2)
+  } catch {
+    return v.toFixed(2)
+  }
+}
+const STATUS: Record<string, { text: string; cls: string }> = {
+  ACTIVE: { text: "Running", cls: "bg-emerald-50 text-emerald-800" },
+  PAUSED: { text: "Paused", cls: "bg-slate-100 text-slate-700" },
+  CAMPAIGN_PAUSED: { text: "Campaign paused", cls: "bg-slate-100 text-slate-700" },
+  ADSET_PAUSED: { text: "Ad set paused", cls: "bg-slate-100 text-slate-700" },
+  IN_PROCESS: { text: "In review", cls: "bg-amber-50 text-amber-900" },
+  PENDING_REVIEW: { text: "In review", cls: "bg-amber-50 text-amber-900" },
+  DISAPPROVED: { text: "Rejected", cls: "bg-rose-50 text-rose-800" },
+  WITH_ISSUES: { text: "Has issues", cls: "bg-rose-50 text-rose-800" },
+  ARCHIVED: { text: "Archived", cls: "bg-slate-100 text-slate-500" },
+}
+/** Meta's events, biggest first, as one short line. */
+const eventLine = (ev: Record<string, number> | undefined, max = 4) =>
+  Object.entries(ev ?? {}).sort((a, b) => b[1] - a[1]).slice(0, max).map(([k, v]) => `${k} ${n(v)}`).join(" · ")
 const adTitle = (a: AdRow) => a.adName ?? a.headline ?? `Ad ${a.adId}`
 
 export function AdsByAd() {
@@ -116,6 +139,11 @@ export function AdsByAd() {
               ["Cost per lead", cash(t.costPerLead, cur)],
               ["Cost per qualified lead", cash(t.costPerQualified ?? null, cur)],
               ["Cost per sale", cash(t.costPerSale ?? null, cur)],
+              ["Impressions", t.impressions == null ? "—" : n(t.impressions)],
+              ["Clicks", t.clicks == null ? "—" : n(t.clicks)],
+              ["CTR", pct(t.ctr ?? null)],
+              ["CPC", cents(t.cpc ?? null, cur)],
+              ["CPM", cents(t.cpm ?? null, cur)],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl bg-slate-50 px-3 py-2.5">
                 <dt className="text-[11.5px] text-slate-500">{label}</dt>
@@ -126,6 +154,16 @@ export function AdsByAd() {
           <p className="mt-2 text-[12px] text-slate-500">
             Revenue from these leads: {revenue(t.revenue)} · Return on spend: {roas(t.roas)} · Leads from other sources: {n(data.otherLeads)}
           </p>
+          {t.events && Object.keys(t.events).length > 0 && (
+            <div className="mt-3 rounded-xl border border-slate-100 px-3 py-2.5">
+              <p className="text-[11.5px] font-medium text-slate-500">Events recorded by Meta</p>
+              <ul className="mt-1 flex flex-wrap gap-1.5">
+                {Object.entries(t.events).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
+                  <li key={k} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11.5px] text-slate-700"><span className="tabular-nums font-semibold">{n(v)}</span> {k}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {data.spendMessage && <p className="mt-2 text-[12.5px] text-amber-700">{data.spendMessage}</p>}
 
           {data.findings.length > 0 && (
@@ -157,12 +195,17 @@ export function AdsByAd() {
   )
 }
 
-function Cells({ r, currency }: { r: Pick<CampaignRow, "arrivals" | "leads" | "qualified" | "won" | "revenue" | "spend" | "costPerLead" | "costPerQualified" | "costPerSale" | "roas"> & { currency?: string | null }; currency: string | null }) {
+function Cells({ r, currency }: { r: Pick<CampaignRow, "arrivals" | "leads" | "qualified" | "won" | "revenue" | "spend" | "clicks" | "impressions" | "ctr" | "cpc" | "cpm" | "costPerLead" | "costPerQualified" | "costPerSale" | "roas"> & { currency?: string | null }; currency: string | null }) {
   // An ad shows money in its own ad account's currency.
   const cur = r.currency ?? currency
   return (
     <>
       <td className="px-3 py-2.5 text-right tabular-nums">{cash(r.spend, cur)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums">{r.impressions == null ? "—" : n(r.impressions)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums">{r.clicks == null ? "—" : n(r.clicks)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums">{pct(r.ctr ?? null)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums">{cents(r.cpc ?? null, cur)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums">{cents(r.cpm ?? null, cur)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums">{n(r.arrivals)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums">{n(r.leads)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums">{n(r.qualified ?? 0)}</td>
@@ -176,12 +219,12 @@ function Cells({ r, currency }: { r: Pick<CampaignRow, "arrivals" | "leads" | "q
   )
 }
 
-const HEAD = ["Spent", "Came in", "Leads", "Qualified", "Won", "Revenue", "Per lead", "Per qualified", "Per sale", "Return"]
+const HEAD = ["Spent", "Impressions", "Clicks", "CTR", "CPC", "CPM", "Came in", "Leads", "Qualified", "Won", "Revenue", "Per lead", "Per qualified", "Per sale", "Return"]
 
 function Table({ first, children }: { first: string; children: React.ReactNode }) {
   return (
     <div className="mt-3 overflow-x-auto">
-      <table className="w-full min-w-[960px] text-[12.5px] text-slate-700">
+      <table className="w-full min-w-[1400px] text-[12.5px] text-slate-700">
         <thead>
           <tr className="text-left text-[11.5px] text-slate-500">
             <th scope="col" className="px-3 py-2 font-medium">{first}</th>
@@ -202,6 +245,7 @@ function CampaignTable({ rows, currency }: { rows: CampaignRow[]; currency: stri
           <th scope="row" className="max-w-[260px] px-3 py-2.5 text-left font-medium text-slate-900 [overflow-wrap:anywhere]">
             {c.campaignName ?? "Campaign not named yet"}
             <span className="block text-[11.5px] font-normal text-slate-500">{c.ads} {c.ads === 1 ? "ad" : "ads"}</span>
+            {eventLine(c.events) && <span className="block text-[11.5px] font-normal text-slate-500">{eventLine(c.events)}</span>}
           </th>
           <Cells r={c} currency={currency} />
         </tr>
@@ -226,6 +270,10 @@ function AdTable({ rows, currency }: { rows: AdRow[]; currency: string | null })
                 <span className="block text-[11.5px] font-normal text-slate-500 [overflow-wrap:anywhere]">
                   {[a.campaignName, a.channels.map((c) => CHANNEL[c] ?? c).join(", ")].filter(Boolean).join(" · ") || "—"}
                 </span>
+                {a.status && (
+                  <span className={`mt-0.5 inline-block rounded-full px-1.5 py-0.5 text-[10.5px] font-medium ${STATUS[a.status]?.cls ?? "bg-slate-100 text-slate-600"}`}>{STATUS[a.status]?.text ?? a.status.toLowerCase().replace(/_/g, " ")}</span>
+                )}
+                {eventLine(a.events) && <span className="block text-[11.5px] font-normal text-slate-500">{eventLine(a.events)}</span>}
               </span>
             </span>
           </th>

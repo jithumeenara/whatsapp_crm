@@ -47,6 +47,16 @@ export interface AdRow {
   /** The currency of this ad's account (several accounts may differ). */
   currency: string | null
   clicks: number | null
+  impressions: number | null
+  reach: number | null
+  /** Click-through rate, % (clicks ÷ impressions). */
+  ctr: number | null
+  /** Cost per click. */
+  cpc: number | null
+  /** Cost per 1,000 impressions. */
+  cpm: number | null
+  events: Record<string, number>
+  status: string | null
   costPerLead: number | null
   costPerQualified: number | null
   costPerSale: number | null
@@ -64,6 +74,12 @@ export interface CampaignRow {
   won: number
   revenue: MoneyAmount[]
   spend: number | null
+  clicks: number | null
+  impressions: number | null
+  ctr: number | null
+  cpc: number | null
+  cpm: number | null
+  events: Record<string, number>
   costPerLead: number | null
   costPerQualified: number | null
   costPerSale: number | null
@@ -82,6 +98,13 @@ export interface SpendRow {
   /** Which connected ad account, and its currency (several accounts). */
   adAccountId?: string
   currency?: string | null
+  impressions?: number
+  reach?: number
+  linkClicks?: number
+  /** Meta's own events for this ad, in plain names ("Chats started": 12). */
+  events?: Record<string, number>
+  /** Meta's delivery status (ACTIVE, PAUSED, …) when known. */
+  status?: string | null
 }
 
 export type SpendResult =
@@ -91,7 +114,7 @@ export type SpendResult =
 export interface AdPerformance {
   ads: AdRow[]
   campaigns: CampaignRow[]
-  totals: { arrivals: number; leads: number; qualified: number; won: number; revenue: MoneyAmount[]; spend: number | null; costPerLead: number | null; costPerQualified: number | null; costPerSale: number | null; roas: number | null }
+  totals: { arrivals: number; leads: number; qualified: number; won: number; revenue: MoneyAmount[]; spend: number | null; clicks: number | null; impressions: number | null; ctr: number | null; cpc: number | null; cpm: number | null; events: Record<string, number>; costPerLead: number | null; costPerQualified: number | null; costPerSale: number | null; roas: number | null }
   /** Leads in the period with no ad (other sources), for the share. */
   otherLeads: number
   currency: string | null
@@ -108,6 +131,66 @@ export interface TouchAgg { ad_id: string; arrivals: number; channels: string[];
 export interface CatalogRow { ad_id: string; ad_name: string | null; adset_name: string | null; campaign_id: string | null; campaign_name: string | null; thumbnail_url: string | null }
 
 const round2 = (n: number) => Math.round(n * 100) / 100
+
+/** Meta action types in plain words; others keep a readable form of their own name. */
+const EVENT_NAMES: Record<string, string> = {
+  'onsite_conversion.messaging_conversation_started_7d': 'Chats started',
+  'onsite_conversion.total_messaging_connection': 'Messaging connections',
+  'onsite_conversion.messaging_first_reply': 'First replies',
+  'onsite_conversion.lead_grouped': 'Form leads',
+  lead: 'Leads (Meta)',
+  link_click: 'Link clicks',
+  landing_page_view: 'Landing page views',
+  post_engagement: 'Engagements',
+  page_engagement: 'Page engagements',
+  post_reaction: 'Reactions',
+  comment: 'Comments',
+  onsite_conversion_post_save: 'Saves',
+  post: 'Shares',
+  video_view: 'Video views (3 s)',
+  omni_purchase: 'Purchases',
+  purchase: 'Purchases',
+  omni_add_to_cart: 'Adds to cart',
+  add_to_cart: 'Adds to cart',
+  omni_initiated_checkout: 'Checkouts started',
+  complete_registration: 'Registrations',
+  contact_total: 'Contacts',
+  schedule_total: 'Appointments booked',
+}
+
+/** Meta's `actions` list → { plain name: count }, at most 25 kinds. Pure. */
+export function readEvents(actions: unknown): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (!Array.isArray(actions)) return out
+  for (const a of actions as Array<{ action_type?: unknown; value?: unknown }>) {
+    if (typeof a?.action_type !== 'string' || !/^[a-z0-9_.]{1,80}$/i.test(a.action_type)) continue
+    const n = Number(a.value)
+    if (!Number.isFinite(n) || n <= 0) continue
+    const name = EVENT_NAMES[a.action_type] ?? a.action_type.replace(/^offsite_conversion\.fb_pixel_|^onsite_conversion\./, '').replace(/[._]/g, ' ').replace(/^./, (c) => c.toUpperCase())
+    if (!(name in out) && Object.keys(out).length >= 25) continue
+    out[name] = Math.max(out[name] ?? 0, n)
+  }
+  return out
+}
+
+function addEvents(into: Record<string, number>, more: Record<string, number>) {
+  for (const [k, v] of Object.entries(more)) into[k] = (into[k] ?? 0) + v
+}
+
+/** CTR %, CPC, CPM from totals. Pure. */
+function delivery(spend: number | null, clicks: number | null, impressions: number | null) {
+  return {
+    ctr: clicks != null && impressions ? round2((clicks / impressions) * 100) : null,
+    cpc: spend != null && clicks ? round2(spend / clicks) : null,
+    cpm: spend != null && impressions ? round2((spend / impressions) * 1000) : null,
+  }
+}
+
+/** The extra numbers of one Meta insights row. */
+function insightExtras(r: Record<string, unknown>): Pick<SpendRow, 'impressions' | 'reach' | 'linkClicks' | 'events'> {
+  const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : 0 }
+  return { impressions: num(r.impressions), reach: num(r.reach), linkClicks: num(r.inline_link_clicks), events: readEvents(r.actions) }
+}
 
 function addMoney(list: MoneyAmount[], m: MoneyAmount) {
   const hit = list.find((x) => x.currency === m.currency)
@@ -178,6 +261,11 @@ export function assemble(input: {
       spend,
       currency: adCurrency,
       clicks: s ? s.clicks : spendOk ? 0 : null,
+      impressions: s ? s.impressions ?? 0 : spendOk ? 0 : null,
+      reach: s?.reach ?? null,
+      ...delivery(spend, s ? s.clicks : null, s ? s.impressions ?? 0 : null),
+      events: s?.events ?? {},
+      status: s?.status ?? null,
       ...ratios(spend, leads, revenue, adCurrency, qualified, won),
     }
   })
@@ -186,13 +274,16 @@ export function assemble(input: {
   const byCampaign = new Map<string, CampaignRow>()
   for (const a of ads) {
     const key = a.campaignId ?? `name:${a.campaignName ?? ''}`
-    const row = byCampaign.get(key) ?? { campaignId: a.campaignId, campaignName: a.campaignName, ads: 0, arrivals: 0, leads: 0, qualified: 0, won: 0, revenue: [], spend: spendOk ? 0 : null, costPerLead: null, costPerQualified: null, costPerSale: null, roas: null }
+    const row = byCampaign.get(key) ?? { campaignId: a.campaignId, campaignName: a.campaignName, ads: 0, arrivals: 0, leads: 0, qualified: 0, won: 0, revenue: [], spend: spendOk ? 0 : null, clicks: spendOk ? 0 : null, impressions: spendOk ? 0 : null, ctr: null, cpc: null, cpm: null, events: {}, costPerLead: null, costPerQualified: null, costPerSale: null, roas: null }
     row.ads++; row.arrivals += a.arrivals; row.leads += a.leads; row.qualified += a.qualified; row.won += a.won
+    if (row.clicks != null && a.clicks != null) row.clicks += a.clicks
+    if (row.impressions != null && a.impressions != null) row.impressions += a.impressions
+    addEvents(row.events, a.events)
     for (const r of a.revenue) addMoney(row.revenue, r)
     if (row.spend != null && a.spend != null) row.spend = round2(row.spend + a.spend)
     byCampaign.set(key, row)
   }
-  const campaigns = [...byCampaign.values()].map((c) => ({ ...c, ...ratios(mixed ? null : c.spend, c.leads, c.revenue, currency, c.qualified, c.won) }))
+  const campaigns = [...byCampaign.values()].map((c) => ({ ...c, ...delivery(mixed ? null : c.spend, c.clicks, c.impressions), ...ratios(mixed ? null : c.spend, c.leads, c.revenue, currency, c.qualified, c.won) }))
   campaigns.sort((a, b) => b.leads - a.leads || (b.spend ?? 0) - (a.spend ?? 0))
 
   const totRevenue: MoneyAmount[] = []
@@ -201,7 +292,15 @@ export function assemble(input: {
   const totLeads = ads.reduce((s, a) => s + a.leads, 0)
   const totQualified = ads.reduce((s, a) => s + a.qualified, 0)
   const totWon = ads.reduce((s, a) => s + a.won, 0)
+  const totClicks = spendOk ? ads.reduce((s, a) => s + (a.clicks ?? 0), 0) : null
+  const totImpr = spendOk ? ads.reduce((s, a) => s + (a.impressions ?? 0), 0) : null
+  const totEvents: Record<string, number> = {}
+  for (const a of ads) addEvents(totEvents, a.events)
   const totals = {
+    clicks: totClicks,
+    impressions: totImpr,
+    ...delivery(totSpend, totClicks, totImpr),
+    events: totEvents,
     arrivals: ads.reduce((s, a) => s + a.arrivals, 0),
     leads: totLeads,
     qualified: totQualified,
@@ -296,7 +395,7 @@ export async function spendAccounts(accountId: string): Promise<SpendAccount[]> 
 }
 
 async function readAccountSpend(acct: SpendAccount, since: string, until: string): Promise<{ ok: true; rows: SpendRow[]; currency: string | null } | { ok: false }> {
-  const fields = 'ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,spend,clicks,account_currency'
+  const fields = 'ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,spend,clicks,impressions,reach,inline_link_clicks,actions,account_currency'
   let next: string | null = `${GRAPH}/act_${acct.adAccountId}/insights?level=ad&limit=500&fields=${fields}&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}`
   const rows: SpendRow[] = []
   let currency: string | null = acct.currency
@@ -314,11 +413,27 @@ async function readAccountSpend(acct: SpendAccount, since: string, until: string
         adId: r.ad_id, adName: r.ad_name || null, adsetId: r.adset_id || null, adsetName: r.adset_name || null,
         campaignId: r.campaign_id || null, campaignName: r.campaign_name || null,
         spend: Number(r.spend ?? 0) || 0, clicks: Number(r.clicks ?? 0) || 0, adAccountId: acct.adAccountId, currency,
+        ...insightExtras(r as unknown as Record<string, unknown>),
       })
     }
     next = body.paging?.next && body.paging.next.startsWith(`${GRAPH}/`) ? body.paging.next : null
   }
-  return { ok: true, rows: rows.map((r) => ({ ...r, currency })), currency }
+  const statuses = await adStatuses(acct, rows.map((r) => r.adId)).catch(() => new Map<string, string>())
+  return { ok: true, rows: rows.map((r) => ({ ...r, currency, status: statuses.get(r.adId) ?? null })), currency }
+}
+
+/** Meta's delivery status of these ads (ACTIVE, PAUSED, …), 100 ids per call. */
+async function adStatuses(acct: SpendAccount, adIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const ids = [...new Set(adIds)].filter((id) => /^\d{5,30}$/.test(id)).slice(0, 1000)
+  for (let i = 0; i < ids.length; i += 100) {
+    const filtering = JSON.stringify([{ field: 'id', operator: 'IN', value: ids.slice(i, i + 100) }])
+    const res = await fetch(`${GRAPH}/act_${acct.adAccountId}/ads?fields=id,effective_status&limit=100&filtering=${encodeURIComponent(filtering)}`, { headers: { Authorization: `Bearer ${acct.token}` }, signal: AbortSignal.timeout(10_000) })
+    if (!res.ok) break
+    const body = (await res.json()) as { data?: Array<{ id?: string; effective_status?: string }> }
+    for (const a of body.data ?? []) if (a.id && typeof a.effective_status === 'string' && /^[A-Z_]{2,40}$/.test(a.effective_status)) out.set(a.id, a.effective_status)
+  }
+  return out
 }
 
 async function readSpend(accountId: string, since: string, until: string): Promise<SpendResult> {
@@ -352,7 +467,7 @@ async function readSpend(accountId: string, since: string, until: string): Promi
   try {
     const token = decrypt(config.access_token)
     const act = account.startsWith('act_') ? account : `act_${account}`
-    const fields = 'ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,spend,clicks,account_currency'
+    const fields = 'ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,spend,clicks,impressions,reach,inline_link_clicks,actions,account_currency'
     let next: string | null = `${GRAPH}/${act}/insights?level=ad&limit=500&fields=${fields}&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}`
     const rows: SpendRow[] = []
     let currency: string | null = null
@@ -375,6 +490,7 @@ async function readSpend(accountId: string, since: string, until: string): Promi
           campaignName: r.campaign_name || null,
           spend: Number(r.spend ?? 0) || 0,
           clicks: Number(r.clicks ?? 0) || 0,
+          ...insightExtras(r as unknown as Record<string, unknown>),
         })
       }
       // Only follow Meta's own paging links.
