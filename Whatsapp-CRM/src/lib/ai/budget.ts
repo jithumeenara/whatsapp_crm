@@ -23,6 +23,7 @@ import { prisma } from '@/lib/db'
 import { businessTimezone } from './human-date'
 import { dayKey, dayStartIso } from '@/lib/audit/zoned'
 import { formatMoney } from './fx'
+import { liveUsdRate } from './fx-live'
 
 export const WARN_RATIO = 0.8
 export const MAX_LIMIT_USD = 100_000
@@ -40,6 +41,22 @@ export interface BudgetState {
    *  null on a limit saved before that, which is shown in USD. */
   currency?: string | null
   usdRate?: number | null
+  /** The rate follows the market daily (migration 199, fx-live.ts). */
+  rateAuto?: boolean
+  /** When that live rate was fetched; null when the saved rate is in use. */
+  rateFetchedAt?: Date | null
+}
+
+/**
+ * The rate to convert with: today's live rate when the limit follows the
+ * market and one is available, otherwise the rate the admin saved.
+ */
+export async function effectiveRate(currency: string | null, savedRate: number | null, auto: boolean): Promise<{ rate: number | null; fetchedAt: Date | null }> {
+  if (auto && currency) {
+    const live = await liveUsdRate(currency)
+    if (live) return { rate: live.rate, fetchedAt: live.fetchedAt }
+  }
+  return { rate: savedRate, fetchedAt: null }
 }
 
 /** A USD amount in the limit's own currency (USD when it has none). */
@@ -84,16 +101,24 @@ export async function aiBudgetState(accountId: string, now: Date = new Date()): 
   const { month, startsAt } = monthWindow(now, timeZone)
   let state = budgetFrom(null, 0, month)
   try {
-    const row = await prisma.aiBudget.findUnique({ where: { account_id: accountId }, select: { monthly_limit_usd: true, warned_month: true, stopped_month: true, currency: true, usd_rate: true } })
+    const row = await prisma.aiBudget.findUnique({ where: { account_id: accountId }, select: { monthly_limit_usd: true, warned_month: true, stopped_month: true, currency: true, usd_rate: true, limit_amount: true, rate_auto: true } })
     if (row) {
       const sum = await prisma.aiUsageEvent.aggregate({
         where: { account_id: accountId, created_at: { gte: startsAt } },
         _sum: { cost_usd: true },
       })
+      const savedRate = row.usd_rate === null || row.usd_rate === undefined ? null : Number(row.usd_rate)
+      const r = await effectiveRate(row.currency ?? null, savedRate, row.rate_auto === true)
+      // With an automatic rate the limit stays the amount entered in the
+      // business's money, so its USD equivalent follows today's rate.
+      const amount = row.limit_amount === null || row.limit_amount === undefined ? null : Number(row.limit_amount)
+      const limitUsd = row.rate_auto && amount && r.rate ? amount / r.rate : Number(row.monthly_limit_usd)
       state = {
-        ...budgetFrom(Number(row.monthly_limit_usd), Number(sum._sum.cost_usd ?? 0), month),
+        ...budgetFrom(limitUsd, Number(sum._sum.cost_usd ?? 0), month),
         currency: row.currency ?? null,
-        usdRate: row.usd_rate === null || row.usd_rate === undefined ? null : Number(row.usd_rate),
+        usdRate: r.rate,
+        rateAuto: row.rate_auto === true,
+        rateFetchedAt: r.fetchedAt,
       }
       void tellAdminsIfCrossed(accountId, state, row.warned_month, row.stopped_month)
     }

@@ -5,10 +5,14 @@ import { toast } from 'sonner';
 import { Loader2, Wallet } from 'lucide-react';
 import { AiButton, AiCard, AiCardHeader } from './ui-kit';
 import { apiFetch, errorText } from '@/lib/api-fetch';
+import { Switch } from '@/components/ui/switch';
 
 interface Budget {
   currency: string;
   usd_rate: number | null;
+  rate_source: 'live' | 'saved' | 'suggested';
+  rate_fetched_at: string | null;
+  rate_auto: boolean;
   rate_is_suggested: boolean;
   rates_as_of: string;
   limit_amount: number | null;
@@ -43,12 +47,14 @@ export function BudgetCard() {
   const [loadError, setLoadError] = useState('');
   const [amount, setAmount] = useState('');
   const [rate, setRate] = useState('');
+  const [auto, setAuto] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const apply = (b: Budget) => {
     setBudget(b);
     setAmount(b.limit_amount ? String(b.limit_amount) : '');
     setRate(b.usd_rate ? String(b.usd_rate) : '');
+    setAuto(b.rate_auto);
   };
 
   const load = useCallback(async () => {
@@ -71,7 +77,7 @@ export function BudgetCard() {
       toast.error('Enter a monthly limit above 0.');
       return;
     }
-    if (!Number.isFinite(r) || r <= 0) {
+    if (!auto && (!Number.isFinite(r) || r <= 0)) {
       toast.error(`Enter how much 1 US dollar is in ${budget.currency}.`);
       return;
     }
@@ -80,7 +86,7 @@ export function BudgetCard() {
       const res = await apiFetch('/api/ai-usage/budget', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: a, usd_rate: r }),
+        body: JSON.stringify({ amount: a, usd_rate: Number.isFinite(r) && r > 0 ? r : undefined, rate_auto: auto }),
       });
       apply((await res.json()) as Budget);
       toast.success('Monthly AI limit saved');
@@ -156,16 +162,28 @@ export function BudgetCard() {
               {!isUsd && (
                 <div>
                   <label htmlFor={rateId} className="block text-[12px] font-medium text-slate-600">1 US dollar = how many {cur}</label>
-                  <input id={rateId} name="usd_rate" type="number" inputMode="decimal" min={0} step="0.0001" autoComplete="off" value={rate} onChange={(e) => setRate(e.target.value)} className={inputClass} />
+                  <input id={rateId} name="usd_rate" type="number" inputMode="decimal" min={0} step="0.0001" autoComplete="off" value={rate} onChange={(e) => setRate(e.target.value)} disabled={auto} className={`${inputClass} disabled:bg-slate-50 disabled:text-slate-500`} />
                 </div>
               )}
             </div>
             {!isUsd && (
-              <p className="text-[11.5px] leading-relaxed text-slate-500">
-                AI is billed in US dollars, so spending is converted at this rate.
-                {budget.rate_is_suggested ? ` Suggested rate (${budget.rates_as_of}); change it to match your bill.` : ' Rate you saved.'}
-                {' '}Your currency is set in Settings → Profile.
-              </p>
+              <div className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5">
+                <div className="min-w-0">
+                  <label htmlFor={`${rateId}-auto`} className="block text-[12.5px] font-medium text-slate-700">Update the rate automatically</label>
+                  <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">
+                    AI is billed in US dollars, so spending is converted at this rate.{' '}
+                    {auto
+                      ? budget.rate_source === 'live' && budget.rate_fetched_at
+                        ? `Today's market rate, updated ${new Date(budget.rate_fetched_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}. Checked twice a day.`
+                        : `Fetched twice a day; until the first update, the rate shown is used.`
+                      : budget.rate_is_suggested
+                        ? `Suggested rate (${budget.rates_as_of}); change it to match your bill.`
+                        : 'The rate you saved is used.'}
+                    {' '}Your currency is set in Settings → Profile.
+                  </p>
+                </div>
+                <Switch id={`${rateId}-auto`} checked={auto} onCheckedChange={setAuto} aria-label="Update the rate automatically" />
+              </div>
             )}
             <div className="flex gap-2">
               <AiButton type="submit" size="md" disabled={saving}>

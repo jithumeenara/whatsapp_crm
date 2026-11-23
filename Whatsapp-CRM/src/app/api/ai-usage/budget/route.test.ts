@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   upserts: [] as Array<{ where: unknown; create: Record<string, unknown> }>,
   deletes: [] as unknown[],
   audits: 0,
+  live: null as null | { rate: number; fetchedAt: Date },
   state: { limitUsd: 25, spentUsd: 3.456, month: '2026-11', ratio: 0.138, over: false, currency: 'INR', usdRate: 88 } as Record<string, unknown>,
 }))
 
@@ -32,6 +33,7 @@ vi.mock('@/lib/ai/budget', () => ({
   forgetBudget: () => {},
   aiBudgetState: async () => h.state,
 }))
+vi.mock('@/lib/ai/fx-live', () => ({ liveUsdRate: async () => h.live }))
 vi.mock('@/lib/db', () => ({
   prisma: {
     account: { findUnique: async () => ({ default_currency: h.currency }) },
@@ -48,7 +50,7 @@ import { DELETE, GET, PUT } from './route'
 const put = (body: unknown) => PUT(new Request('http://x/api/ai-usage/budget', { method: 'PUT', body: JSON.stringify(body) }))
 
 beforeEach(() => {
-  h.role = 'admin'; h.currency = 'INR'; h.upserts = []; h.deletes = []; h.audits = 0
+  h.role = 'admin'; h.currency = 'INR'; h.live = null; h.upserts = []; h.deletes = []; h.audits = 0
   h.state = { limitUsd: 25, spentUsd: 3.456, month: '2026-11', ratio: 0.138, over: false, currency: 'INR', usdRate: 88 }
 })
 
@@ -74,7 +76,7 @@ describe('the AI budget route', () => {
     const res = await put({ amount: 2200, usd_rate: 88, currency: 'USD', account_id: 'someone-else', warned_month: '2020-01' })
     expect(res.status).toBe(200)
     expect(h.upserts[0].where).toEqual({ account_id: 'acc-1' })
-    expect(h.upserts[0].create).toEqual({ account_id: 'acc-1', monthly_limit_usd: 25, currency: 'INR', usd_rate: 88, updated_by: 'u1' })
+    expect(h.upserts[0].create).toEqual({ account_id: 'acc-1', monthly_limit_usd: 25, currency: 'INR', usd_rate: 88, limit_amount: 2200, rate_auto: false, updated_by: 'u1' })
     expect(h.audits).toBe(1)
   })
 
@@ -86,6 +88,20 @@ describe('the AI budget route', () => {
   it('reports limit and spend in the business currency with the saved rate', async () => {
     const body = await (await GET()).json()
     expect(body).toMatchObject({ currency: 'INR', usd_rate: 88, rate_is_suggested: false, limit_amount: 2200, spent_amount: 304.13, over: false })
+  })
+
+  it("following the market: today's live rate is used instead of the typed one", async () => {
+    h.live = { rate: 80, fetchedAt: new Date('2026-11-23T06:00:00Z') }
+    const res = await put({ amount: 2000, usd_rate: 88, rate_auto: true })
+    expect(res.status).toBe(200)
+    expect(h.upserts[0].create).toMatchObject({ monthly_limit_usd: 25, usd_rate: 80, limit_amount: 2000, rate_auto: true })
+  })
+
+  it('following the market with the source down falls back to the typed rate', async () => {
+    h.live = null
+    await put({ amount: 2200, usd_rate: 88, rate_auto: true })
+    expect(h.upserts[0].create).toMatchObject({ usd_rate: 88, rate_auto: true })
+    expect((await put({ amount: 2200, usd_rate: 88, rate_auto: 'yes' })).status).toBe(400)
   })
 
   it('a business whose currency changed gets a suggested rate, not the old one', async () => {

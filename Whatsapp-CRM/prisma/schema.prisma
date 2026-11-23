@@ -1998,6 +1998,10 @@ model AiBudget {
   /// Migration 198 — the currency the limit was set in, and 1 USD in it.
   currency          String?
   usd_rate          Decimal? @db.Decimal(14, 6)
+  /// Migration 199 — the limit as entered (in `currency`), and whether the
+  /// USD rate is fetched daily (src/lib/ai/fx-live.ts).
+  limit_amount      Decimal? @db.Decimal(14, 2)
+  rate_auto         Boolean  @default(false)
   warned_month      String?
   stopped_month     String?
   updated_by        String?  @db.Uuid
