@@ -58,7 +58,7 @@ vi.mock('@/lib/db', () => {
   return { prisma }
 })
 
-import { discoverAdAccounts, removeAsset, saveAssets, setDefaultAsset, tokenGrants } from './asset-connect'
+import { discoverAdAccounts, discoverCatalogs, removeAsset, saveAssets, setDefaultAsset, tokenGrants } from './asset-connect'
 
 const app = { appId: '123', appSecret: 'shh' }
 
@@ -125,5 +125,16 @@ describe('saving several ad accounts', () => {
     await removeAsset('acc-1', 'ads', last.id, 'u1')
     expect(h.conns).toHaveLength(0)
     expect(h.legacyAds).toMatchObject({ ad_account_id: null })
+  })
+})
+
+describe('discovering catalogs with a system-user token', () => {
+  it('no granular list and /me/businesses empty: the client business (client_business_id) is used', async () => {
+    h.routes['/v27.0/me'] = { client_business_id: '4242' }
+    h.routes['/v27.0/me/businesses'] = { data: [] }
+    h.routes['/v27.0/4242/owned_product_catalogs'] = { data: [{ id: '777', name: 'ACSTI courses', product_count: 12 }, { id: 'bad' }] }
+    h.routes['/v27.0/4242/client_product_catalogs'] = { data: [] }
+    const list = await discoverCatalogs('EAAtok', app, { valid: true, scopes: ['catalog_management'], targets: {} })
+    expect(list).toEqual([{ id: '777', name: 'ACSTI courses', productCount: 12 }])
   })
 })

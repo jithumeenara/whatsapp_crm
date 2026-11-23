@@ -59,9 +59,17 @@ export async function GET(req: NextRequest) {
       const token = await exchangeCode(code, `${origin}${CONNECT_CALLBACK_PATH}`, app)
       const grants = await tokenGrants(token, app)
       if (!grants.valid) return done({ meta_connect: 'error', code: 'bad_token', kind: channel })
-      if (!hasAssetScope(channel, grants.scopes)) return done({ meta_connect: 'error', code: channel === 'ads' ? 'no_ads_permission' : 'no_catalog_permission', kind: channel })
+      // Permission names and counts only — never a token or an id.
+      const granted = Object.entries(grants.targets).map(([k, v]) => `${k}:${v.length}`).join(',')
+      if (!hasAssetScope(channel, grants.scopes)) {
+        console.warn(`[meta connect] ${channel} login without the needed permission; scopes: ${grants.scopes.join(',').slice(0, 300)}`)
+        return done({ meta_connect: 'error', code: channel === 'ads' ? 'no_ads_permission' : 'no_catalog_permission', kind: channel })
+      }
       const assets = channel === 'ads' ? await discoverAdAccounts(token, app, grants) : await discoverCatalogs(token, app, grants)
-      if (assets.length === 0) return done({ meta_connect: 'error', code: channel === 'ads' ? 'no_ad_account' : 'no_catalog', kind: channel })
+      if (assets.length === 0) {
+        console.warn(`[meta connect] ${channel} login shared nothing we could read; scopes: ${grants.scopes.join(',').slice(0, 300)}; targets: ${granted || 'none'}`)
+        return done({ meta_connect: 'error', code: channel === 'ads' ? 'no_ad_account' : 'no_catalog', kind: channel })
+      }
       if (assets.length === 1) {
         await saveAssets({ accountId: ctx.accountId, userId: ctx.userId, kind: channel, token, scopes: grants.scopes, assets })
         await auditConfigChange(auditCtx(req, ctx), 'config.channel_changed', {

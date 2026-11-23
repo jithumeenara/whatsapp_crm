@@ -92,6 +92,25 @@ function toCatalog(row: Json): CatalogAsset | null {
 }
 
 const AD_FIELDS = 'account_id,name,currency,timezone_name,account_status'
+
+/**
+ * The businesses whose assets this login can reach: the client's own
+ * business (Business Integration System User tokens — `client_business_id`,
+ * Meta's documented way; /me/businesses often answers nothing for them),
+ * then /me/businesses.
+ */
+async function reachableBusinesses(token: string, app: MetaApp): Promise<string[]> {
+  const out: string[] = []
+  const me = await graph('/me', token, app, { fields: 'client_business_id' })
+  const own = me.ok ? str(me.data.client_business_id) : null
+  if (own && ID.test(own)) out.push(own)
+  const b = await graph('/me/businesses', token, app, { fields: 'id', limit: '10' })
+  for (const biz of (b.ok && Array.isArray(b.data.data) ? b.data.data : []) as Json[]) {
+    const id = str(biz.id)
+    if (id && ID.test(id) && !out.includes(id)) out.push(id)
+  }
+  return out.slice(0, 10)
+}
 const CATALOG_FIELDS = 'id,name,product_count'
 
 /** The ad accounts this login shared, each checked against the token. */
@@ -111,6 +130,17 @@ export async function discoverAdAccounts(token: string, app: MetaApp, grants: Gr
       if (a) seen.set(a.id, a)
     }
   }
+  if (seen.size === 0) {
+    for (const bizId of await reachableBusinesses(token, app)) {
+      for (const edge of ['owned_ad_accounts', 'client_ad_accounts']) {
+        const r = await graph(`/${bizId}/${edge}`, token, app, { fields: AD_FIELDS, limit: String(MAX_ASSETS) })
+        for (const row of (r.ok && Array.isArray(r.data.data) ? r.data.data : []) as Json[]) {
+          const a = toAdAccount(row)
+          if (a) seen.set(a.id, a)
+        }
+      }
+    }
+  }
   return [...seen.values()].slice(0, MAX_ASSETS)
 }
 
@@ -123,10 +153,7 @@ export async function discoverCatalogs(token: string, app: MetaApp, grants: Gran
     if (c) seen.set(c.id, c)
   }
   if (seen.size === 0) {
-    const b = await graph('/me/businesses', token, app, { fields: 'id', limit: '10' })
-    for (const biz of (b.ok && Array.isArray(b.data.data) ? b.data.data : []) as Json[]) {
-      const bizId = str(biz.id)
-      if (!bizId || !ID.test(bizId)) continue
+    for (const bizId of await reachableBusinesses(token, app)) {
       for (const edge of ['owned_product_catalogs', 'client_product_catalogs']) {
         const r = await graph(`/${bizId}/${edge}`, token, app, { fields: CATALOG_FIELDS, limit: String(MAX_ASSETS) })
         for (const row of (r.ok && Array.isArray(r.data.data) ? r.data.data : []) as Json[]) {
