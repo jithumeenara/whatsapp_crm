@@ -7,6 +7,12 @@ import { AiButton, AiCard, AiCardHeader } from './ui-kit';
 import { apiFetch, errorText } from '@/lib/api-fetch';
 
 interface Budget {
+  currency: string;
+  usd_rate: number | null;
+  rate_is_suggested: boolean;
+  rates_as_of: string;
+  limit_amount: number | null;
+  spent_amount: number | null;
   monthly_limit_usd: number | null;
   spent_usd: number;
   month: string;
@@ -15,26 +21,40 @@ interface Budget {
   warn_ratio: number;
 }
 
-const money = (n: number) => `$${n.toFixed(2)}`;
+function money(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: amount < 10 ? 2 : 0 }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(2)}`;
+  }
+}
 
 /**
- * Settings → AI Config → Usage: the monthly AI spending limit (src/lib/ai/budget.ts).
+ * Settings → AI Config → Usage: the monthly AI spending limit, in the
+ * business's own currency (Business profile). AI is billed in USD, so the
+ * card shows the rate it converts with, which the admin can correct.
  * At 80% admins are told; at 100% automatic replies pause and chats go to
  * the team until the 1st (business time zone) or until the limit is raised.
  */
 export function BudgetCard() {
-  const inputId = useId();
+  const amountId = useId();
+  const rateId = useId();
   const [budget, setBudget] = useState<Budget | null>(null);
   const [loadError, setLoadError] = useState('');
-  const [value, setValue] = useState('');
+  const [amount, setAmount] = useState('');
+  const [rate, setRate] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const apply = (b: Budget) => {
+    setBudget(b);
+    setAmount(b.limit_amount ? String(b.limit_amount) : '');
+    setRate(b.usd_rate ? String(b.usd_rate) : '');
+  };
 
   const load = useCallback(async () => {
     setLoadError('');
     try {
-      const b = (await (await apiFetch('/api/ai-usage/budget', { cache: 'no-store' })).json()) as Budget;
-      setBudget(b);
-      setValue(b.monthly_limit_usd ? String(b.monthly_limit_usd) : '');
+      apply((await (await apiFetch('/api/ai-usage/budget', { cache: 'no-store' })).json()) as Budget);
     } catch (err) {
       console.error('[ai-budget] load failed:', err);
       setLoadError(errorText(err, 'Could not load the AI budget.'));
@@ -44,10 +64,15 @@ export function BudgetCard() {
   useEffect(() => { void load(); }, [load]);
 
   async function save() {
-    if (saving) return;
-    const n = Number(value);
-    if (!Number.isFinite(n) || n < 1) {
-      toast.error('Enter a monthly limit of at least $1.');
+    if (saving || !budget) return;
+    const a = Number(amount);
+    const r = Number(rate);
+    if (!Number.isFinite(a) || a <= 0) {
+      toast.error('Enter a monthly limit above 0.');
+      return;
+    }
+    if (!Number.isFinite(r) || r <= 0) {
+      toast.error(`Enter how much 1 US dollar is in ${budget.currency}.`);
       return;
     }
     setSaving(true);
@@ -55,11 +80,9 @@ export function BudgetCard() {
       const res = await apiFetch('/api/ai-usage/budget', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ monthly_limit_usd: n }),
+        body: JSON.stringify({ amount: a, usd_rate: r }),
       });
-      const b = (await res.json()) as Budget;
-      setBudget(b);
-      setValue(b.monthly_limit_usd ? String(b.monthly_limit_usd) : '');
+      apply((await res.json()) as Budget);
       toast.success('Monthly AI limit saved');
     } catch (err) {
       console.error('[ai-budget] save failed:', err);
@@ -84,9 +107,16 @@ export function BudgetCard() {
     }
   }
 
-  const limit = budget?.monthly_limit_usd ?? null;
-  const pct = budget && limit ? Math.min(100, Math.round(budget.ratio * 100)) : 0;
+  const cur = budget?.currency ?? 'USD';
+  const hasLimit = budget?.monthly_limit_usd !== null && budget?.monthly_limit_usd !== undefined;
+  const pct = budget && hasLimit ? Math.min(100, Math.round(budget.ratio * 100)) : 0;
   const barTone = budget?.over ? 'bg-red-500' : budget && budget.ratio >= (budget.warn_ratio ?? 0.8) ? 'bg-amber-500' : 'bg-emerald-500';
+  const spentText = budget
+    ? budget.spent_amount !== null ? money(budget.spent_amount, cur) : money(budget.spent_usd, 'USD')
+    : '';
+  const isUsd = cur === 'USD';
+  const inputClass =
+    'mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[16px] text-slate-800 outline-none focus-visible:ring-2 focus-visible:ring-[#4A5CE8]/40 sm:text-[13px]';
 
   return (
     <AiCard className="p-5">
@@ -98,52 +128,51 @@ export function BudgetCard() {
       {loadError && <p role="alert" className="mt-3 text-[12.5px] text-red-600">{loadError}</p>}
 
       {!budget && !loadError && (
-        <div className="mt-4 flex items-center gap-2 text-[12.5px] text-slate-500"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />Loading…</div>
+        <div className="mt-4 flex items-center gap-2 text-[12.5px] text-slate-500"><Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />Loading…</div>
       )}
 
       {budget && (
         <div className="mt-4 space-y-4">
-          {limit !== null ? (
+          {hasLimit && budget.limit_amount !== null ? (
             <div>
               <div className="flex flex-wrap items-baseline justify-between gap-2 text-[13px]">
-                <span className="font-semibold text-slate-800 tabular-nums">{money(budget.spent_usd)} <span className="font-normal text-slate-500">of {money(limit)} this month</span></span>
+                <span className="font-semibold tabular-nums text-slate-800">{spentText} <span className="font-normal text-slate-500">of {money(budget.limit_amount, cur)} this month</span></span>
                 <span className={budget.over ? 'font-semibold text-red-600' : 'text-slate-500'}>{budget.over ? 'Limit reached: automatic replies paused' : `${pct}% used`}</span>
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label="AI budget used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
                 <div className={`h-full rounded-full ${barTone}`} style={{ width: `${pct}%` }} />
               </div>
-              <p className="mt-1.5 text-[11.5px] text-slate-500">Estimated cost, the same figure as the totals below.</p>
             </div>
           ) : (
-            <p className="text-[12.5px] text-slate-600">No limit set. This month so far: <span className="font-semibold tabular-nums">{money(budget.spent_usd)}</span> (estimated).</p>
+            <p className="text-[12.5px] text-slate-600">No limit set. This month so far: <span className="font-semibold tabular-nums">{spentText}</span> (estimated).</p>
           )}
 
-          <form
-            className="flex flex-col gap-2 sm:flex-row sm:items-end"
-            onSubmit={(e) => { e.preventDefault(); void save(); }}
-          >
-            <div className="flex-1">
-              <label htmlFor={inputId} className="block text-[12px] font-medium text-slate-600">Limit per month (USD)</label>
-              <input
-                id={inputId}
-                name="monthly_limit_usd"
-                type="number"
-                inputMode="decimal"
-                min={1}
-                step="0.01"
-                autoComplete="off"
-                placeholder="e.g. 20"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[16px] text-slate-800 outline-none focus-visible:ring-2 focus-visible:ring-[#4A5CE8]/40 sm:text-[13px]"
-              />
+          <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); void save(); }}>
+            <div className={`grid gap-3 ${isUsd ? '' : 'sm:grid-cols-2'}`}>
+              <div>
+                <label htmlFor={amountId} className="block text-[12px] font-medium text-slate-600">Limit per month ({cur})</label>
+                <input id={amountId} name="amount" type="number" inputMode="decimal" min={0} step="0.01" autoComplete="off" placeholder={isUsd ? 'e.g. 20' : 'e.g. 2000'} value={amount} onChange={(e) => setAmount(e.target.value)} className={inputClass} />
+              </div>
+              {!isUsd && (
+                <div>
+                  <label htmlFor={rateId} className="block text-[12px] font-medium text-slate-600">1 US dollar = how many {cur}</label>
+                  <input id={rateId} name="usd_rate" type="number" inputMode="decimal" min={0} step="0.0001" autoComplete="off" value={rate} onChange={(e) => setRate(e.target.value)} className={inputClass} />
+                </div>
+              )}
             </div>
+            {!isUsd && (
+              <p className="text-[11.5px] leading-relaxed text-slate-500">
+                AI is billed in US dollars, so spending is converted at this rate.
+                {budget.rate_is_suggested ? ` Suggested rate (${budget.rates_as_of}); change it to match your bill.` : ' Rate you saved.'}
+                {' '}Your currency is set in Settings → Profile.
+              </p>
+            )}
             <div className="flex gap-2">
               <AiButton type="submit" size="md" disabled={saving}>
-                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
-                {limit !== null ? 'Update limit' : 'Set limit'}
+                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+                {hasLimit ? 'Update limit' : 'Set limit'}
               </AiButton>
-              {limit !== null && (
+              {hasLimit && (
                 <AiButton tone="outline" size="md" disabled={saving} onClick={() => void remove()}>Remove</AiButton>
               )}
             </div>

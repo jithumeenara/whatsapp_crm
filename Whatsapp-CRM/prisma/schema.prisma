@@ -1995,6 +1995,9 @@ model AiUsageEvent {
 model AiBudget {
   account_id        String   @id @db.Uuid
   monthly_limit_usd Decimal  @db.Decimal(10, 2)
+  /// Migration 198 — the currency the limit was set in, and 1 USD in it.
+  currency          String?
+  usd_rate          Decimal? @db.Decimal(14, 6)
   warned_month      String?
   stopped_month     String?
   updated_by        String?  @db.Uuid

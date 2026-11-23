@@ -22,6 +22,7 @@
 import { prisma } from '@/lib/db'
 import { businessTimezone } from './human-date'
 import { dayKey, dayStartIso } from '@/lib/audit/zoned'
+import { formatMoney } from './fx'
 
 export const WARN_RATIO = 0.8
 export const MAX_LIMIT_USD = 100_000
@@ -35,6 +36,16 @@ export interface BudgetState {
   /** spent / limit, 0 when there is no limit. */
   ratio: number
   over: boolean
+  /** The currency the limit was set in and 1 USD in it (migration 198);
+   *  null on a limit saved before that, which is shown in USD. */
+  currency?: string | null
+  usdRate?: number | null
+}
+
+/** A USD amount in the limit's own currency (USD when it has none). */
+export function inLimitCurrency(state: BudgetState, usd: number): { amount: number; currency: string } {
+  if (state.currency && state.usdRate && state.usdRate > 0) return { amount: usd * state.usdRate, currency: state.currency }
+  return { amount: usd, currency: 'USD' }
 }
 
 /** 'YYYY-MM' of `now` in the zone, and the instant that month began. */
@@ -73,13 +84,17 @@ export async function aiBudgetState(accountId: string, now: Date = new Date()): 
   const { month, startsAt } = monthWindow(now, timeZone)
   let state = budgetFrom(null, 0, month)
   try {
-    const row = await prisma.aiBudget.findUnique({ where: { account_id: accountId }, select: { monthly_limit_usd: true, warned_month: true, stopped_month: true } })
+    const row = await prisma.aiBudget.findUnique({ where: { account_id: accountId }, select: { monthly_limit_usd: true, warned_month: true, stopped_month: true, currency: true, usd_rate: true } })
     if (row) {
       const sum = await prisma.aiUsageEvent.aggregate({
         where: { account_id: accountId, created_at: { gte: startsAt } },
         _sum: { cost_usd: true },
       })
-      state = budgetFrom(Number(row.monthly_limit_usd), Number(sum._sum.cost_usd ?? 0), month)
+      state = {
+        ...budgetFrom(Number(row.monthly_limit_usd), Number(sum._sum.cost_usd ?? 0), month),
+        currency: row.currency ?? null,
+        usdRate: row.usd_rate === null || row.usd_rate === undefined ? null : Number(row.usd_rate),
+      }
       void tellAdminsIfCrossed(accountId, state, row.warned_month, row.stopped_month)
     }
   } catch (err) {
@@ -97,8 +112,10 @@ export async function aiBudgetState(accountId: string, now: Date = new Date()): 
 async function tellAdminsIfCrossed(accountId: string, state: BudgetState, warned: string | null, stopped: string | null): Promise<void> {
   if (state.limitUsd === null) return
   try {
-    const limit = `$${state.limitUsd.toFixed(2)}`
-    const spent = `$${state.spentUsd.toFixed(2)}`
+    const limitIn = inLimitCurrency(state, state.limitUsd)
+    const spentIn = inLimitCurrency(state, state.spentUsd)
+    const limit = formatMoney(limitIn.amount, limitIn.currency)
+    const spent = formatMoney(spentIn.amount, spentIn.currency)
     if (state.over && stopped !== state.month) {
       const claimed = await prisma.aiBudget.updateMany({
         where: { account_id: accountId, OR: [{ stopped_month: null }, { stopped_month: { not: state.month } }] },

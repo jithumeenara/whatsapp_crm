@@ -39,7 +39,7 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
-import { aiBudgetState, budgetFrom, forgetBudget, monthWindow } from './budget'
+import { aiBudgetState, budgetFrom, forgetBudget, inLimitCurrency, monthWindow } from './budget'
 
 const ACC = 'acc-1'
 const flush = () => new Promise((r) => setTimeout(r, 0))
@@ -55,6 +55,13 @@ describe('the month is the business’s own', () => {
     const w = monthWindow(at, 'Asia/Kolkata')
     expect(w.month).toBe('2026-12')
     expect(w.startsAt.toISOString()).toBe('2026-11-30T18:30:00.000Z')
+  })
+})
+
+describe('shown in the business currency', () => {
+  it('USD amounts are converted with the saved rate; an old limit without one stays USD', () => {
+    expect(inLimitCurrency({ ...budgetFrom(25, 5, '2026-11'), currency: 'INR', usdRate: 88 }, 25)).toEqual({ amount: 2200, currency: 'INR' })
+    expect(inLimitCurrency(budgetFrom(25, 5, '2026-11'), 25)).toEqual({ amount: 25, currency: 'USD' })
   })
 })
 
