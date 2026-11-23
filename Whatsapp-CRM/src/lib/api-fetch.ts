@@ -21,8 +21,62 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const res = await fetch(input, init)
+/** How long a screen waits for the server to start answering a read. */
+export const API_TIMEOUT_MS = 20_000
+/** A save, import or AI action can run long, and giving up early
+ *  invites a second click that does it twice. */
+export const API_WRITE_TIMEOUT_MS = 90_000
+/** A file upload on a slow phone connection needs longer still. */
+export const API_UPLOAD_TIMEOUT_MS = 120_000
+
+export const TIMEOUT_MESSAGE = 'The server took too long to answer. Check your connection and try again.'
+/** A write that timed out may still have finished on the server. */
+export const WRITE_TIMEOUT_MESSAGE = 'The server is taking too long. It may still finish, so refresh the page before trying again.'
+export const OFFLINE_MESSAGE = "Couldn't reach the server. Check your connection and try again."
+
+/** Aborts when the caller's signal does, or when the time runs out. */
+function deadline(own: AbortSignal | null | undefined, ms: number): { signal: AbortSignal; timedOut: () => boolean; clear: () => void } {
+  const ctrl = new AbortController()
+  let timedOut = false
+  const timer = setTimeout(() => { timedOut = true; ctrl.abort(new DOMException(TIMEOUT_MESSAGE, 'TimeoutError')) }, ms)
+  const onAbort = () => ctrl.abort(own?.reason)
+  if (own) {
+    if (own.aborted) onAbort()
+    else own.addEventListener('abort', onAbort, { once: true })
+  }
+  return {
+    signal: ctrl.signal,
+    timedOut: () => timedOut,
+    clear: () => { clearTimeout(timer); own?.removeEventListener('abort', onAbort) },
+  }
+}
+
+/**
+ * Plain `fetch` also waits for ever on a dropped phone connection, so the
+ * spinner never stops. apiFetch gives up after `timeoutMs` (20 s for a
+ * read, 90 s for a write, 2 min for a FormData upload) with an ApiError
+ * the screen's catch already shows; a write's message says it may still
+ * finish, so nobody clicks again and does it twice. A caller's own `signal` still cancels, and its abort is rethrown
+ * unchanged so code that ignores AbortError keeps working. The deadline
+ * covers the wait for the response, not reading a long body afterwards.
+ */
+export async function apiFetch(input: RequestInfo | URL, init?: RequestInit & { timeoutMs?: number }): Promise<Response> {
+  const { timeoutMs, ...rest } = init ?? {}
+  const isUpload = typeof FormData !== 'undefined' && rest.body instanceof FormData
+  const method = (rest.method ?? (typeof input === 'object' && 'method' in input ? input.method : 'GET')).toUpperCase()
+  const isWrite = method !== 'GET' && method !== 'HEAD'
+  const limit = deadline(rest.signal, timeoutMs ?? (isUpload ? API_UPLOAD_TIMEOUT_MS : isWrite ? API_WRITE_TIMEOUT_MS : API_TIMEOUT_MS))
+  let res: Response
+  try {
+    res = await fetch(input, { ...rest, signal: limit.signal })
+  } catch (err) {
+    if (limit.timedOut()) throw new ApiError(isWrite ? WRITE_TIMEOUT_MESSAGE : TIMEOUT_MESSAGE, 0)
+    if (rest.signal?.aborted) throw err // the caller cancelled on purpose
+    if (err instanceof TypeError) throw new ApiError(OFFLINE_MESSAGE, 0)
+    throw err
+  } finally {
+    limit.clear()
+  }
   if (!res.ok) {
     let message = ''
     try {

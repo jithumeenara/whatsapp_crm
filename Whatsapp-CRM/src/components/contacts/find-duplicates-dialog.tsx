@@ -46,7 +46,7 @@ export function FindDuplicatesDialog({ open, onOpenChange, onMerged }: {
     setGroups(null)
     setError("")
     try {
-      const res = await apiFetch("/api/contacts/duplicates")
+      const res = await apiFetch("/api/contacts/duplicates", { timeoutMs: 60_000 })
       const d = (await res.json()) as { groups?: DupGroup[] }
       setGroups(d.groups ?? [])
       setKeep({})

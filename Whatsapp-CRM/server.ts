@@ -39,6 +39,7 @@ import { attachAccountNamespace, socketCorsOrigin } from "./src/lib/realtime-ser
 import { attachWebChatNamespace } from "./src/lib/webchat/realtime";
 import { sweepExpiredWebChatSessions } from "./src/lib/webchat/session";
 import { installDevSendGuard, isDevelopment } from "./src/lib/dev/send-guard";
+import { installOutboundTimeout } from "./src/lib/net/outbound-timeout";
 import { singleFlight } from "./src/lib/jobs/single-flight";
 import { startAuditHousekeeping } from "./src/lib/audit/jobs";
 import { checkStartupEnv, isDevServer } from "./src/lib/security/startup-check";
@@ -130,6 +131,10 @@ app.prepare().then(() => {
   // people — see src/lib/dev/send-guard.ts. Installed here, after Next has
   // read .env.local. A no-op on every production server.
   installDevSendGuard();
+  // Every outgoing request without its own signal gets a deadline, so a
+  // provider that stops answering cannot hang a send or a job for ever
+  // (src/lib/net/outbound-timeout.ts).
+  installOutboundTimeout();
   const httpServer = createServer((req, res) => {
     // Listen for the abort before handing the request on.
     //

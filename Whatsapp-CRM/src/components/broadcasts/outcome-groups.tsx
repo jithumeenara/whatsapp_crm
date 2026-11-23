@@ -95,7 +95,7 @@ export function OutcomeGroups({ broadcastId, refreshKey }: { broadcastId: string
   async function download(g: Group) {
     setDownloading(g.key);
     try {
-      const res = await apiFetch(`/api/broadcasts/${broadcastId}/export?outcome=${encodeURIComponent(g.key)}`);
+      const res = await apiFetch(`/api/broadcasts/${broadcastId}/export?outcome=${encodeURIComponent(g.key)}`, { timeoutMs: 60_000 });
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
