@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { usdToInr, usdToInrRate, rateNote } from '@/lib/ai/currency'
+import { costDisplayFor, toDisplayAmount } from '@/lib/ai/cost-display'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { businessTimezone } from '@/lib/ai/human-date'
@@ -30,12 +30,13 @@ interface Totals {
   output_tokens: number
   total_tokens: number
   cost_usd: number
-  cost_inr: number
+  /** In the business currency, tax included (cost-display.ts). */
+  cost_local: number
   errors: number
 }
 
 function emptyTotals(): Totals {
-  return { requests: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, cost_usd: 0, cost_inr: 0, errors: 0 }
+  return { requests: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, cost_usd: 0, cost_local: 0, errors: 0 }
 }
 
 export async function GET(req: Request) {
@@ -158,6 +159,11 @@ export async function GET(req: Request) {
     }),
   ])
 
+  // Shown in the business's own currency at today's rate, with the tax on
+  // the provider's bill (Settings: tax %), so the tab reads like the bill.
+  const display = await costDisplayFor(accountId)
+  const local = (usd: number) => Number(toDisplayAmount(usd, display).toFixed(4))
+
   const toTotals = (
     agg: typeof current,
     errors: number,
@@ -167,7 +173,7 @@ export async function GET(req: Request) {
     output_tokens: agg._sum.output_tokens ?? 0,
     total_tokens: agg._sum.total_tokens ?? 0,
     cost_usd: Number(agg._sum.cost_usd ?? 0),
-    cost_inr: usdToInr(Number(agg._sum.cost_usd ?? 0)),
+    cost_local: local(Number(agg._sum.cost_usd ?? 0)),
     errors,
   })
 
@@ -181,7 +187,7 @@ export async function GET(req: Request) {
         requests: f._count._all,
         total_tokens: f._sum.total_tokens ?? 0,
         cost_usd: Number(f._sum.cost_usd ?? 0),
-        cost_inr: usdToInr(Number(f._sum.cost_usd ?? 0)),
+        cost_local: local(Number(f._sum.cost_usd ?? 0)),
       }))
       .sort((a, b) => b.requests - a.requests),
     // bigint from COUNT/SUM doesn't survive JSON.stringify — converted
@@ -192,20 +198,22 @@ export async function GET(req: Request) {
       input_tokens: Number(d.input_tokens),
       output_tokens: Number(d.output_tokens),
       cost_usd: Number(d.cost_usd),
-      cost_inr: usdToInr(Number(d.cost_usd)),
+      cost_local: local(Number(d.cost_usd)),
     })),
     recent: recent.map((r) => ({
       ...r,
       cost_usd: Number(r.cost_usd),
-      cost_inr: usdToInr(Number(r.cost_usd)),
+      cost_local: local(Number(r.cost_usd)),
       created_at: r.created_at.toISOString(),
     })),
     recent_months: months.map((m) => m.month),
     recent_month: monthMatch ? monthParam : null,
-    // The rate is sent with the figures, not baked into them, so the tab
-    // can say what it converted at instead of presenting a rupee number
-    // as though Google had billed it.
-    inr_rate: usdToInrRate(),
-    inr_note: rateNote(),
+    // How the figures were converted, sent with them so the tab can say
+    // so instead of presenting an estimate as though Google had billed it.
+    currency: display.currency,
+    rate: display.rate,
+    rate_source: display.rateSource,
+    rate_fetched_at: display.rateFetchedAt ? display.rateFetchedAt.toISOString() : null,
+    tax_percent: display.taxPercent,
   })
 }

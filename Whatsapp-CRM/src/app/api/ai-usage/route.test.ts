@@ -28,6 +28,12 @@ vi.mock('@/lib/ai/currency', () => ({
   usdToInrRate: () => 88.5,
   rateNote: () => '',
 }))
+// The route now converts with the business currency, live rate and tax
+// (cost-display.ts); fixed here so the test never reaches the network.
+vi.mock('@/lib/ai/cost-display', () => ({
+  costDisplayFor: async () => ({ currency: 'INR', rate: 88.5, rateSource: 'suggested', rateFetchedAt: null, taxPercent: 0 }),
+  toDisplayAmount: (usd: number, d: { rate: number | null; taxPercent: number }) => usd * (1 + d.taxPercent / 100) * (d.rate ?? 1),
+}))
 
 const agg = { _count: { _all: 0 }, _sum: { input_tokens: 0, output_tokens: 0, total_tokens: 0, cost_usd: 0 } }
 vi.mock('@/lib/db', () => ({

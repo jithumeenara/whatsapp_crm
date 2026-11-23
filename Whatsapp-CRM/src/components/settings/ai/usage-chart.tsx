@@ -29,7 +29,7 @@ export interface DailyPoint {
   cost_usd: number;
   /** The same figure in rupees, converted server-side at a stated rate
    *  so every surface shows one currency. */
-  cost_inr: number;
+  cost_local: number;
 }
 
 const SERIES_INPUT = '#5B6CF9';
@@ -313,13 +313,13 @@ export function FeatureBars({
     requests: number;
     total_tokens: number;
     cost_usd: number;
-    cost_inr?: number;
+    cost_local?: number;
   }>;
   /** Rendered as the account's own currency by the caller, which is the
    *  only place that knows the rate it was given. */
   formatMoney?: (value: number) => string;
 }) {
-  const amountOf = (r: { cost_inr?: number; cost_usd: number }) => r.cost_inr ?? r.cost_usd;
+  const amountOf = (r: { cost_local?: number; cost_usd: number }) => r.cost_local ?? r.cost_usd;
   const totalCost = rows.reduce((sum, r) => sum + amountOf(r), 0);
   const byCost = totalCost > 0;
   const max = byCost

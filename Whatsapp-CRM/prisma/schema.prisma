@@ -2010,6 +2010,17 @@ model AiBudget {
   @@map("ai_budgets")
 }
 
+/// Migration 200 — the tax on the AI provider's bill (e.g. 18% GST in
+/// India), added when AI costs are shown and compared with the limit.
+model AiCostSettings {
+  account_id  String   @id @db.Uuid
+  tax_percent Decimal  @default(0) @db.Decimal(5, 2)
+  updated_by  String?  @db.Uuid
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("ai_cost_settings")
+}
+
 /// Migration 195 — one row per distinct error, with a repeat count
 /// (src/lib/errors/record.ts). Messages are redacted and capped.
 model AppError {

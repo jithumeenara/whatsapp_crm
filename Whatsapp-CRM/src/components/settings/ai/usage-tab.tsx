@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RequestsChart, TokensChart, FeatureBars, type DailyPoint } from './usage-chart';
 import { isLooselyPriced, PRICES_CHECKED_ON } from '@/lib/ai/pricing';
 import { BudgetCard } from './budget-card';
+import { TaxSetting } from './tax-setting';
 
 /**
  * Screen 6 — what the AI actually cost and did.
@@ -31,7 +32,7 @@ interface Totals {
   output_tokens: number;
   total_tokens: number;
   cost_usd: number;
-  cost_inr: number;
+  cost_local: number;
   errors: number;
 }
 
@@ -40,7 +41,7 @@ interface FeatureRow {
   requests: number;
   total_tokens: number;
   cost_usd: number;
-  cost_inr: number;
+  cost_local: number;
 }
 
 interface RecentRow {
@@ -51,7 +52,7 @@ interface RecentRow {
   input_tokens: number;
   output_tokens: number;
   cost_usd: number;
-  cost_inr: number;
+  cost_local: number;
   status: string;
   error: string | null;
   latency_ms: number | null;
@@ -67,8 +68,12 @@ interface UsageResponse {
   /** 'YYYY-MM' for every month with any usage, newest first. */
   recent_months: string[];
   recent_month: string | null;
-  inr_rate: number;
-  inr_note: string;
+  /** How costs were converted (cost-display.ts). */
+  currency: string;
+  rate: number | null;
+  rate_source: 'live' | 'suggested' | 'none';
+  rate_fetched_at: string | null;
+  tax_percent: number;
 }
 
 const FEATURE_META: Record<string, { label: string; Icon: typeof MessageSquare }> = {
@@ -125,18 +130,16 @@ function monthLabel(value: string): string {
   });
 }
 
-function formatUsd(value: number): string {
-  if (value === 0) return '$0.00';
-  // Sub-cent totals are real at this volume — showing "$0.00" for a day
-  // that genuinely cost something reads as "not tracked".
-  // Rupees, because that is the currency the bill arrives in. A single
-  // reply costs a few paise and a month costs a few hundred rupees, so
-  // one number of decimals cannot serve both: two would round a real
-  // per-call cost to zero, four would make the monthly total unreadable.
-  if (value === 0) return '\u20B90';
-  if (value < 1) return `\u20B9${value.toFixed(3)}`;
-  if (value < 100) return `\u20B9${value.toFixed(2)}`;
-  return `\u20B9${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** An amount in the business's currency. A single reply costs a fraction
+ *  of a unit and a month costs hundreds, so small amounts keep more
+ *  decimals: two would round a real per-call cost to zero. */
+function formatAmount(value: number, currency: string): string {
+  const digits = value === 0 ? 0 : value < 1 ? 3 : 2;
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
+  } catch {
+    return `${currency} ${value.toFixed(digits)}`;
+  }
 }
 
 function formatNumber(n: number): string {
@@ -240,14 +243,18 @@ export function UsageTab() {
 
   useEffect(() => {
     load();
+    // The tax setting changes every amount here: reload when it is saved.
+    const onTax = () => { void load(); };
+    window.addEventListener('ai-cost-settings-changed', onTax);
+    return () => window.removeEventListener('ai-cost-settings-changed', onTax);
   }, [load]);
 
   function exportCsv() {
     if (!data) return;
-    const header = 'date,requests,input_tokens,output_tokens,estimated_cost_usd,estimated_cost_inr';
+    const header = 'date,requests,input_tokens,output_tokens,estimated_cost_usd,estimated_cost_local';
     const rows = data.daily.map(
       (d) =>
-        `${d.day},${d.requests},${d.input_tokens},${d.output_tokens},${d.cost_usd.toFixed(6)},${d.cost_inr.toFixed(4)}`,
+        `${d.day},${d.requests},${d.input_tokens},${d.output_tokens},${d.cost_usd.toFixed(6)},${d.cost_local.toFixed(4)}`,
     );
     const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -258,6 +265,7 @@ export function UsageTab() {
     URL.revokeObjectURL(url);
   }
 
+  const money = (v: number) => formatAmount(v, data?.currency ?? 'USD');
   const totals = data?.totals;
   const previous = data?.previous_totals;
   const hasData = !!totals && totals.requests > 0;
@@ -290,6 +298,7 @@ export function UsageTab() {
       </AiCard>
 
       <BudgetCard />
+      <TaxSetting />
 
       {error && <AiNotice tone="error" icon={<AlertTriangle className="h-4 w-4" />}>{error}</AiNotice>}
 
@@ -336,8 +345,8 @@ export function UsageTab() {
             />
             <StatTile
               label="Estimated Cost"
-              value={formatUsd(totals.cost_inr)}
-              sub={<DeltaChip value={delta(totals.cost_inr, previous.cost_inr)} invert />}
+              value={money(totals.cost_local)}
+              sub={<DeltaChip value={delta(totals.cost_local, previous.cost_local)} invert />}
               Icon={TrendingUp}
               tint="amber"
             />
@@ -496,7 +505,7 @@ export function UsageTab() {
                             )}
                           </td>
                           <td className="px-5 py-2.5 text-[12.5px] tabular-nums text-slate-700">
-                            {formatUsd(r.cost_inr)}
+                            {money(r.cost_local)}
                           </td>
                           <td className="px-5 py-2.5">
                             {r.status === 'success' ? (
@@ -555,7 +564,7 @@ export function UsageTab() {
                 <div className="mt-4">
                   <FeatureBars
                     rows={data.by_feature.map((f) => ({ ...f, label: featureLabel(f.feature) }))}
-                    formatMoney={formatUsd}
+                    formatMoney={money}
                   />
                   {data.by_feature.some((f) => f.feature === 'tts_cloud') && (
                     <AiHint className="mt-3">
@@ -579,13 +588,13 @@ export function UsageTab() {
                         <span className="truncate">{featureLabel(f.feature)}</span>
                       </dt>
                       <dd className="shrink-0 text-[12.5px] font-medium tabular-nums text-slate-800">
-                        {formatUsd(f.cost_inr)}
+                        {money(f.cost_local)}
                       </dd>
                     </div>
                   ))}
                   <div className="flex items-center justify-between gap-3 pt-2.5">
                     <dt className="text-[12.5px] font-semibold text-slate-700">Total</dt>
-                    <dd className="text-[13px] font-bold tabular-nums text-slate-900">{formatUsd(totals.cost_inr)}</dd>
+                    <dd className="text-[13px] font-bold tabular-nums text-slate-900">{money(totals.cost_local)}</dd>
                   </div>
                 </dl>
               </AiCard>
@@ -602,7 +611,14 @@ export function UsageTab() {
                       billed for. Cost is calculated here from published per-model rates and will drift if
                       Google changes pricing &mdash; treat it as an estimate, not an invoice. Training tokens
                       are approximated from text length, because the embedding API returns no token count at
-                      all. {data.inr_note}
+                      all.{' '}
+                      {data.rate
+                        ? `Shown in ${data.currency} at ${data.rate.toFixed(data.rate < 10 ? 4 : 2)} per US dollar (${data.rate_source === 'live' ? "today's market rate" : 'a suggested rate'})`
+                        : 'Shown in US dollars'}
+                      {data.tax_percent > 0 ? `, including ${data.tax_percent}% tax.` : ', without tax.'}{' '}
+                      Google gives some services a monthly free allowance (for example the first characters of
+                      text-to-speech each month); this tab does not subtract it, so it can read a little higher
+                      than your bill.
                     </AiHint>
                     {/* Said plainly. Someone comparing this tab to the Cloud
                         Console will find a gap, and guessing at the reason is
