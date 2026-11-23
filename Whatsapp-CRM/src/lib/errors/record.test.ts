@@ -17,7 +17,19 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
-import { describeConsoleArgs, fingerprintOf, recordAppError, resetErrorCaptureForTests } from './record'
+import { describeConsoleArgs, fingerprintOf, recordAppError, resetErrorCaptureForTests, safeLogArgs } from './record'
+
+describe('safeLogArgs (what the pm2 log gets)', () => {
+  it('redacts strings and error stacks, keeps objects, leads with the request id', () => {
+    const err = new Error('GET /me?access_token=EAAB1234567890abcdefghijkl failed')
+    const out = safeLogArgs(['[graph] failed for anu@example.com', err, { n: 1 }], 'ab12cd34')
+    expect(out[0]).toBe('[rid:ab12cd34]')
+    expect(String(out[1])).not.toContain('anu@example.com')
+    expect((out[2] as Error).message).not.toContain('EAAB1234')
+    expect((out[2] as Error).stack ?? '').not.toContain('EAAB1234')
+    expect(out[3]).toEqual({ n: 1 })
+  })
+})
 
 const flush = () => new Promise((r) => setTimeout(r, 0))
 

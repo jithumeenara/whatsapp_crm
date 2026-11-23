@@ -25,6 +25,7 @@ import { createHash } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { normaliseForFingerprint, redactSecrets } from './redact'
+import { currentRequestId } from '@/lib/net/log-context'
 
 export type ErrorSource = 'server' | 'browser'
 
@@ -125,18 +126,51 @@ export function describeConsoleArgs(args: unknown[]): { where: string; message: 
 
 let installed = false
 
-/** server.ts calls this once. Every console.error is also recorded. */
+/**
+ * What the server log itself gets: strings and error stacks with secrets
+ * removed (a Graph URL with its token, a request body with a password),
+ * led by the request's short id when there is one, so one request's lines
+ * can be read together. Objects are passed through untouched.
+ */
+export function safeLogArgs(args: unknown[], requestId: string): unknown[] {
+  const out = args.map((a) => {
+    if (typeof a === 'string') return redactSecrets(a)
+    if (a instanceof Error) {
+      const copy = new Error(redactSecrets(a.message))
+      copy.name = a.name
+      copy.stack = a.stack ? redactSecrets(a.stack) : undefined
+      return copy
+    }
+    return a
+  })
+  return requestId ? [`[rid:${requestId}]`, ...out] : out
+}
+
+/** server.ts calls this once. Every console.error is also recorded, and
+ *  console.error / console.warn lines are redacted before they are written. */
 export function installErrorCapture(): void {
   if (installed || process.env.VITEST) return
   installed = true
   originalError = console.error.bind(console)
+  const originalWarn = console.warn.bind(console)
   console.error = (...args: unknown[]) => {
-    originalError(...args)
+    try {
+      originalError(...safeLogArgs(args, currentRequestId()))
+    } catch {
+      originalError(...args)
+    }
     try {
       const { where, message } = describeConsoleArgs(args)
       recordAppError({ source: 'server', where, message })
     } catch {
       // never let the log itself fail
+    }
+  }
+  console.warn = (...args: unknown[]) => {
+    try {
+      originalWarn(...safeLogArgs(args, currentRequestId()))
+    } catch {
+      originalWarn(...args)
     }
   }
 }

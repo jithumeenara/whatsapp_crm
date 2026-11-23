@@ -40,6 +40,8 @@ import { attachWebChatNamespace } from "./src/lib/webchat/realtime";
 import { sweepExpiredWebChatSessions } from "./src/lib/webchat/session";
 import { installDevSendGuard, isDevelopment } from "./src/lib/dev/send-guard";
 import { installOutboundTimeout } from "./src/lib/net/outbound-timeout";
+import { installGraphTokenHeader } from "./src/lib/net/graph-token-header";
+import { runWithRequestId } from "./src/lib/net/log-context";
 import { installErrorCapture } from "./src/lib/errors/record";
 import { sweepErrorAlerts } from "./src/lib/errors/alert-sweep";
 import { singleFlight } from "./src/lib/jobs/single-flight";
@@ -142,7 +144,10 @@ app.prepare().then(() => {
   // provider that stops answering cannot hang a send or a job for ever
   // (src/lib/net/outbound-timeout.ts).
   installOutboundTimeout();
-  const httpServer = createServer((req, res) => {
+  // Meta tokens go in an Authorization header, never in the address that
+  // logs and error messages copy (src/lib/net/graph-token-header.ts).
+  installGraphTokenHeader();
+  const httpServer = createServer((req, res) => runWithRequestId(() => {
     // Listen for the abort before handing the request on.
     //
     // When a browser abandons a request, Node emits an error on the
@@ -160,8 +165,10 @@ app.prepare().then(() => {
     // Next.js parses the URL itself (WHATWG URL). The legacy url.parse()
     // used here before printed DEP0169 on every start and is the parser
     // Node flags for security problems.
+    // Run inside a short request id, which every log line it writes
+    // carries (src/lib/net/log-context.ts).
     handle(req, res);
-  });
+  }));
 
   // Connections that fail before they are a request at all: a socket
   // dropped mid-handshake, or a malformed request line. Node's default
