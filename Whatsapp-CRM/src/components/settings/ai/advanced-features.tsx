@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/accordion';
 import { HandoverConsentSetting } from './handover-consent-setting';
 import { ImageReadingSetting } from './image-reading-setting';
+import { RerankSetting } from './rerank-setting';
 import { AlertTemplateFields } from '@/components/settings/alert-template-fields';
 
 /**
@@ -529,6 +530,9 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
 
               {/* Reading images customers send, and confirming the reading. */}
               <ImageReadingSetting />
+
+              {/* A small model re-orders search results for the exact question. */}
+              <RerankSetting />
 
               <div className="flex items-start justify-between gap-4 rounded-2xl bg-[#F7F8FC] p-3.5 ring-1 ring-slate-200/70">
                 <div className="min-w-0">

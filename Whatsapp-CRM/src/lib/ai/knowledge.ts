@@ -33,6 +33,7 @@ import {
 } from './embeddings'
 import { englishFor, normalizeMalayalam, wordStarts } from './term-bridge'
 import { recordAiUsage, estimateTokensFromText } from './usage'
+import type { Reranker } from './rerank'
 
 export interface QaPair {
   question: string
@@ -96,6 +97,9 @@ interface SelectOptions {
      *  answers, which used to cost money and show as nothing. */
     accountId?: string
   }
+  /** Optional re-ordering of the fused candidates by a small model
+   *  (rerank.ts, opt-in per account). Semantic path only. */
+  rerank?: Reranker
 }
 
 /** How many extra candidates to pull from the vector search relative to
@@ -574,7 +578,12 @@ export async function selectRelevantContext(
   let result: SelectedContext | null = null
   const queryTokens = queryTerms(userMessage)
   if (semantic) {
-    result = await selectBySemantic(userMessage, allPairs, allChunks, semantic, { maxQaPairs, maxDocChunks })
+    // With re-ranking on, the search hands over a wider pool for the model
+    // to choose from; the final cut to max* happens after it.
+    const pool = opts.rerank
+      ? { maxQaPairs: Math.min(maxQaPairs * 3, 10), maxDocChunks: Math.min(maxDocChunks * 3, 10) }
+      : { maxQaPairs, maxDocChunks }
+    result = await selectBySemantic(userMessage, allPairs, allChunks, semantic, pool)
     if (result) {
       // Hybrid: the search by meaning, fused with the strong word matches
       // — at least half the question's words. Meaning finds "what does
@@ -583,16 +592,38 @@ export async function selectRelevantContext(
       // which the hand-over threshold is calibrated on.
       const strong = Math.max(minScore, Math.ceil(queryTokens.length * 0.5))
       const words = keywordRanked(queryTokens, allPairs, allChunks, strong)
+      const fusePairs = (sem: QaPair[]) =>
+        reciprocalRankFusion([sem, words.scoredPairs.map((s) => s.pair)], (p) => `${p.question}\n${p.answer}`)
+      const fuseChunks = (sem: Chunk[]) =>
+        reciprocalRankFusion([sem, words.scoredChunks.map((s) => s.chunk)], (c) => `${c.title}\n${c.text}`)
+      // The normal result, from the meaning results cut to size exactly as
+      // without re-ranking — so a failed re-rank changes nothing.
+      let fusedPairs = fusePairs(result.qaPairs.slice(0, maxQaPairs))
+      let fusedChunks = fuseChunks(result.documentChunks.slice(0, maxDocChunks))
+      // Optional: a small model re-orders a wider pool of candidates by how
+      // well they answer this exact question (rerank.ts).
+      if (opts.rerank) {
+        const pairPool = fusePairs(result.qaPairs).slice(0, Math.min(maxQaPairs * 3, 10))
+        const chunkPool = fuseChunks(result.documentChunks).slice(0, Math.min(maxDocChunks * 3, 10))
+        // Only worth a model call when there is more to choose from than fits.
+        if (pairPool.length > maxQaPairs || chunkPool.length > maxDocChunks) {
+          const texts = [
+            ...pairPool.map((p) => `Q: ${p.question} A: ${p.answer}`),
+            ...chunkPool.map((c) => `${c.title}: ${c.text}`),
+          ]
+          const order = await opts.rerank(userMessage, texts)
+          if (order) {
+            const rank = new Map(order.map((idx, pos) => [idx, pos]))
+            const at = (i: number) => rank.get(i) ?? Number.MAX_SAFE_INTEGER
+            fusedPairs = pairPool.map((p, i) => ({ p, r: at(i) })).sort((a, b) => a.r - b.r).map((x) => x.p)
+            fusedChunks = chunkPool.map((c, i) => ({ c, r: at(pairPool.length + i) })).sort((a, b) => a.r - b.r).map((x) => x.c)
+          }
+        }
+      }
       result = {
         ...result,
-        qaPairs: reciprocalRankFusion(
-          [result.qaPairs, words.scoredPairs.map((s) => s.pair)],
-          (p) => `${p.question}\n${p.answer}`,
-        ).slice(0, maxQaPairs),
-        documentChunks: reciprocalRankFusion(
-          [result.documentChunks, words.scoredChunks.map((s) => s.chunk)],
-          (c) => `${c.title}\n${c.text}`,
-        ).slice(0, maxDocChunks),
+        qaPairs: fusedPairs.slice(0, maxQaPairs),
+        documentChunks: fusedChunks.slice(0, maxDocChunks),
       }
     }
   }

@@ -20,6 +20,8 @@ import { localDate, localWeekday } from '@/lib/agents/zoned-time'
 import { buildCustomerContext } from './customer-context'
 import { loadKnowledge } from './knowledge-store'
 import { selectRelevantContext, formatKnowledgeBlock, type SelectedContext } from './knowledge'
+import { retrievalSettingsFor } from './retrieval-settings'
+import { geminiReranker } from './rerank'
 import { buildLanguageBlock, LANGUAGE_INSTRUCTION } from './language'
 import { isAnonymousVisitor } from '@/lib/contacts/update-field'
 import { prisma } from '@/lib/db'
@@ -497,6 +499,11 @@ export async function retrieveForMessage(args: {
     maxQaPairs: contextLimit,
     maxDocChunks: contextLimit,
     ...(useSemantic ? { semantic: { aiConfigId: aiConfig.id, geminiApiKey: geminiApiKey!, accountId: args.accountId } } : {}),
+    // Opt-in per account (retrieval-settings.ts): a small model re-orders
+    // the best candidates for this exact question.
+    ...(useSemantic && args.accountId && (await retrievalSettingsFor(args.accountId)).rerank
+      ? { rerank: geminiReranker(geminiApiKey!, args.accountId) }
+      : {}),
   }
   const first = await selectRelevantContext(query, qaPairs, documents, options)
 
