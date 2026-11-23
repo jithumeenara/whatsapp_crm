@@ -1,0 +1,140 @@
+/**
+ * A monthly spending limit for the AI.
+ *
+ * ai_usage_events records what every call cost, but nothing stopped
+ * spending: a loop, a burst of spam or a forgotten switch ran up a bill
+ * nobody saw until the invoice. A workspace can now set a monthly limit
+ * (Settings → AI Config → Usage):
+ *
+ *   - at 80% the owners and admins are told once that month;
+ *   - at 100% automatic customer replies stop and each conversation goes
+ *     to the team with a note saying why; they are told once more.
+ *
+ * Everything else keeps working — people can still reply, and screens
+ * that call the AI on a person's click still do. The month is the
+ * business's own (its time zone), so the limit resets at midnight on the
+ * 1st where the business is, not where the server is.
+ *
+ * Spend is the same estimate the Usage tab shows (pricing.ts), so the
+ * limit and the screen always agree.
+ */
+
+import { prisma } from '@/lib/db'
+import { businessTimezone } from './human-date'
+import { dayKey, dayStartIso } from '@/lib/audit/zoned'
+
+export const WARN_RATIO = 0.8
+export const MAX_LIMIT_USD = 100_000
+
+export interface BudgetState {
+  /** null = no limit set. */
+  limitUsd: number | null
+  spentUsd: number
+  /** 'YYYY-MM' in the business time zone. */
+  month: string
+  /** spent / limit, 0 when there is no limit. */
+  ratio: number
+  over: boolean
+}
+
+/** 'YYYY-MM' of `now` in the zone, and the instant that month began. */
+export function monthWindow(now: Date, timeZone: string): { month: string; startsAt: Date } {
+  const month = dayKey(now, timeZone).slice(0, 7)
+  const iso = dayStartIso(`${month}-01`, timeZone)
+  return { month, startsAt: iso ? new Date(iso) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)) }
+}
+
+/** The pure part: what a limit and a spend add up to. */
+export function budgetFrom(limitUsd: number | null, spentUsd: number, month: string): BudgetState {
+  const limit = limitUsd && limitUsd > 0 ? limitUsd : null
+  const ratio = limit ? spentUsd / limit : 0
+  return { limitUsd: limit, spentUsd, month, ratio, over: limit !== null && spentUsd >= limit }
+}
+
+const TTL_MS = 60_000
+const cache = new Map<string, { at: number; state: BudgetState }>()
+
+/** Forget the cached state, after the limit changes. */
+export function forgetBudget(accountId: string): void {
+  cache.delete(accountId)
+}
+
+/**
+ * This month's limit and spend. Cached for a minute per workspace, so the
+ * sum does not run on every message. Never throws: a failed read (the
+ * table not migrated yet, a database blip) means "no limit", because
+ * silencing every customer over a lookup error is worse than overspending
+ * for a minute.
+ */
+export async function aiBudgetState(accountId: string, now: Date = new Date()): Promise<BudgetState> {
+  const hit = cache.get(accountId)
+  if (hit && Date.now() - hit.at < TTL_MS) return hit.state
+  const timeZone = await businessTimezone(accountId)
+  const { month, startsAt } = monthWindow(now, timeZone)
+  let state = budgetFrom(null, 0, month)
+  try {
+    const row = await prisma.aiBudget.findUnique({ where: { account_id: accountId }, select: { monthly_limit_usd: true, warned_month: true, stopped_month: true } })
+    if (row) {
+      const sum = await prisma.aiUsageEvent.aggregate({
+        where: { account_id: accountId, created_at: { gte: startsAt } },
+        _sum: { cost_usd: true },
+      })
+      state = budgetFrom(Number(row.monthly_limit_usd), Number(sum._sum.cost_usd ?? 0), month)
+      void tellAdminsIfCrossed(accountId, state, row.warned_month, row.stopped_month)
+    }
+  } catch (err) {
+    console.error('[ai-budget] could not read the limit:', err instanceof Error ? err.message : err)
+  }
+  cache.set(accountId, { at: Date.now(), state })
+  return state
+}
+
+/**
+ * The 80% and 100% notices, once each per month. The month is claimed
+ * with a conditional update first, so two servers or two messages at the
+ * same moment send one notice, not two.
+ */
+async function tellAdminsIfCrossed(accountId: string, state: BudgetState, warned: string | null, stopped: string | null): Promise<void> {
+  if (state.limitUsd === null) return
+  try {
+    const limit = `$${state.limitUsd.toFixed(2)}`
+    const spent = `$${state.spentUsd.toFixed(2)}`
+    if (state.over && stopped !== state.month) {
+      const claimed = await prisma.aiBudget.updateMany({
+        where: { account_id: accountId, OR: [{ stopped_month: null }, { stopped_month: { not: state.month } }] },
+        data: { stopped_month: state.month, warned_month: state.month },
+      })
+      if (claimed.count === 1) {
+        await notify(accountId, 'AI budget used up', `This month's AI spend (${spent}) reached the ${limit} limit. Automatic replies are paused and new chats go to your team until the 1st, or until you raise the limit.`)
+      }
+      return
+    }
+    if (!state.over && state.ratio >= WARN_RATIO && warned !== state.month) {
+      const claimed = await prisma.aiBudget.updateMany({
+        where: { account_id: accountId, OR: [{ warned_month: null }, { warned_month: { not: state.month } }] },
+        data: { warned_month: state.month },
+      })
+      if (claimed.count === 1) {
+        await notify(accountId, 'AI budget at 80%', `This month's AI spend is ${spent} of your ${limit} limit. At the limit, automatic replies pause and chats go to your team.`)
+      }
+    }
+  } catch (err) {
+    console.error('[ai-budget] notice failed:', err instanceof Error ? err.message : err)
+  }
+}
+
+async function notify(accountId: string, title: string, body: string): Promise<void> {
+  const { sendPushToUser } = await import('@/lib/push')
+  const people = await prisma.profile.findMany({
+    where: { account_id: accountId, account_role: { in: ['owner', 'admin'] } },
+    select: { user_id: true },
+  })
+  await Promise.all(
+    people.map((p) => sendPushToUser(p.user_id, { title, body, tag: 'ai-budget', data: { url: '/settings?tab=ai' } }).catch(() => {})),
+  )
+}
+
+/** The note left on a conversation the assistant did not answer because
+ *  the limit was reached. */
+export const BUDGET_HANDOVER_NOTE =
+  "The assistant did not answer: this month's AI budget is used up. Please reply to this customer yourself. An admin can raise the limit in Settings → AI Config → Usage."

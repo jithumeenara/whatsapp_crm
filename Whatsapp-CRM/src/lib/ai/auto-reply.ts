@@ -47,6 +47,7 @@ import { engineSendText, engineSendVoiceNote } from '@/lib/flows/meta-send'
 import type { RegistrationExtract } from './image-reading'
 import { agentHandover, type AgentAuditInfo } from '@/lib/audit/actors'
 import { logHandover } from './handover-log'
+import { aiBudgetState, BUDGET_HANDOVER_NOTE } from './budget'
 
 /** How long one exchange lasts without a human touching it. WhatsApp's
  *  own session window: past it, a returning customer is starting a new
@@ -129,6 +130,8 @@ export type AutoReplyOutcome =
   /** The customer is answering a person on the team; the assistant waits
    *  an hour for them first (staff-wait-sweep.ts answers after that). */
   | 'skipped_staff_waiting'
+  /** This month's AI budget is used up (budget.ts); handed to the team. */
+  | 'skipped_budget'
   | 'skipped_no_message'
   /** Read an image and asked the customer whether the reading is right
    *  (image-confirm.ts); the assistant answers once they say yes. */
@@ -317,6 +320,46 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
   if (aiConfig.ai_auto_reply_pause_on_agent && !args.afterStaffWait) {
     const waiting = await staffAwaitingReply(args.conversationId)
     if (waiting) return 'skipped_staff_waiting'
+  }
+
+  // ── The month's AI budget is used up ──────────────────────────────
+  //
+  // The workspace set a monthly limit and reached it (budget.ts), so the
+  // assistant does not answer. Like the turn limit, the customer is not
+  // left in silence: once per exchange they hear the usual hand-over line
+  // and the team gets the conversation with a note saying why.
+  const budget = await aiBudgetState(args.accountId)
+  if (budget.over) {
+    const alreadyNoted = await prisma.message.findFirst({
+      where: {
+        conversation_id: args.conversationId,
+        sender_type: 'system',
+        content_text: { startsWith: BUDGET_HANDOVER_NOTE },
+        created_at: { gt: lastHumanReply?.created_at ?? sessionStart },
+      },
+      select: { id: true },
+    })
+    if (!alreadyNoted) {
+      await tellHandover({
+        accountId: args.accountId,
+        userId: args.userId,
+        conversationId: args.conversationId,
+        contactId: args.contactId,
+        customerText: text,
+        openLine:
+          aiConfig.low_confidence_message?.trim() ||
+          'Let me connect you with a team member who can help with that.',
+      })
+      await handOver({
+        accountId: args.accountId,
+        conversationId: args.conversationId,
+        note: `${BUDGET_HANDOVER_NOTE}\n\nThey asked: "${text.slice(0, 200)}"`,
+        assignTo: aiConfig.low_confidence_assign_to,
+        reason: 'other',
+        question: text,
+      })
+    }
+    return 'skipped_budget'
   }
 
   // The window this limit actually applies to.

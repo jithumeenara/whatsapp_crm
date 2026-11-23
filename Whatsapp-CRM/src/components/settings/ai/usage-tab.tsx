@@ -10,6 +10,7 @@ import { AiButton, AiCard, AiCardHeader, AiBadge, AiSegmented, AiNotice, AiHint,
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RequestsChart, TokensChart, FeatureBars, type DailyPoint } from './usage-chart';
 import { isLooselyPriced, PRICES_CHECKED_ON } from '@/lib/ai/pricing';
+import { BudgetCard } from './budget-card';
 
 /**
  * Screen 6 — what the AI actually cost and did.
@@ -287,6 +288,8 @@ export function UsageTab() {
           }
         />
       </AiCard>
+
+      <BudgetCard />
 
       {error && <AiNotice tone="error" icon={<AlertTriangle className="h-4 w-4" />}>{error}</AiNotice>}
 

@@ -58,6 +58,7 @@ const AUTO_REPLY_HINTS: Record<string, string> = {
   skipped_agent_active:
     ' — the conversation is assigned to an agent, who is expected to answer it. Unassign it to let the assistant take over again.',
   skipped_turn_limit: ' — the per-conversation reply limit was reached; it handed over instead.',
+  skipped_budget: " — this month's AI budget (Settings → AI Config → Usage) is used up; it handed over instead.",
   skipped_no_message: ' — the message had no text to answer (an unreadable voice note, or media with no caption).',
   failed: ' — the send or a database read failed; see the error above.',
 }

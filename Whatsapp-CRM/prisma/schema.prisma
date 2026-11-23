@@ -1990,6 +1990,19 @@ model AiUsageEvent {
   @@map("ai_usage_events")
 }
 
+/// Migration 194 — a monthly AI spending limit per workspace (src/lib/ai/budget.ts).
+/// No row = no limit. Months are 'YYYY-MM' in the business time zone.
+model AiBudget {
+  account_id        String   @id @db.Uuid
+  monthly_limit_usd Decimal  @db.Decimal(10, 2)
+  warned_month      String?
+  stopped_month     String?
+  updated_by        String?  @db.Uuid
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("ai_budgets")
+}
+
 /// Migration 161 — which team a member belongs to (one per person; no row =
 /// "No team"). Its own table so no existing query reads a column an
 /// un-migrated server lacks. user_id is ON DELETE RESTRICT in the database.
