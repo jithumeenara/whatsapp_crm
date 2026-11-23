@@ -35,7 +35,13 @@ export function isCrossSiteWrite(args: {
   appUrl?: string | null
 }): boolean {
   if (SAFE_METHODS.has(args.method.toUpperCase())) return false
-  if ((args.secFetchSite ?? '').toLowerCase() === 'cross-site') return true
+  // Sec-Fetch-Site is worked out by the browser itself from the page and
+  // the address it calls, so it does not depend on what Host header nginx
+  // passes on (both servers proxy to localhost:3000). When a browser sends
+  // it, it alone decides; the Origin comparison below is only for older
+  // browsers that do not.
+  const site = (args.secFetchSite ?? '').toLowerCase().trim()
+  if (site) return site === 'cross-site'
   if (args.origin === null || args.origin === undefined || args.origin === '') return false
   if (args.origin === 'null') return true
   const from = hostOf(args.origin)
