@@ -24,6 +24,7 @@ const EXEMPT: Record<string, string> = {
   'broadcasts/audience-count/route.ts': 'preview: counts an audience, writes nothing',
   'broadcasts/parse-excel/route.ts': 'preview: parses an uploaded sheet, writes nothing',
   'catalog/discover/route.ts': 'lists catalogs from Meta, writes nothing',
+  'client-errors/route.ts': 'a browser error report kept in app_errors (redacted diagnostics), no business data',
   'contacts/import/check/route.ts': 'preview: checks rows before an import, writes nothing (the import is audited)',
   'csp-report/route.ts': 'browser CSP violation report, logged to the console only',
   'data-tables/[id]/find-row/route.ts': 'preview: finds matching rows, writes nothing',

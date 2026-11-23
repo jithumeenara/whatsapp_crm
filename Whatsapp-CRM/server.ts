@@ -40,6 +40,8 @@ import { attachWebChatNamespace } from "./src/lib/webchat/realtime";
 import { sweepExpiredWebChatSessions } from "./src/lib/webchat/session";
 import { installDevSendGuard, isDevelopment } from "./src/lib/dev/send-guard";
 import { installOutboundTimeout } from "./src/lib/net/outbound-timeout";
+import { installErrorCapture } from "./src/lib/errors/record";
+import { sweepErrorAlerts } from "./src/lib/errors/alert-sweep";
 import { singleFlight } from "./src/lib/jobs/single-flight";
 import { startAuditHousekeeping } from "./src/lib/audit/jobs";
 import { checkStartupEnv, isDevServer } from "./src/lib/security/startup-check";
@@ -89,6 +91,11 @@ const port = parseInt(process.env.PORT ?? "3000", 10);
  * nobody noticed.
  */
 const bindHost = process.env.BIND_HOST ?? (dev ? "localhost" : "127.0.0.1");
+
+// Every console.error is also kept in app_errors, redacted and counted, so
+// errors are seen in Settings → Errors instead of only the pm2 log
+// (src/lib/errors/record.ts).
+installErrorCapture();
 
 // Log unhandled rejections with full stack so bugs are easy to find.
 process.on("unhandledRejection", (reason) => {
@@ -253,6 +260,15 @@ app.prepare().then(() => {
       console.error("[ad-snapshots] sweep failed:", err);
     });
   }, 6 * 60 * 60_000);
+
+  // An error that keeps happening is pushed to whoever can act on it
+  // (src/lib/errors/alert-sweep.ts).
+  const errorAlertsOnce = singleFlight(() => sweepErrorAlerts());
+  every(() => {
+    errorAlertsOnce().catch((err) => {
+      console.error("[app-errors] alert sweep failed:", err);
+    });
+  }, 5 * 60_000);
 
   const conversionsOnce = singleFlight(() => sendDueConversions());
   every(() => {

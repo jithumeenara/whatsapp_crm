@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { DashboardShellV2 } from "@/components/layout-v2/dashboard-shell-v2";
 import { getCurrentAccount } from "@/lib/auth/account";
 import { canOpenPath, firstAllowedPage } from "@/lib/auth/page-access";
+import { ErrorReporter } from "@/components/error-reporter";
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
@@ -72,5 +73,10 @@ export default async function V2DashboardLayout({
     }
   }
 
-  return <DashboardShellV2>{children}</DashboardShellV2>;
+  return (
+    <DashboardShellV2>
+      <ErrorReporter />
+      {children}
+    </DashboardShellV2>
+  );
 }

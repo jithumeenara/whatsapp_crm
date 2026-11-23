@@ -11,6 +11,7 @@ import {
   Layers,
   Sheet,
   FileClock,
+  Bug,
   BarChart2,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
@@ -37,6 +38,7 @@ const AdminChatSettings = dynamic(() => import("@/components/settings/admin-chat
 const PlatformMetaTab = dynamic(() => import("@/components/settings/platform-meta-tab").then((m) => m.PlatformMetaTab), { loading: PanelLoading })
 const AdsTab = dynamic(() => import("@/components/settings/ads-tab").then((m) => m.AdsTab), { loading: PanelLoading })
 const CatalogTab = dynamic(() => import("@/components/settings/catalog-tab").then((m) => m.CatalogTab), { loading: PanelLoading })
+const ErrorsPanel = dynamic(() => import("@/components/settings/errors-panel").then((m) => m.ErrorsPanel), { loading: PanelLoading })
 const PaymentsTab = dynamic(() => import("@/components/settings/payments-tab").then((m) => m.PaymentsTab), { loading: PanelLoading })
 const CallsTab = dynamic(() => import("@/components/settings/calls-tab").then((m) => m.CallsTab), { loading: PanelLoading })
 const AuditLog = dynamic(() => import("@/components/settings/audit-log").then((m) => m.AuditLog), { loading: PanelLoading })
@@ -115,6 +117,9 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
       // Admin and owner only, and never in PAGE_SECTIONS: page access can
       // not hand the audit log to anyone else (the API refuses them too).
       { key: "audit",        label: "Audit log",     icon: FileClock, adminOnly: true, aliases: ["Activity", "History", "Security log", "Who changed"] },
+      // Errors that happened for real people (app_errors): admins see their
+      // workspace's, the server owner also sees server-wide ones.
+      { key: "errors",       label: "Errors",        icon: Bug,       adminOnly: true, aliases: ["Problems", "Crashes", "System health", "Bugs"] },
     ],
   },
 ]
@@ -136,6 +141,7 @@ const TAB_TITLES: Record<string, string> = {
   "api-keys": "API Keys",
   webhooks: "Webhooks",
   audit: "Audit log",
+  errors: "Errors",
   google: "Google",
   reports: "Reports",
 }
@@ -157,6 +163,7 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   "api-keys": "Secret keys so external apps can read and write Data Store records via the REST API",
   webhooks: "Get an HTTPS POST whenever a Data Store record changes, signed with HMAC-SHA256",
   reports: "Your funnel stages, when open work counts as needing attention, and ad spend from outside Meta",
+  errors: "Errors that happened for real people, grouped and counted. Secrets and phone numbers are removed",
   audit: "Who did what, when and from where — sign-ins, team and settings changes, records, exports and AI actions. Read-only",
 }
 
@@ -263,6 +270,7 @@ function SettingsContent() {
       case "api-keys":         return isOwner ? <ApiKeysPanel /> : null
       case "webhooks":         return isOwner ? <WebhooksPanel /> : null
       case "audit":            return isAdmin ? <AuditLog /> : null
+      case "errors":           return isAdmin ? <ErrorsPanel /> : null
       case "reports":          return isAdmin ? <ReportsSettings /> : null
       default:                 return <ProfileForm />
     }

@@ -2003,6 +2003,26 @@ model AiBudget {
   @@map("ai_budgets")
 }
 
+/// Migration 195 — one row per distinct error, with a repeat count
+/// (src/lib/errors/record.ts). Messages are redacted and capped.
+model AppError {
+  id          String    @id @default(uuid()) @db.Uuid
+  fingerprint String    @unique
+  account_id  String?   @db.Uuid
+  source      String
+  where_at    String    @default("")
+  message     String
+  count       Int       @default(1)
+  first_seen  DateTime  @default(now()) @db.Timestamptz(6)
+  last_seen   DateTime  @default(now()) @db.Timestamptz(6)
+  alerted_at  DateTime? @db.Timestamptz(6)
+  resolved_at DateTime? @db.Timestamptz(6)
+
+  @@index([last_seen(sort: Desc)])
+  @@index([account_id, last_seen(sort: Desc)])
+  @@map("app_errors")
+}
+
 /// Migration 161 — which team a member belongs to (one per person; no row =
 /// "No team"). Its own table so no existing query reads a column an
 /// un-migrated server lacks. user_id is ON DELETE RESTRICT in the database.

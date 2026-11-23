@@ -14,6 +14,7 @@
 import { useEffect } from 'react'
 import Link from 'next/link'
 import { AlertTriangle, RotateCcw } from 'lucide-react'
+import { describeClientError, reportClientError } from '@/lib/errors/report-client'
 
 export default function DashboardError({
   error,
@@ -24,6 +25,10 @@ export default function DashboardError({
 }) {
   useEffect(() => {
     console.error('[page error]', error)
+    // Kept in Settings → Errors so somebody sees a page that crashes for
+    // real users, not only whoever has the console open.
+    const ref = error.digest ? ' [ref ' + error.digest + ']' : ''
+    reportClientError(`Page crashed: ${describeClientError(error)}${ref}`)
   }, [error])
 
   return (
