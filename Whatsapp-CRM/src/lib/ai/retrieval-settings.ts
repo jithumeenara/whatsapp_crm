@@ -44,7 +44,8 @@ export async function retrievalSettingsFor(accountId: string): Promise<Retrieval
 }
 
 export async function setRetrievalSettings(accountId: string, settings: RetrievalSettings): Promise<void> {
-  await prisma.$executeRawUnsafe('ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS retrieval_settings JSONB')
+  // The column comes from migration 197. No ALTER here: it locks the table
+  // and fails where the app's database user does not own it.
   await prisma.$executeRaw(
     Prisma.sql`UPDATE ai_configs SET retrieval_settings = ${JSON.stringify(settings)}::jsonb WHERE account_id = ${accountId}::uuid`,
   )

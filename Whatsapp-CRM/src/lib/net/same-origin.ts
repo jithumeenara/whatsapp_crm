@@ -41,8 +41,13 @@ export function isCrossSiteWrite(args: {
   // it, it alone decides; the Origin comparison below is only for older
   // browsers that do not.
   const site = (args.secFetchSite ?? '').toLowerCase().trim()
-  if (site) return site === 'cross-site'
-  if (args.origin === null || args.origin === undefined || args.origin === '') return false
+  if (site === 'cross-site') return true
+  // same-origin (our own page) and none (typed address, bookmark) pass.
+  if (site === 'same-origin' || site === 'none') return false
+  // 'same-site' is a sibling subdomain (a marketing site beside the CRM),
+  // which the Lax cookie does not stop: only allowed when its Origin is
+  // this app (www / bare domain), checked below like an older browser.
+  if (args.origin === null || args.origin === undefined || args.origin === '') return site === 'same-site'
   if (args.origin === 'null') return true
   const from = hostOf(args.origin)
   if (!from) return true

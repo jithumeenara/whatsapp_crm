@@ -37,6 +37,12 @@ const SLOW_HOSTS = [
   'openrouter.ai',
   'texttospeech.googleapis.com',
   'speech.googleapis.com',
+  // Media downloads (images, voice notes, video): the deadline also covers
+  // reading the body, so a large file needs the longer one.
+  'lookaside.fbsbx.com',
+  'fbcdn.net',
+  'cdninstagram.com',
+  'whatsapp.net',
 ]
 
 function urlOf(input: Parameters<FetchFn>[0]): URL | null {

@@ -39,7 +39,26 @@ async function workspaceAdminIds(accountId: string): Promise<string[]> {
   return people.map((p) => p.user_id)
 }
 
+/** Resolved errors are kept 30 days, any error 90 days after it was last
+ *  seen, so the table cannot grow for ever. Always with a WHERE. */
+export const RESOLVED_KEEP_MS = 30 * 24 * 60 * 60 * 1000
+export const ANY_KEEP_MS = 90 * 24 * 60 * 60 * 1000
+
+export async function pruneOldErrors(now: Date = new Date()): Promise<number> {
+  const r = await prisma.appError.deleteMany({
+    where: {
+      OR: [
+        { resolved_at: { lt: new Date(now.getTime() - RESOLVED_KEEP_MS) } },
+        { last_seen: { lt: new Date(now.getTime() - ANY_KEEP_MS) } },
+      ],
+    },
+  })
+  return r.count
+}
+
 export async function sweepErrorAlerts(now: Date = new Date()): Promise<number> {
+  // Housekeeping first; never let it stop the alerts.
+  await pruneOldErrors(now).catch((err) => console.error('[app-errors] prune failed:', err instanceof Error ? err.message : err))
   const reAlertBefore = new Date(now.getTime() - RE_ALERT_MS)
   const due = await prisma.appError.findMany({
     where: {

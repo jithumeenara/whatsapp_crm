@@ -24,6 +24,7 @@ import { businessTimezone } from './human-date'
 import { dayKey, dayStartIso } from '@/lib/audit/zoned'
 import { formatMoney } from './fx'
 import { liveUsdRate } from './fx-live'
+import { taxPercentFor } from './cost-display'
 
 export const WARN_RATIO = 0.8
 export const MAX_LIMIT_USD = 100_000
@@ -54,7 +55,10 @@ export interface BudgetState {
 export async function effectiveRate(currency: string | null, savedRate: number | null, auto: boolean): Promise<{ rate: number | null; fetchedAt: Date | null }> {
   if (auto && currency) {
     const live = await liveUsdRate(currency)
-    if (live) return { rate: live.rate, fetchedAt: live.fetchedAt }
+    // A live rate far (over 3×) from the one last saved is not trusted: a
+    // wrong or spoofed answer must not make the limit tiny or endless.
+    const plausible = live && (!savedRate || (live.rate > savedRate / 3 && live.rate < savedRate * 3))
+    if (live && plausible) return { rate: live.rate, fetchedAt: live.fetchedAt }
   }
   return { rate: savedRate, fetchedAt: null }
 }
@@ -113,8 +117,12 @@ export async function aiBudgetState(accountId: string, now: Date = new Date()): 
       // business's money, so its USD equivalent follows today's rate.
       const amount = row.limit_amount === null || row.limit_amount === undefined ? null : Number(row.limit_amount)
       const limitUsd = row.rate_auto && amount && r.rate ? amount / r.rate : Number(row.monthly_limit_usd)
+      // Spend as billed: the usage price plus the tax on the provider's
+      // bill (e.g. 18% GST, Settings → AI Config → Usage; migration 200).
+      const tax = await taxPercentFor(accountId)
+      const spentUsd = Number(sum._sum.cost_usd ?? 0) * (1 + tax / 100)
       state = {
-        ...budgetFrom(limitUsd, Number(sum._sum.cost_usd ?? 0), month),
+        ...budgetFrom(limitUsd, spentUsd, month),
         currency: row.currency ?? null,
         usdRate: r.rate,
         rateAuto: row.rate_auto === true,

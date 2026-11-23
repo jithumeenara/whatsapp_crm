@@ -8,6 +8,12 @@ import { isCrossSiteWrite } from './same-origin'
 const base = { method: 'POST', origin: 'https://crm.example.com', secFetchSite: 'same-origin', requestHost: 'crm.example.com', appUrl: 'https://crm.example.com' }
 
 describe('isCrossSiteWrite', () => {
+  it('a sibling subdomain (same-site) is refused unless its Origin is this app', () => {
+    expect(isCrossSiteWrite({ ...base, secFetchSite: 'same-site', origin: 'https://www.example.com' })).toBe(true)
+    expect(isCrossSiteWrite({ ...base, secFetchSite: 'same-site', origin: null })).toBe(true)
+    expect(isCrossSiteWrite({ ...base, secFetchSite: 'same-site', origin: 'https://www.acme.in', requestHost: 'localhost:3000', appUrl: 'https://acme.in' })).toBe(false)
+  })
+
   it('our own page saving something is allowed', () => {
     expect(isCrossSiteWrite(base)).toBe(false)
   })

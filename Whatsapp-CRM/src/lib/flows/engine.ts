@@ -65,6 +65,7 @@ import { buildReplyMeta, recordReplyMeta } from "@/lib/ai/reply-sources";
 import { GROUNDING_RULES, enforceGroundedList } from "@/lib/ai/list-grounding";
 import { historyTurns, type HistoryTurn } from "@/lib/ai/history";
 import { recordAiUsage } from "@/lib/ai/usage";
+import { aiBudgetState, BUDGET_HANDOVER_NOTE } from "@/lib/ai/budget";
 import { loadCompanyProfile, formatCompanyBlock } from "@/lib/ai/company-profile";
 import { buildCustomerContext } from "@/lib/ai/customer-context";
 import { pickAgent, type AgentPickStrategy } from "@/lib/flows/agent-routing";
@@ -1942,6 +1943,35 @@ async function advanceFromNodeKey(
         // threshold catches them, and a prompt rule is exactly what the
         // first category is trying to defeat. The model is not asked.
         const safetyMatch = checkSafetyGuard(lastUserMessage);
+
+        // This month's AI budget is used up (src/lib/ai/budget.ts): the
+        // model is not called. The customer gets the usual hand-over line
+        // and the team gets the conversation, as in auto-reply.
+        if (!safetyMatch && (await aiBudgetState(run.account_id)).over) {
+          const { whatsapp_message_id: budgetMsgId } = await engineSendText({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            text: aiConfig.low_confidence_message?.trim() || "Let me connect you with a team member who can help with that.",
+          });
+          await logEvent(run.id, "message_sent", node.node_key, {
+            node_type: "ai_reply",
+            whatsapp_message_id: budgetMsgId,
+            reason: "ai_budget_used_up",
+          });
+          await executeHandoff(
+            run,
+            {
+              assign_to: aiConfig.low_confidence_assign_to ?? undefined,
+              note: `${BUDGET_HANDOVER_NOTE}\n\nThey asked: "${lastUserMessage.slice(0, 200)}"`,
+            },
+            node.node_key,
+            "ai_reply_budget",
+          );
+          return { outcome: "handed_off" };
+        }
+
         if (safetyMatch) {
           const { whatsapp_message_id: safetyMsgId } = await engineSendText({
             accountId: run.account_id,
