@@ -18,6 +18,7 @@ import { prisma } from '@/lib/db'
 import { sendStaffAlert, cleanNumbers, templateSafe, alertExtras } from '@/lib/whatsapp/staff-alert'
 import { mappingFor } from '@/lib/whatsapp/alert-fields'
 import { sendTelegramStaffAlert } from './staff-telegram'
+import { telegramAlertsOn } from './telegram-alert-setting'
 
 export interface HandoffAlertInput {
   accountId: string
@@ -87,7 +88,10 @@ export async function sendHandoffAlert(input: HandoffAlertInput): Promise<Handof
     // and has no 24-hour window, so admins who opted in hear of it even
     // when WhatsApp would need an approved template.
     // Each member sees only what their Admin Chat scope allows.
-    const telegram = await sendTelegramStaffAlert(input.accountId, { who, phone, quote, reason })
+    // "Alert staff on Telegram" in Settings → AI (on unless switched off).
+    const telegram = (await telegramAlertsOn(input.accountId))
+      ? await sendTelegramStaffAlert(input.accountId, { who, phone, quote, reason })
+      : 0
 
     if (!aiConfig?.handoff_alert_enabled) return { ...empty, skipped: 'disabled', telegram }
     if (cleanNumbers(aiConfig.handoff_alert_numbers).length === 0) {

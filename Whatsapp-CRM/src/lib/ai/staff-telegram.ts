@@ -45,40 +45,66 @@ export function alertTextFor(scope: string, a: StaffAlert): string {
   return ['🔔 A customer needs a person.', '', `From: ${who}`, `Number: ${phone}`, `Reason: ${a.reason}`, '', `They said: "${a.quote}"`].join('\n')
 }
 
+/** Who would get a Telegram alert, for the settings screen. Counts only. */
+export interface TelegramAlertReach {
+  /** Settings → Admin Chat is switched on. */
+  admin_chat_on: boolean
+  /** A Telegram bot is connected (Settings → Channels). */
+  bot_connected: boolean
+  /** Owners/admins linked on Telegram with alerts on. */
+  recipients: number
+  /** Of those, inside their allowed days and hours right now. */
+  reachable_now: number
+}
+
+export async function telegramAlertReach(accountId: string, now: Date = new Date()): Promise<TelegramAlertReach> {
+  const settings = await prisma.adminChatSettings.findUnique({ where: { account_id: accountId }, select: { enabled: true } })
+  const { botForAccount } = await import('@/lib/telegram/store')
+  const bot = await botForAccount(accountId).catch(() => null)
+  const { all, allowed } = await alertMembers(accountId, now)
+  return { admin_chat_on: Boolean(settings?.enabled), bot_connected: Boolean(bot), recipients: all.length, reachable_now: allowed.length }
+}
+
+/** Linked, verified, active Telegram members with alerts on who are still
+ *  owner/admin here (all), and those inside their window now (allowed). */
+async function alertMembers(accountId: string, now: Date) {
+  const members = await prisma.adminChatMember.findMany({
+    where: {
+      account_id: accountId,
+      channel: 'telegram',
+      status: 'active',
+      alerts_enabled: true,
+      telegram_id: { not: null },
+      verified_at: { not: null },
+    },
+    select: {
+      telegram_id: true, user_id: true, scope: true,
+      valid_from: true, valid_until: true, allowed_days: true, start_minute: true, end_minute: true,
+    },
+  })
+  if (members.length === 0) return { all: [], allowed: [] }
+  // Still an owner/admin of THIS account — the rule Admin Chat checks on
+  // every question (engine.ts stillAdmin). A removed member is moved to a
+  // holding account; a demoted one keeps the account but not the role.
+  const profiles = await prisma.profile.findMany({
+    where: { user_id: { in: [...new Set(members.map((m) => m.user_id))] } },
+    select: { user_id: true, account_id: true, account_role: true },
+  })
+  const admins = new Set(
+    profiles
+      .filter((p) => p.account_id === accountId && isAccountRole(p.account_role) && hasMinRole(p.account_role, 'admin'))
+      .map((p) => p.user_id),
+  )
+  const all = members.filter((m) => admins.has(m.user_id))
+  const local = localNow(await businessTimezone(accountId), now)
+  return { all, allowed: all.filter((m) => windowCheck(m, local).ok) }
+}
+
 export async function sendTelegramStaffAlert(accountId: string, alert: StaffAlert, now: Date = new Date()): Promise<number> {
   try {
     const settings = await prisma.adminChatSettings.findUnique({ where: { account_id: accountId }, select: { enabled: true } })
     if (!settings?.enabled) return 0
-    const members = await prisma.adminChatMember.findMany({
-      where: {
-        account_id: accountId,
-        channel: 'telegram',
-        status: 'active',
-        alerts_enabled: true,
-        telegram_id: { not: null },
-        verified_at: { not: null },
-      },
-      select: {
-        telegram_id: true, user_id: true, scope: true,
-        valid_from: true, valid_until: true, allowed_days: true, start_minute: true, end_minute: true,
-      },
-    })
-    if (members.length === 0) return 0
-
-    // Still an owner/admin of THIS account — the rule Admin Chat checks on
-    // every question (engine.ts stillAdmin). A removed member is moved to a
-    // holding account; a demoted one keeps the account but not the role.
-    const profiles = await prisma.profile.findMany({
-      where: { user_id: { in: [...new Set(members.map((m) => m.user_id))] } },
-      select: { user_id: true, account_id: true, account_role: true },
-    })
-    const admins = new Set(
-      profiles
-        .filter((p) => p.account_id === accountId && isAccountRole(p.account_role) && hasMinRole(p.account_role, 'admin'))
-        .map((p) => p.user_id),
-    )
-    const local = localNow(await businessTimezone(accountId), now)
-    const allowed = members.filter((m) => admins.has(m.user_id) && windowCheck(m, local).ok)
+    const { allowed } = await alertMembers(accountId, now)
     if (allowed.length === 0) return 0
 
     const { botForAccount } = await import('@/lib/telegram/store')

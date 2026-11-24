@@ -19,6 +19,7 @@ import {
 import { HandoverConsentSetting } from './handover-consent-setting';
 import { ImageReadingSetting } from './image-reading-setting';
 import { RerankSetting } from './rerank-setting';
+import { TelegramAlertSetting } from './telegram-alert-setting';
 import { AlertTemplateFields } from '@/components/settings/alert-template-fields';
 
 /**
@@ -503,6 +504,9 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                   </div>
                 )}
               </div>
+
+              {/* The same alert on Telegram: free, no 24-hour window. */}
+              <TelegramAlertSetting />
 
               {/* Asking before connecting, and what happens then. */}
               <HandoverConsentSetting />
