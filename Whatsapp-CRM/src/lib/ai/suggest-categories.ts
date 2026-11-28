@@ -34,7 +34,7 @@
  * business never agreed to.
  */
 
-import { GoogleGenerativeAI, SchemaType, type ResponseSchema } from '@google/generative-ai'
+import { geminiGenerate, SchemaType, type ResponseSchema } from './genai'
 import { prisma } from '@/lib/db'
 import { geminiCredentials } from '@/lib/ai/providers/registry'
 import { recordAiUsage, tokensFromGemini } from '@/lib/ai/usage'
@@ -120,31 +120,25 @@ export async function suggestCategories(accountId: string): Promise<SuggestResul
 
   const started = Date.now()
   try {
-    const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({
+    const result = await geminiGenerate({
+      apiKey,
       model: SUGGEST_MODEL,
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: SCHEMA,
-        ...(thinkingConfigFor(SUGGEST_MODEL, 'minimal') ?? {}),
-      },
+      contents: buildSuggestPrompt({ company, knowledge, conversations, existing }),
+      responseSchema: SCHEMA,
+      thinking: thinkingConfigFor(SUGGEST_MODEL, 'minimal'),
     })
-
-    const result = await model.generateContent(
-      buildSuggestPrompt({ company, knowledge, conversations, existing }),
-    )
 
     void recordAiUsage({
       accountId,
       model: SUGGEST_MODEL,
       feature: 'judgement',
-      tokens: tokensFromGemini(result.response.usageMetadata),
+      tokens: tokensFromGemini(result.usageMetadata),
       latencyMs: Date.now() - started,
     })
 
     let parsed: { categories?: unknown }
     try {
-      parsed = JSON.parse(result.response.text())
+      parsed = JSON.parse(result.text)
     } catch {
       return { ok: false, error: 'failed', message: 'The model did not return JSON.' }
     }

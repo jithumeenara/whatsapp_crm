@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { GoogleGenerativeAI, SchemaType, type ResponseSchema } from '@google/generative-ai'
+import { geminiGenerate, SchemaType, type ResponseSchema } from '@/lib/ai/genai'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -106,13 +106,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const started = Date.now()
     let raw: unknown
     try {
-      const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-        model: MODEL,
-        generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA, ...(thinkingConfigFor(MODEL, 'low') ?? {}) },
-      })
-      const result = await model.generateContent(prompt)
-      void recordAiUsage({ accountId: ctx.accountId, model: MODEL, feature: 'translation', tokens: tokensFromGemini(result.response.usageMetadata), latencyMs: Date.now() - started })
-      raw = JSON.parse(result.response.text())
+      const result = await geminiGenerate({ apiKey, model: MODEL, contents: prompt, responseSchema: SCHEMA, thinking: thinkingConfigFor(MODEL, 'low') })
+      void recordAiUsage({ accountId: ctx.accountId, model: MODEL, feature: 'translation', tokens: tokensFromGemini(result.usageMetadata), latencyMs: Date.now() - started })
+      raw = JSON.parse(result.text)
     } catch (err) {
       console.error('[form-translate] model failed:', err instanceof Error ? err.message : err)
       return NextResponse.json({ error: 'The AI could not translate just now. Try again in a minute.' }, { status: 502 })

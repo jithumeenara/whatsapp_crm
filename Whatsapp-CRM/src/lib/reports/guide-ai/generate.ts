@@ -7,7 +7,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { GoogleGenerativeAI, SchemaType, type ResponseSchema } from '@google/generative-ai'
+import { geminiGenerate, SchemaType, type ResponseSchema } from '@/lib/ai/genai'
 import { prisma } from '@/lib/db'
 import { geminiCredentials } from '@/lib/ai/providers/registry'
 import { recordAiUsage, tokensFromGemini } from '@/lib/ai/usage'
@@ -42,14 +42,16 @@ export async function aiGuideFindings(a: { accountId: string; findings: Finding[
 
   const started = Date.now()
   try {
-    const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
+    const result = await geminiGenerate({
+      apiKey,
       model: MODEL,
-      generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA, ...(thinkingConfigFor(MODEL, 'minimal') ?? {}) },
+      contents: buildPrompt(facts, a.language),
+      responseSchema: SCHEMA,
+      thinking: thinkingConfigFor(MODEL, 'minimal'),
     })
-    const result = await model.generateContent(buildPrompt(facts, a.language))
-    void recordAiUsage({ accountId: a.accountId, model: MODEL, feature: 'report_guide', tokens: tokensFromGemini(result.response.usageMetadata), latencyMs: Date.now() - started })
+    void recordAiUsage({ accountId: a.accountId, model: MODEL, feature: 'report_guide', tokens: tokensFromGemini(result.usageMetadata), latencyMs: Date.now() - started })
     let answer: AiGuideAnswer | null = null
-    try { answer = JSON.parse(result.response.text()) as AiGuideAnswer } catch { answer = null }
+    try { answer = JSON.parse(result.text) as AiGuideAnswer } catch { answer = null }
     const findings = toFindings(answer, new Set(numbersIn(facts.join(' '))))
     if (cache.size >= MAX_CACHE) cache.delete(cache.keys().next().value as string)
     cache.set(key, { at: Date.now(), findings })

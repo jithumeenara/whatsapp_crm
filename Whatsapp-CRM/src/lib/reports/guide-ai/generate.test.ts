@@ -7,19 +7,15 @@ vi.mock('@/lib/db', () => ({ prisma: { aiConfig: { findUnique: () => Promise.res
 vi.mock('@/lib/ai/providers/registry', () => ({ geminiCredentials: () => ({ apiKey: h.key, model: null }) }))
 vi.mock('@/lib/ai/usage', () => ({ recordAiUsage: () => Promise.resolve(), tokensFromGemini: () => ({}) }))
 vi.mock('@/lib/ai/reasoning', () => ({ thinkingConfigFor: () => null }))
-vi.mock('@google/generative-ai', () => ({
+// The Gemini call, via the new-SDK doorway (src/lib/ai/genai.ts) the code
+// now uses; same behaviour as the old-SDK mock it replaces.
+vi.mock('@/lib/ai/genai', () => ({
   SchemaType: { OBJECT: 'OBJECT', STRING: 'STRING', ARRAY: 'ARRAY' },
-  GoogleGenerativeAI: class {
-    getGenerativeModel() {
-      return {
-        generateContent: (prompt: string) => {
-          h.calls += 1
-          h.prompts.push(prompt)
-          if (h.fail) return Promise.reject(new Error('quota'))
-          return Promise.resolve({ response: { text: () => h.answer, usageMetadata: {} } })
-        },
-      }
-    }
+  geminiGenerate: (args: { contents: string }) => {
+    h.calls += 1
+    h.prompts.push(args.contents)
+    if (h.fail) return Promise.reject(new Error('quota'))
+    return Promise.resolve({ text: h.answer, usageMetadata: {} })
   },
 }))
 

@@ -12,7 +12,7 @@
  * as chat replies and embeddings — nothing new to configure.
  */
 
-import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai'
+import { geminiGenerate, SchemaType } from './genai'
 import { tokensFromGemini } from './pricing'
 
 /** Cheap, fast, and translation doesn't need the account's own configured
@@ -60,12 +60,7 @@ export async function detectAndTranslate(args: {
   includeRomanized?: boolean
 }): Promise<TranslateResult> {
   const { apiKey, text, targetLanguage, includeRomanized } = args
-  const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({
-    model: TRANSLATE_MODEL,
-    generationConfig: {
-      responseMimeType: 'application/json',
-      responseSchema: {
+  const responseSchema = {
         type: SchemaType.OBJECT,
         properties: {
           detected_language: { type: SchemaType.STRING, description: 'The language the input text is written in, as a plain English name (e.g. "Arabic", "Tamil", "English").' },
@@ -82,9 +77,7 @@ export async function detectAndTranslate(args: {
         required: includeRomanized
           ? ['detected_language', 'translated_text', 'romanized_text']
           : ['detected_language', 'translated_text'],
-      },
-    },
-  })
+      }
 
   const romanizedInstruction = includeRomanized
     ? `\n\nAlso provide romanized_text: exactly the same ${targetLanguage} translation, written in English letters the way it is pronounced. Do not translate it into English — a Malayalam sentence becomes "ningalude admission labhichu", not "your admission is received". Keep names, numbers and English loanwords spelled as they normally are.`
@@ -92,8 +85,8 @@ export async function detectAndTranslate(args: {
 
   const prompt = `Detect the language of the following text, then translate it into ${targetLanguage}. Preserve the original tone and meaning — this is a customer support chat message, not a formal document. If the text is already in ${targetLanguage}, still report the detected language accurately and return the text unchanged as the translation.${romanizedInstruction}\n\nText:\n${text}`
 
-  const result = await model.generateContent(prompt)
-  const raw = result.response.text()
+  const result = await geminiGenerate({ apiKey, model: TRANSLATE_MODEL, contents: prompt, responseSchema })
+  const raw = result.text
 
   let parsed: { detected_language?: string; translated_text?: string; romanized_text?: string }
   try {
@@ -105,7 +98,7 @@ export async function detectAndTranslate(args: {
     throw new Error('Translation model response missing required fields.')
   }
 
-  const usage = result.response.usageMetadata
+  const usage = result.usageMetadata
   return {
     detectedLanguage: parsed.detected_language,
     translatedText: parsed.translated_text,

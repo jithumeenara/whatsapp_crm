@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { GoogleGenerativeAI, SchemaType, type ResponseSchema } from "@google/generative-ai"
+import { geminiGenerate, SchemaType, type ResponseSchema } from "@/lib/ai/genai"
 import { requireRole, toErrorResponse, assertPageAccess } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { checkRateLimit } from "@/lib/rate-limit"
@@ -110,13 +110,9 @@ export async function POST(req: NextRequest) {
     const started = Date.now()
     let raw: unknown
     try {
-      const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-        model: MODEL,
-        generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA, ...(thinkingConfigFor(MODEL, "low") ?? {}) },
-      })
-      const result = await model.generateContent(prompt(profileText, languages))
-      void recordAiUsage({ accountId: ctx.accountId, userId: ctx.userId, model: MODEL, feature: "template_kit", tokens: tokensFromGemini(result.response.usageMetadata), latencyMs: Date.now() - started })
-      raw = JSON.parse(result.response.text())
+      const result = await geminiGenerate({ apiKey, model: MODEL, contents: prompt(profileText, languages), responseSchema: SCHEMA, thinking: thinkingConfigFor(MODEL, "low") })
+      void recordAiUsage({ accountId: ctx.accountId, userId: ctx.userId, model: MODEL, feature: "template_kit", tokens: tokensFromGemini(result.usageMetadata), latencyMs: Date.now() - started })
+      raw = JSON.parse(result.text)
     } catch (err) {
       console.error("[template-kit] model failed:", err instanceof Error ? err.message : err)
       return NextResponse.json({ error: "The AI could not write templates just now. Try again in a minute." }, { status: 502 })
