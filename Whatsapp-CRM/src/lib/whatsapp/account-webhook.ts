@@ -31,7 +31,13 @@ const ACCOUNT_ALERT_FIELDS = new Set([
   'phone_number_name_update',
   'account_review_update',
   'security',
+  // Embedded Signup partner events: the business removed this app in Meta,
+  // or the account was offboarded (handled in handlePartnerChange).
+  'account_update',
 ])
+
+/** account_update events that mean the CRM no longer has the number. */
+const PARTNER_GONE = new Set(['PARTNER_REMOVED', 'ACCOUNT_OFFBOARDED'])
 
 export function isAccountAlertField(field: string): boolean {
   return ACCOUNT_ALERT_FIELDS.has(field)
@@ -93,6 +99,7 @@ const FIELD_COPY: Record<string, { title: string; body: (v: Record<string, unkno
  * here must never affect webhook ack or any other change in the batch.
  */
 export async function handleAccountAlertChange(change: AccountAlertChange, wabaId: string): Promise<void> {
+  if (change.field === 'account_update') return handlePartnerChange(change.value, wabaId)
   const copy = FIELD_COPY[change.field]
   if (!copy) return // defensive; isAccountAlertField already filtered
 
@@ -142,5 +149,46 @@ export async function handleAccountAlertChange(change: AccountAlertChange, wabaI
     await prisma.whatsAppConfig
       .update({ where: { id: config.id }, data: { last_alert_notified_at: new Date() } })
       .catch((err) => console.error('[account-webhook] failed to stamp last_alert_notified_at:', err))
+  }
+}
+
+/**
+ * The business removed this app from its WhatsApp account in Meta (or the
+ * account was offboarded): the numbers on that WABA can no longer send or
+ * receive here. Marked disconnected with a plain reason, and the person
+ * who connected them is told — before, the screen kept saying "connected"
+ * while every send failed. Other account_update events are not alerts.
+ */
+async function handlePartnerChange(raw: unknown, entryWabaId: string): Promise<void> {
+  const v = asRecord(raw)
+  const event = str(v.event)
+  if (!event || !PARTNER_GONE.has(event)) return
+  const wabaId = str(asRecord(v.waba_info).waba_id) ?? entryWabaId
+  if (!/^\d{5,30}$/.test(wabaId)) return
+  try {
+    const rows = await prisma.whatsAppConfig.findMany({
+      where: { waba_id: wabaId, status: { not: 'disconnected' } },
+      select: { id: true, user_id: true },
+    })
+    if (rows.length === 0) return
+    const reason = event === 'PARTNER_REMOVED'
+      ? 'The business removed this app from its WhatsApp account in Meta. Connect the number again to keep using it.'
+      : 'Meta offboarded this WhatsApp account. Connect the number again to keep using it.'
+    // Conditional: a redelivered event changes nothing the second time.
+    await prisma.whatsAppConfig.updateMany({
+      where: { waba_id: wabaId, status: { not: 'disconnected' } },
+      data: { status: 'disconnected', last_registration_error: reason },
+    })
+    const { sendPushToUser } = await import('@/lib/push')
+    for (const userId of new Set(rows.map((r) => r.user_id))) {
+      void sendPushToUser(userId, {
+        title: 'WhatsApp number disconnected',
+        body: reason,
+        tag: 'wa-partner-removed',
+        data: { type: 'whatsapp_account_alert', field: 'account_update' },
+      })
+    }
+  } catch (err) {
+    console.error('[account-webhook] partner event not applied:', err instanceof Error ? err.message : err)
   }
 }

@@ -1,4 +1,3 @@
-import { randomInt } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
@@ -7,10 +6,13 @@ import { loadMetaPlatformConfig } from "@/lib/whatsapp/meta-platform-config"
 import {
   exchangeEmbeddedSignupCode,
   subscribeWabaToApp,
-  registerPhoneNumber,
   verifyPhoneNumber,
+  listWabaPhoneNumbers,
   listWabaPhoneNumberIds,
 } from "@/lib/whatsapp/meta-api"
+import { registerWithPin, savePin } from "@/lib/whatsapp/two-step-pin"
+import { checkRateLimit } from "@/lib/rate-limit"
+import { parseSignupBody } from "@/lib/meta/embedded-signup-body"
 import { createOrGetDataset } from "@/lib/meta-ads/api"
 import { auditCtx } from "@/lib/audit"
 import { auditConfigChange } from "@/lib/audit/config-change"
@@ -30,16 +32,21 @@ import { auditConfigChange } from "@/lib/audit/config-change"
  *
  * Body: { code, wabaId, phoneNumberId } — `code` from FB.login's callback,
  * `wabaId`/`phoneNumberId` from the WA_EMBEDDED_SIGNUP postMessage event.
+ * A WhatsApp Business app number (event FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING,
+ * "coexistence") sends { code, wabaId, coexistence: true } and no number.
  */
 export async function POST(req: NextRequest) {
   try {
     const ctx = await requireRole("owner")
 
-    const body = await req.json().catch(() => ({}))
-    const { code, wabaId, phoneNumberId } = body as { code?: string; wabaId?: string; phoneNumberId?: string }
-    if (!code || !wabaId || !phoneNumberId) {
-      return NextResponse.json({ error: "Missing code, wabaId, or phoneNumberId from the signup popup" }, { status: 400 })
+    // A few tries a minute is plenty for a person in a Meta popup.
+    if (!checkRateLimit(`embedded-signup:${ctx.userId}`, { limit: 10, windowMs: 60_000 }).success) {
+      return NextResponse.json({ error: "Too many tries. Wait a minute and connect again." }, { status: 429 })
     }
+
+    const parsed = parseSignupBody(await req.json().catch(() => null))
+    if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 })
+    const { code, wabaId, coexistence } = parsed
 
     const platformConfig = await loadMetaPlatformConfig()
     if (!platformConfig) {
@@ -58,45 +65,62 @@ export async function POST(req: NextRequest) {
       })
       accessToken = result.accessToken
     } catch (err) {
-      console.error("[embedded-signup] code exchange failed:", err)
-      const reason = err instanceof Error ? err.message : "Failed to exchange the signup code"
-      return NextResponse.json({ error: `${reason} — the code expires 30 seconds after signup, try connecting again.` }, { status: 502 })
+      console.error("[embedded-signup] code exchange failed:", err instanceof Error ? err.message : err)
+      return NextResponse.json({ error: "Meta did not accept the sign-in. It expires after a few minutes — connect again." }, { status: 502 })
     }
 
-    // The wabaId / phoneNumberId come from the browser. Only a number this
-    // token can actually see under that WABA is connected — nothing is
-    // subscribed, registered or saved before that is proven.
-    let grantedNumbers: string[]
+    // The ids come from the browser. Only a number this token can see under
+    // that WABA is connected — nothing is subscribed, registered or saved
+    // before that is proven. A WhatsApp Business app number (coexistence)
+    // arrives with the WABA only; it is the WABA's number that is on the app.
+    let numbers: Array<{ id: string; onBizApp: boolean }>
     try {
-      grantedNumbers = await listWabaPhoneNumberIds({ wabaId, accessToken })
+      numbers = coexistence
+        ? await listWabaPhoneNumbers({ wabaId, accessToken })
+        : (await listWabaPhoneNumberIds({ wabaId, accessToken })).map((id) => ({ id, onBizApp: false }))
     } catch (err) {
-      console.error("[embedded-signup] could not list the WABA's numbers:", err)
+      console.error("[embedded-signup] could not list the WABA's numbers:", err instanceof Error ? err.message : err)
       return NextResponse.json({ error: "Could not confirm the WhatsApp account you chose. Try connecting again." }, { status: 403 })
     }
-    if (!grantedNumbers.includes(String(phoneNumberId))) {
-      return NextResponse.json({ error: "That phone number is not part of the WhatsApp account you granted. Try connecting again." }, { status: 403 })
+    let phoneNumberId: string
+    if (parsed.coexistence) {
+      const onApp = numbers.filter((n) => n.onBizApp)
+      if (onApp.length !== 1) {
+        return NextResponse.json({ error: "Could not find the WhatsApp Business app number in the account you granted. Try connecting again." }, { status: 403 })
+      }
+      phoneNumberId = onApp[0].id
+    } else {
+      phoneNumberId = parsed.phoneNumberId
+      if (!numbers.some((n) => n.id === phoneNumberId)) {
+        return NextResponse.json({ error: "That phone number is not part of the WhatsApp account you granted. Try connecting again." }, { status: 403 })
+      }
     }
 
     // ── WhatsApp ────────────────────────────────────────────────────
     try {
       await subscribeWabaToApp({ wabaId, accessToken })
     } catch (err) {
-      console.error("[embedded-signup] subscribe failed:", err)
-      const reason = err instanceof Error ? err.message : "Failed to subscribe to the WhatsApp Business Account"
-      return NextResponse.json({ error: reason }, { status: 502 })
+      console.error("[embedded-signup] subscribe failed:", err instanceof Error ? err.message : err)
+      return NextResponse.json({ error: "Meta would not send this WhatsApp account's messages to the CRM. Try connecting again; if it keeps failing, check the app in Meta Business settings." }, { status: 502 })
     }
 
-    // crypto.randomInt is uniform (unlike Math.random-based mod bias) —
-    // same reasoning as the OTP generator in lib/auth/mfa.ts. Embedded
-    // Signup never sends the tenant through WhatsApp Manager themselves,
-    // so there's no pre-existing 2FA PIN to ask for — we set our own.
-    const pin = String(randomInt(0, 1_000_000)).padStart(6, "0")
-    try {
-      await registerPhoneNumber({ phoneNumberId, accessToken, pin })
-    } catch (err) {
-      console.error("[embedded-signup] register failed:", err)
-      const reason = err instanceof Error ? err.message : "Failed to register the phone number"
-      return NextResponse.json({ error: reason }, { status: 502 })
+    // A WhatsApp Business app number is already registered (Meta: skip
+    // registration for coexistence). Otherwise register with the PIN kept
+    // from last time, or a new one if Meta has a PIN nobody kept.
+    let pin: string | null = null
+    if (!coexistence) {
+      try {
+        pin = await registerWithPin({ accountId: ctx.accountId, phoneNumberId, accessToken })
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : ""
+        console.error("[embedded-signup] register failed:", reason)
+        const anotherApp = /another app|already in use|registered to another/i.test(reason)
+        return NextResponse.json({
+          error: anotherApp
+            ? "This number is already connected to another WhatsApp service. Disconnect it there first, then connect again."
+            : "Meta could not register this phone number. Try connecting again.",
+        }, { status: 502 })
+      }
     }
 
     const phoneInfo = await verifyPhoneNumber({ phoneNumberId, accessToken }).catch(() => null)
@@ -126,7 +150,7 @@ export async function POST(req: NextRequest) {
           subscribed_apps_at: now,
           connected_at: now,
           last_registration_error: null,
-          connect_method: "quick",
+          connect_method: coexistence ? "coexistence" : "quick",
         },
       })
     } else {
@@ -141,11 +165,13 @@ export async function POST(req: NextRequest) {
           registered_at: now,
           subscribed_apps_at: now,
           connected_at: now,
-          connect_method: "quick",
+          connect_method: coexistence ? "coexistence" : "quick",
           is_default: !accountHasAnyNumber,
         },
       })
     }
+
+    if (pin) await savePin(ctx.accountId, phoneNumberId, pin)
 
     // Facebook Page (→ Messenger) + Instagram, Meta Ads (ad account +
     // Conversions API dataset), and Product Catalog — three independent,
@@ -169,6 +195,7 @@ export async function POST(req: NextRequest) {
       target: { type: "whatsapp_number", id: phoneNumberId },
       meta: {
         verb: existingForThisNumber ? "reconnected" : "connected",
+        coexistence,
         phone_number_id: phoneNumberId,
         waba_id: wabaId,
       },
@@ -179,6 +206,7 @@ export async function POST(req: NextRequest) {
       phoneDisplay: phoneInfo?.display_phone_number ?? "",
       verifiedName: phoneInfo?.verified_name ?? "",
       datasetReady: dataset.datasetReady,
+      coexistence,
     })
   } catch (err) {
     return toErrorResponse(err)
@@ -227,4 +255,3 @@ async function ensureWabaDataset(accountId: string, userId: string, businessToke
   }
   return result
 }
-

@@ -243,7 +243,33 @@ export async function registerPhoneNumber(
   if (/already.*registered/i.test(message)) {
     return { success: true, alreadyRegistered: true }
   }
-  throw new Error(message)
+  // The code travels with the error so a caller can tell a two-step PIN
+  // mismatch (133005) — a number registered before with another PIN —
+  // from everything else.
+  throw Object.assign(new Error(message), { metaCode: data.error?.code })
+}
+
+/** Meta's code for "Two step verification PIN mismatch". */
+export const PIN_MISMATCH_CODE = 133005
+
+export function isPinMismatch(err: unknown): boolean {
+  const e = err as { metaCode?: unknown; message?: unknown } | null
+  return e?.metaCode === PIN_MISMATCH_CODE || /pin\s*mismatch/i.test(String(e?.message ?? ''))
+}
+
+/**
+ * Set (or change) the number's two-step verification PIN with the
+ * business token — POST /<PHONE_NUMBER_ID> { pin }. Needs no old PIN, so
+ * a number registered earlier with a PIN nobody kept can be registered
+ * again.
+ */
+export async function setTwoStepPin(args: { phoneNumberId: string; accessToken: string; pin: string }): Promise<void> {
+  const response = await fetch(`${META_API_BASE}/${encodeURIComponent(args.phoneNumberId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${args.accessToken}` },
+    body: JSON.stringify({ pin: args.pin }),
+  })
+  if (!response.ok) await throwMetaError(response, `Could not set the two-step PIN: ${response.status}`)
 }
 
 export interface SubscribeWabaToAppArgs {
@@ -289,8 +315,13 @@ export async function exchangeEmbeddedSignupCode(
   args: ExchangeEmbeddedSignupCodeArgs
 ): Promise<{ accessToken: string }> {
   const { appId, appSecret, code } = args
-  const url = `${META_API_BASE}/oauth/access_token?client_id=${encodeURIComponent(appId)}&client_secret=${encodeURIComponent(appSecret)}&code=${encodeURIComponent(code)}`
-  const response = await fetch(url)
+  // POSTed as a form, not put in the URL: the app secret then never sits
+  // in a URL that a proxy or a log line could keep.
+  const response = await fetch(`${META_API_BASE}/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: appId, client_secret: appSecret, code }).toString(),
+  })
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
@@ -1753,6 +1784,23 @@ export async function sendTypingIndicator(
  * prove a browser-supplied (wabaId, phoneNumberId) pair really belongs to
  * what the person granted, before anything is saved.
  */
+/**
+ * The WABA's numbers with what coexistence needs: is_on_biz_app is true
+ * for a number also used in the WhatsApp Business app.
+ */
+export async function listWabaPhoneNumbers(args: { wabaId: string; accessToken: string }): Promise<Array<{ id: string; onBizApp: boolean }>> {
+  const out: Array<{ id: string; onBizApp: boolean }> = []
+  let url: string | null = `${META_API_BASE}/${encodeURIComponent(args.wabaId)}/phone_numbers?fields=id,is_on_biz_app,platform_type&limit=100`
+  for (let page = 0; url && page < 5; page++) {
+    const response: Response = await fetch(url, { headers: { Authorization: `Bearer ${args.accessToken}` }, cache: 'no-store' })
+    if (!response.ok) await throwMetaError(response, `Could not list the WhatsApp account's numbers: ${response.status}`)
+    const data = (await response.json()) as { data?: Array<{ id?: string; is_on_biz_app?: boolean }>; paging?: { next?: string } }
+    for (const row of data.data ?? []) if (row.id) out.push({ id: String(row.id), onBizApp: row.is_on_biz_app === true })
+    url = data.paging?.next && data.paging.next.startsWith(META_API_BASE) ? data.paging.next : null
+  }
+  return out
+}
+
 export async function listWabaPhoneNumberIds(args: { wabaId: string; accessToken: string }): Promise<string[]> {
   const ids: string[] = []
   let url: string | null = `${META_API_BASE}/${encodeURIComponent(args.wabaId)}/phone_numbers?fields=id&limit=100`

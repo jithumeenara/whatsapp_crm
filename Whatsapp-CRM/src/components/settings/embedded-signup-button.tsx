@@ -6,6 +6,7 @@ import { Loader2, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { isFacebookOrigin } from './facebook-origin';
 import { GRAPH_API_VERSION } from '@/lib/meta/versions'
+import { apiFetch, errorText } from '@/lib/api-fetch';
 
 declare global {
   interface Window {
@@ -49,13 +50,13 @@ export function EmbeddedSignupButton({ onConnected, className, label = 'Connect 
   const [connecting, setConnecting] = useState(false);
   const appIdRef = useRef('');
   const configIdRef = useRef('');
-  const signupData = useRef<{ code?: string; wabaId?: string; phoneNumberId?: string }>({});
+  const signupData = useRef<{ code?: string; wabaId?: string; phoneNumberId?: string; coexistence?: boolean }>({});
   const finishing = useRef(false);
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/platform/meta-config/public');
+        const res = await apiFetch('/api/platform/meta-config/public');
         const data = await res.json();
         if (data.configured) {
           appIdRef.current = data.appId;
@@ -86,6 +87,9 @@ export function EmbeddedSignupButton({ onConnected, className, label = 'Connect 
       script.async = true;
       script.defer = true;
       script.crossOrigin = 'anonymous';
+      // Blocked by an ad blocker or a strict network: say so, instead of a
+      // button that stays greyed out for ever.
+      script.onerror = () => toast.error('Could not load Facebook sign-in. Allow connect.facebook.net (ad blocker?) and reload the page.', { duration: 8000 });
       document.body.appendChild(script);
     }
   }, [platformConfigured]);
@@ -96,14 +100,39 @@ export function EmbeddedSignupButton({ onConnected, className, label = 'Connect 
       // https://evilfacebook.com (or plain http) post a lookalike event and
       // swap in its own WhatsApp account ids mid-signup.
       if (!isFacebookOrigin(event.origin)) return;
-      let parsed: { type?: string; data?: { waba_id?: string; phone_number_id?: string } } | null = null;
-      try { parsed = JSON.parse(event.data); } catch { return; }
-      // Meta documents the completion event as `event: "FINISH"` but notes
-      // variants exist — match on the two IDs actually being present
-      // instead of pinning to one exact event string.
-      if (parsed?.type === 'WA_EMBEDDED_SIGNUP' && parsed.data?.waba_id && parsed.data?.phone_number_id) {
-        signupData.current.wabaId = parsed.data.waba_id;
-        signupData.current.phoneNumberId = parsed.data.phone_number_id;
+      let parsed: {
+        type?: string;
+        event?: string;
+        data?: { waba_id?: string; phone_number_id?: string; current_step?: string; error_message?: string };
+      } | null = null;
+      try { parsed = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; } catch { return; }
+      if (parsed?.type !== 'WA_EMBEDDED_SIGNUP') return;
+      const ev = parsed.event ?? '';
+      const data = parsed.data ?? {};
+      if (ev === 'CANCEL') {
+        // Closed before the end. Nothing was connected.
+        signupData.current = {};
+        toast.message('WhatsApp signup was closed before it finished. Nothing was connected.');
+        return;
+      }
+      if (ev === 'ERROR') {
+        signupData.current = {};
+        toast.error(data.error_message ? `Meta: ${String(data.error_message).slice(0, 200)}` : 'Meta reported an error in the signup. Try again.');
+        return;
+      }
+      // A WhatsApp Business app number ("coexistence"): Meta sends the
+      // WABA only; the server finds the app number and skips registration.
+      if (ev === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING' && data.waba_id) {
+        signupData.current.wabaId = data.waba_id;
+        signupData.current.coexistence = true;
+        void tryFinish();
+        return;
+      }
+      // Meta documents completion as `event: "FINISH"` with variants —
+      // match on both ids being present instead of one exact string.
+      if (data.waba_id && data.phone_number_id) {
+        signupData.current.wabaId = data.waba_id;
+        signupData.current.phoneNumberId = data.phone_number_id;
         void tryFinish();
       }
     }
@@ -113,22 +142,27 @@ export function EmbeddedSignupButton({ onConnected, className, label = 'Connect 
   }, []);
 
   async function tryFinish() {
-    const { code, wabaId, phoneNumberId } = signupData.current;
-    if (!code || !wabaId || !phoneNumberId || finishing.current) return;
+    const { code, wabaId, phoneNumberId, coexistence } = signupData.current;
+    if (!code || !wabaId || (!phoneNumberId && !coexistence) || finishing.current) return;
     finishing.current = true;
     setConnecting(true);
     try {
-      const res = await fetch('/api/meta/embedded-signup', {
+      const res = await apiFetch('/api/meta/embedded-signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, wabaId, phoneNumberId }),
+        body: JSON.stringify(coexistence ? { code, wabaId, coexistence: true } : { code, wabaId, phoneNumberId }),
       });
-      const data = await res.json();
-      if (!res.ok) { toast.error(data.error || 'Failed to finish connecting'); return; }
-
+      const data = (await res.json()) as { phoneDisplay?: string; coexistence?: boolean };
       // WhatsApp only: Instagram, Messenger, ads and catalogs have their own Connect buttons.
-      toast.success(`WhatsApp connected${data.phoneDisplay ? ` (${data.phoneDisplay})` : ''}.`);
+      toast.success(
+        data.coexistence
+          ? `WhatsApp Business app number connected${data.phoneDisplay ? ` (${data.phoneDisplay})` : ''}. Keep using the app on your phone too.`
+          : `WhatsApp connected${data.phoneDisplay ? ` (${data.phoneDisplay})` : ''}.`,
+      );
       onConnected?.();
+    } catch (err) {
+      console.error('[embedded-signup] finish failed:', err);
+      toast.error(errorText(err, 'Could not finish connecting. Try again.'));
     } finally {
       setConnecting(false);
       finishing.current = false;
