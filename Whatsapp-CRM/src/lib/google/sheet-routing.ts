@@ -63,13 +63,26 @@ export async function enqueueBackfill(tableId: string, accountId: string): Promi
 
 /** Failed jobs back in the queue, now. */
 export async function retryFailed(tableId: string, accountId: string): Promise<number> {
-  // A failed job whose record already has a waiting one is simply dropped.
-  await prisma.$executeRaw`
-    DELETE FROM sheet_jobs f WHERE f.table_id = ${tableId}::uuid AND f.account_id = ${accountId}::uuid AND f.status = 'failed'
-      AND f.kind = 'record' AND EXISTS (SELECT 1 FROM sheet_jobs p WHERE p.record_id = f.record_id AND p.kind = 'record' AND p.status = 'pending')`
-  const n = await prisma.sheetJob.updateMany({
-    where: { table_id: tableId, account_id: accountId, status: 'failed' },
-    data: { status: 'pending', attempts: 0, run_after: new Date() },
+  // Only one job per row may wait (sheet_jobs_record_pending_uq). A row that
+  // failed more than once has several failed jobs, and re-queuing them all
+  // at once broke that rule, so Retry failed with "Unique constraint failed
+  // on record_id" and nothing was retried. One transaction, three steps:
+  const n = await prisma.$transaction(async (tx) => {
+    // 1. A failed job whose row already has a waiting one is dropped.
+    await tx.$executeRaw`
+      DELETE FROM sheet_jobs f WHERE f.table_id = ${tableId}::uuid AND f.account_id = ${accountId}::uuid AND f.status = 'failed'
+        AND f.kind = 'record' AND EXISTS (SELECT 1 FROM sheet_jobs p WHERE p.record_id = f.record_id AND p.kind = 'record' AND p.status = 'pending')`
+    // 2. Of several failed jobs for one row, only the newest is kept.
+    await tx.$executeRaw`
+      DELETE FROM sheet_jobs f USING sheet_jobs g
+      WHERE f.table_id = ${tableId}::uuid AND f.account_id = ${accountId}::uuid AND f.status = 'failed' AND f.kind = 'record'
+        AND g.account_id = f.account_id AND g.status = 'failed' AND g.kind = 'record' AND g.record_id = f.record_id
+        AND (g.created_at, g.id) > (f.created_at, f.id)`
+    // 3. The rest go back in the queue.
+    return tx.sheetJob.updateMany({
+      where: { table_id: tableId, account_id: accountId, status: 'failed' },
+      data: { status: 'pending', attempts: 0, run_after: new Date() },
+    })
   })
   routeTableSoon(tableId, accountId, 200)
   return n.count
@@ -186,9 +199,10 @@ async function runAccount(accountId: string, jobs: Job[]): Promise<void> {
   const budget = new Budget()
   let token: string
   try {
-    const { canWriteSheets } = await import('./sheet-two-way')
-    if (!(await canWriteSheets(accountId))) {
-      await later(jobs, 'Google Sheets is switched off in Settings → Google.')
+    const { googleServiceProblem } = await import('./oauth')
+    const problem = await googleServiceProblem(accountId, ['sheets_sync', 'sheets'])
+    if (problem) {
+      await later(jobs, problem)
       return
     }
     token = await googleAccessToken(accountId)

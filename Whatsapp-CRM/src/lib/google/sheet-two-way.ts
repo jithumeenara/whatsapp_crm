@@ -25,7 +25,7 @@ import { syncDropdownFields } from './sheet-dropdowns'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
-import { googleAccessToken, isGoogleServiceEnabled } from './oauth'
+import { googleAccessToken, googleServiceProblem, isGoogleServiceEnabled } from './oauth'
 import { SHEET_MAX_ROWS, SheetsApiError, appendRows, deleteRows, getSpreadsheet, readTab, writeCells } from './sheets'
 import { ensureGoogleTables } from './store'
 import { ID_HEADER, planSync, type Snapshot } from './sheet-two-way-plan'
@@ -118,7 +118,10 @@ async function syncOnce(linkId: string, accountId: string, allowDeletes: boolean
     return { ok: false, error: message }
   }
 
-  if (!(await canWriteSheets(accountId))) return fail('Google Sheets is switched off in Settings → Google.')
+  if (!(await canWriteSheets(accountId))) {
+    // Say why: an expired sign-in is far more common than a switch turned off.
+    return fail((await googleServiceProblem(accountId, ['sheets_sync', 'sheets'])) ?? 'Google Sheets is switched off in Settings → Google.')
+  }
   const columnMap = columnMapOf(link.column_map)
   if (!columnMap) return fail('This link has no column mapping. Choose the sheet again.')
 

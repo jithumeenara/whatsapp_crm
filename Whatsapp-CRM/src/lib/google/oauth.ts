@@ -104,6 +104,30 @@ export async function isGoogleServiceEnabled(accountId: string, serviceId: strin
   return Boolean(svc && svc.scopes.every((s) => conn.granted_scopes.includes(s)))
 }
 
+/**
+ * Why none of these services can be used right now, in words an admin can
+ * act on — or null when at least one can. "Switched off" was shown for every
+ * case, so an expired Google sign-in (the usual one: an OAuth app still in
+ * "Testing" drops its sign-in after about a week) read as a setting nobody
+ * had changed.
+ */
+export async function googleServiceProblem(accountId: string, serviceIds: string[]): Promise<string | null> {
+  for (const id of serviceIds) {
+    if (await isGoogleServiceEnabled(accountId, id).catch(() => false)) return null
+  }
+  const conn = await loadGoogleConnection(accountId).catch(() => null)
+  if (!conn || !conn.refresh_token) return 'Google is not connected. Connect it in Settings → Google.'
+  if (conn.status !== 'connected') {
+    return 'The Google sign-in has expired or was refused. Connect Google again in Settings → Google. If this keeps happening after about a week, publish the OAuth app to "Production" in Google Cloud.'
+  }
+  const { serviceById } = await import('./services')
+  const on = serviceIds.filter((id) => conn.enabled_services.includes(id))
+  if (on.length === 0) return 'Google Sheets is switched off in Settings → Google.'
+  const missing = on.some((id) => (serviceById(id)?.scopes ?? []).some((s) => !conn.granted_scopes.includes(s)))
+  if (missing) return 'Google Sheets is switched on, but Google did not grant its permission. Connect Google again in Settings → Google and allow Sheets.'
+  return 'Google Sheets cannot be used right now. Check Settings → Google.'
+}
+
 /** One line in Settings → Google → Activity. Never throws. */
 export async function logGoogleActivity(accountId: string, userId: string | null, action: string, detail?: string): Promise<void> {
   await prisma.googleActivity
