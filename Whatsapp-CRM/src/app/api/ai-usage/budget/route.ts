@@ -47,7 +47,8 @@ function view(s: BudgetState, currency: string, live: { rate: number; fetchedAt:
     rate_auto: s.limitUsd === null ? true : s.rateAuto === true,
     rate_is_suggested: source === 'suggested',
     rates_as_of: SUGGESTED_RATES_AS_OF,
-    limit_amount: s.limitUsd === null ? null : toLocal(s.limitUsd),
+    // As entered when it was set in today's currency; converted otherwise.
+    limit_amount: s.limitUsd === null ? null : s.currency === currency && s.limitAmount ? s.limitAmount : toLocal(s.limitUsd),
     spent_amount: toLocal(s.spentUsd),
     monthly_limit_usd: s.limitUsd,
     spent_usd: round2(s.spentUsd),

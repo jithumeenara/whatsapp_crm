@@ -46,6 +46,9 @@ export interface BudgetState {
   rateAuto?: boolean
   /** When that live rate was fetched; null when the saved rate is in use. */
   rateFetchedAt?: Date | null
+  /** The limit exactly as the admin entered it, in `currency` (migration 199);
+   *  shown as entered rather than converted back from USD (2000, not 2000.04). */
+  limitAmount?: number | null
 }
 
 /**
@@ -127,6 +130,7 @@ export async function aiBudgetState(accountId: string, now: Date = new Date()): 
         usdRate: r.rate,
         rateAuto: row.rate_auto === true,
         rateFetchedAt: r.fetchedAt,
+        limitAmount: amount,
       }
       void tellAdminsIfCrossed(accountId, state, row.warned_month, row.stopped_month)
     }

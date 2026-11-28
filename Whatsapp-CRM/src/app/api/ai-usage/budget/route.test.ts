@@ -90,6 +90,11 @@ describe('the AI budget route', () => {
     expect(body).toMatchObject({ currency: 'INR', usd_rate: 88, rate_is_suggested: false, limit_amount: 2200, spent_amount: 304.13, over: false })
   })
 
+  it('a limit entered as 1000 shows 1000, not 1000.05 converted back from USD', async () => {
+    h.state = { ...h.state, limitUsd: 11.3, usdRate: 88.5, limitAmount: 1000 }
+    expect((await (await GET()).json()).limit_amount).toBe(1000)
+  })
+
   it("following the market: today's live rate is used instead of the typed one", async () => {
     h.live = { rate: 80, fetchedAt: new Date('2026-11-23T06:00:00Z') }
     const res = await put({ amount: 2000, usd_rate: 88, rate_auto: true })
