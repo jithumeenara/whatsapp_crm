@@ -31,6 +31,7 @@ import {
   isAccountAlertField,
 } from '@/lib/whatsapp/account-webhook'
 import { emitToAccount } from '@/lib/socket'
+import { handleCoexistenceChange, isCoexistenceField } from '@/lib/whatsapp/coexistence'
 import { shouldReleaseOnReturn } from '@/lib/agents/presence'
 import { transcribeInboundAudio } from '@/lib/whatsapp/audio-transcription'
 import { readInboundImage, type InboundImageReading } from '@/lib/whatsapp/image-understanding'
@@ -313,6 +314,15 @@ async function processWebhook(
         await handleTemplateWebhookChange(
           { field: change.field, value: change.value as unknown },
         )
+        continue
+      }
+
+      // Coexistence (WhatsApp Business app + CRM on one number): messages
+      // sent from the phone, past chat history and the phone's contacts.
+      // Stored first, processed after; never starts the AI, a flow or a
+      // 24-hour window (src/lib/whatsapp/coexistence.ts).
+      if (isCoexistenceField(change.field)) {
+        await handleCoexistenceChange(change.field, change.value as unknown)
         continue
       }
 

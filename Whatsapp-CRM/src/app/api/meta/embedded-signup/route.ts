@@ -13,6 +13,7 @@ import {
 import { registerWithPin, savePin } from "@/lib/whatsapp/two-step-pin"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { parseSignupBody } from "@/lib/meta/embedded-signup-body"
+import { requestCoexistenceSync } from "@/lib/whatsapp/coexistence"
 import { createOrGetDataset } from "@/lib/meta-ads/api"
 import { auditCtx } from "@/lib/audit"
 import { auditConfigChange } from "@/lib/audit/config-change"
@@ -139,7 +140,9 @@ export async function POST(req: NextRequest) {
       ? true
       : (await prisma.whatsAppConfig.count({ where: { account_id: ctx.accountId } })) > 0
 
+    let savedConfigId: string
     if (existingForThisNumber) {
+      savedConfigId = existingForThisNumber.id
       await prisma.whatsAppConfig.update({
         where: { id: existingForThisNumber.id },
         data: {
@@ -154,7 +157,7 @@ export async function POST(req: NextRequest) {
         },
       })
     } else {
-      await prisma.whatsAppConfig.create({
+      const created = await prisma.whatsAppConfig.create({
         data: {
           account_id: ctx.accountId,
           user_id: ctx.userId,
@@ -168,10 +171,18 @@ export async function POST(req: NextRequest) {
           connect_method: coexistence ? "coexistence" : "quick",
           is_default: !accountHasAnyNumber,
         },
+        select: { id: true },
       })
+      savedConfigId = created.id
     }
 
     if (pin) await savePin(ctx.accountId, phoneNumberId, pin)
+
+    // Coexistence: ask Meta for the phone's contacts and its chat history
+    // now — allowed once, within 24 hours of onboarding.
+    const sync = coexistence
+      ? await requestCoexistenceSync({ configId: savedConfigId, accountId: ctx.accountId, phoneNumberId, accessToken })
+      : null
 
     // Facebook Page (→ Messenger) + Instagram, Meta Ads (ad account +
     // Conversions API dataset), and Product Catalog — three independent,
@@ -207,6 +218,7 @@ export async function POST(req: NextRequest) {
       verifiedName: phoneInfo?.verified_name ?? "",
       datasetReady: dataset.datasetReady,
       coexistence,
+      historyRequested: sync?.requested ?? false,
     })
   } catch (err) {
     return toErrorResponse(err)

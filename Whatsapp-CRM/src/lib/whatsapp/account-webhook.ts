@@ -36,8 +36,15 @@ const ACCOUNT_ALERT_FIELDS = new Set([
   'account_update',
 ])
 
-/** account_update events that mean the CRM no longer has the number. */
-const PARTNER_GONE = new Set(['PARTNER_REMOVED', 'ACCOUNT_OFFBOARDED'])
+/** Why Meta says the business removed this app (disconnection_info.reason), in plain words. */
+const REMOVED_REASON: Record<string, string> = {
+  ACCOUNT_DISCONNECTED: 'The business disconnected this number from the CRM (in WhatsApp or Meta).',
+  PRIMARY_INACTIVITY: 'WhatsApp Business was not opened on the phone for about 2 weeks, so Meta disconnected the number.',
+  COMPANION_INACTIVITY: 'A linked device was inactive for about a month, so Meta disconnected the number.',
+  BUSINESS_DOWNGRADE: 'The number was moved off the WhatsApp Business app, so Meta disconnected it.',
+  CHANGE_NUMBER: 'The business changed its WhatsApp number, so the old number was disconnected.',
+  USER_RE_REGISTERED: 'WhatsApp was registered again on a phone, so Meta disconnected the number.',
+}
 
 export function isAccountAlertField(field: string): boolean {
   return ACCOUNT_ALERT_FIELDS.has(field)
@@ -162,7 +169,11 @@ export async function handleAccountAlertChange(change: AccountAlertChange, wabaI
 async function handlePartnerChange(raw: unknown, entryWabaId: string): Promise<void> {
   const v = asRecord(raw)
   const event = str(v.event)
-  if (!event || !PARTNER_GONE.has(event)) return
+  // ACCOUNT_OFFBOARDED (a Business-app number moved phone or re-registered)
+  // reconnects by itself within minutes (ACCOUNT_RECONNECTED): the owner
+  // is told sends pause for now; nothing is marked disconnected.
+  if (event === 'ACCOUNT_OFFBOARDED') return noteOffboarded(entryWabaId)
+  if (event !== 'PARTNER_REMOVED') return
   const wabaId = str(asRecord(v.waba_info).waba_id) ?? entryWabaId
   if (!/^\d{5,30}$/.test(wabaId)) return
   try {
@@ -171,9 +182,8 @@ async function handlePartnerChange(raw: unknown, entryWabaId: string): Promise<v
       select: { id: true, user_id: true },
     })
     if (rows.length === 0) return
-    const reason = event === 'PARTNER_REMOVED'
-      ? 'The business removed this app from its WhatsApp account in Meta. Connect the number again to keep using it.'
-      : 'Meta offboarded this WhatsApp account. Connect the number again to keep using it.'
+    const why = str(asRecord(v.disconnection_info).reason)
+    const reason = `${(why && REMOVED_REASON[why]) || 'The business removed this app from its WhatsApp account in Meta.'} Connect the number again to keep using it.`
     // Conditional: a redelivered event changes nothing the second time.
     await prisma.whatsAppConfig.updateMany({
       where: { waba_id: wabaId, status: { not: 'disconnected' } },
@@ -190,5 +200,23 @@ async function handlePartnerChange(raw: unknown, entryWabaId: string): Promise<v
     }
   } catch (err) {
     console.error('[account-webhook] partner event not applied:', err instanceof Error ? err.message : err)
+  }
+}
+
+async function noteOffboarded(wabaId: string): Promise<void> {
+  if (!/^\d{5,30}$/.test(wabaId)) return
+  try {
+    const rows = await prisma.whatsAppConfig.findMany({ where: { waba_id: wabaId, status: 'connected' }, select: { user_id: true } })
+    const { sendPushToUser } = await import('@/lib/push')
+    for (const userId of new Set(rows.map((r) => r.user_id))) {
+      void sendPushToUser(userId, {
+        title: 'WhatsApp number reconnecting',
+        body: 'WhatsApp is reconnecting your Business app number (a new phone or a fresh install). Sending pauses for a few minutes; nothing to do unless it stays disconnected.',
+        tag: 'wa-offboarded',
+        data: { type: 'whatsapp_account_alert', field: 'account_update' },
+      })
+    }
+  } catch (err) {
+    console.error('[account-webhook] offboarded note failed:', err instanceof Error ? err.message : err)
   }
 }

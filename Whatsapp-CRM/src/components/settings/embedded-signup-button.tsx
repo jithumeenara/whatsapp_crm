@@ -29,7 +29,32 @@ interface Props {
   className?: string;
   /** Button text; "Connect WhatsApp" on the WhatsApp card. */
   label?: string;
+  /**
+   * 'business_app': connect a number already used in the WhatsApp Business
+   * app, which keeps working on the phone (coexistence). Default: a new
+   * Cloud API number.
+   */
+  mode?: 'cloud' | 'business_app';
 }
+
+/** Meta's Embedded Signup error codes, in plain words (Meta: embedded-signup/errors). */
+const SIGNUP_ERRORS: Record<number, string> = {
+  4563015: 'Update the WhatsApp Business app on the phone (2.24.17 or newer), then try again.',
+  3441042: 'Meta does not offer this for phone numbers from this region yet.',
+  3441045: 'This WhatsApp Business app number needs more activity first. Keep using it for a few more days, then try again.',
+  3441077: 'This WhatsApp Business app number needs more activity first. Keep using it for a few more days, then try again.',
+  3441060: 'Turn off Meta Business AI in the WhatsApp Business app, then try again.',
+  3441104: 'This number is used for business broadcasts. Stop them in the app, then try again.',
+  3441047: 'This number uses marketing messages in the app. Turn that off, then try again.',
+  3441073: 'Disconnect this number from the Meta Business Suite inbox, then try again.',
+  3441075: 'Turn off two-step verification in the WhatsApp Business app, then try again.',
+  3441076: "The number's display name is not approved yet. Try again once Meta approves it.",
+  2655093: 'Another service is connected to this number. Disconnect it in the app, wait 15 minutes, then try again.',
+  3441049: 'Another service is connected to this number. Disconnect it in the app, wait 15 minutes, then try again.',
+  3441079: 'Another service is connected to this number. Disconnect it in the app, wait 15 minutes, then try again.',
+  3441095: 'Another service is connected to this number. Disconnect it in the app, wait 15 minutes, then try again.',
+  3441069: 'This number is on personal WhatsApp. Move it to the WhatsApp Business app first.',
+};
 
 /**
  * The "Connect with Facebook" button — WhatsApp Embedded Signup. Renders
@@ -44,7 +69,7 @@ interface Props {
  * They can arrive in either order, so both are stashed in a ref and
  * tryFinish() only actually calls the backend once all three are present.
  */
-export function EmbeddedSignupButton({ onConnected, className, label = 'Connect with Facebook' }: Props) {
+export function EmbeddedSignupButton({ onConnected, className, label = 'Connect with Facebook', mode = 'cloud' }: Props) {
   const [ready, setReady] = useState(false);
   const [platformConfigured, setPlatformConfigured] = useState<boolean | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -103,7 +128,7 @@ export function EmbeddedSignupButton({ onConnected, className, label = 'Connect 
       let parsed: {
         type?: string;
         event?: string;
-        data?: { waba_id?: string; phone_number_id?: string; current_step?: string; error_message?: string };
+        data?: { waba_id?: string; messaging_account_ids?: unknown; phone_number_id?: string; current_step?: string; error_message?: string; error_code?: number | string };
       } | null = null;
       try { parsed = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; } catch { return; }
       if (parsed?.type !== 'WA_EMBEDDED_SIGNUP') return;
@@ -117,13 +142,18 @@ export function EmbeddedSignupButton({ onConnected, className, label = 'Connect 
       }
       if (ev === 'ERROR') {
         signupData.current = {};
-        toast.error(data.error_message ? `Meta: ${String(data.error_message).slice(0, 200)}` : 'Meta reported an error in the signup. Try again.');
+        const known = SIGNUP_ERRORS[Number(data.error_code)];
+        toast.error(known ?? (data.error_message ? `Meta: ${String(data.error_message).slice(0, 200)}` : 'Meta reported an error in the signup. Try again.'), { duration: 10000 });
         return;
       }
       // A WhatsApp Business app number ("coexistence"): Meta sends the
       // WABA only; the server finds the app number and skips registration.
-      if (ev === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING' && data.waba_id) {
-        signupData.current.wabaId = data.waba_id;
+      // v4 sends { waba_id }; v5 sends { messaging_account_ids: [...], phone_number_id }.
+      const v5Account = Array.isArray(data.messaging_account_ids) && typeof data.messaging_account_ids[0] === 'string'
+        ? (data.messaging_account_ids[0] as string) : undefined;
+      const coexWaba = data.waba_id ?? v5Account;
+      if (ev === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING' && coexWaba) {
+        signupData.current.wabaId = coexWaba;
         signupData.current.coexistence = true;
         void tryFinish();
         return;
@@ -156,7 +186,7 @@ export function EmbeddedSignupButton({ onConnected, className, label = 'Connect 
       // WhatsApp only: Instagram, Messenger, ads and catalogs have their own Connect buttons.
       toast.success(
         data.coexistence
-          ? `WhatsApp Business app number connected${data.phoneDisplay ? ` (${data.phoneDisplay})` : ''}. Keep using the app on your phone too.`
+          ? `WhatsApp Business app number connected${data.phoneDisplay ? ` (${data.phoneDisplay})` : ''}. Your chats and contacts are being imported — keep WhatsApp open on the phone.`
           : `WhatsApp connected${data.phoneDisplay ? ` (${data.phoneDisplay})` : ''}.`,
       );
       onConnected?.();
@@ -187,7 +217,16 @@ export function EmbeddedSignupButton({ onConnected, className, label = 'Connect 
         signupData.current.code = code;
         void tryFinish();
       },
-      { config_id: configIdRef.current, response_type: 'code', override_default_response_type: true, extras: { setup: {} } },
+      {
+        config_id: configIdRef.current,
+        response_type: 'code',
+        override_default_response_type: true,
+        // v4 (the version Meta serves when none is named). A Business app
+        // number opts in to coexistence; a new number does not.
+        extras: mode === 'business_app'
+          ? { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' }
+          : { setup: {} },
+      },
     );
   }
 

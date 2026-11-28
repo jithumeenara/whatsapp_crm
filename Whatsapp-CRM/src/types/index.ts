@@ -224,6 +224,8 @@ export interface Conversation {
   contact_id: string;
   status: ConversationStatus;
   channel?: string; // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website' | 'telegram'
+  /** Which connected WhatsApp number this thread is on (several numbers per workspace). */
+  whatsapp_config_id?: string | null;
   assigned_agent_id?: string;
   last_message_text?: string;
   last_message_at?: string;

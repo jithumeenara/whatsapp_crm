@@ -192,6 +192,22 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
   const [scheduledOverviewOpen, setScheduledOverviewOpen] = useState(false)
   const [filter, setFilter] = useState<Filter>("all")
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all")
+  // Several WhatsApp numbers: which one a thread is on, and a filter.
+  const [waNumbers, setWaNumbers] = useState<Array<{ id: string; name: string }>>([])
+  const [numberFilter, setNumberFilter] = useState<string>("all")
+  useEffect(() => {
+    let cancelled = false
+    apiFetch("/api/whatsapp/numbers?lite=1")
+      .then((r) => r.json())
+      .then((d: { numbers?: Array<{ id: string; name: string }> }) => { if (!cancelled) setWaNumbers(Array.isArray(d.numbers) ? d.numbers : []) })
+      .catch((err) => console.warn("[inbox] number names not loaded:", err))
+    return () => { cancelled = true }
+  }, [])
+  const numberName = useMemo(() => {
+    const m = new Map<string, string>()
+    if (waNumbers.length > 1) for (const n of waNumbers) m.set(n.id, n.name)
+    return m
+  }, [waNumbers])
   const [channelOpen, setChannelOpen] = useState(false)
   const channelRef = useRef<HTMLDivElement>(null)
   const [moreOpen, setMoreOpen] = useState(false)
@@ -249,6 +265,7 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
     let list = conversations
     if (filter !== "all") list = list.filter((c) => c.status === filter)
     if (channelFilter !== "all") list = list.filter((c) => (c.channel ?? "whatsapp") === channelFilter)
+    if (numberFilter !== "all") list = list.filter((c) => c.whatsapp_config_id === numberFilter)
     if (searchMode === "contact" && search.trim()) {
       const q = search.trim().toLowerCase()
       list = list.filter((c) =>
@@ -257,7 +274,7 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
       )
     }
     return list
-  }, [conversations, filter, channelFilter, search, searchMode])
+  }, [conversations, filter, channelFilter, numberFilter, search, searchMode])
 
   // Message search runs on the server: the browser only holds the last
   // message of each chat. Debounced, and only the newest response counts.
@@ -319,6 +336,21 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
             )}
           </div>
           <div className="flex items-center gap-1">
+            {/* WhatsApp number filter — only when the workspace has several numbers */}
+            {waNumbers.length > 1 && (
+              <select
+                aria-label="WhatsApp number"
+                value={numberFilter}
+                onChange={(e) => setNumberFilter(e.target.value)}
+                className={cn(
+                  "h-8 max-w-[120px] truncate rounded-xl border px-2 text-[12px] font-medium",
+                  numberFilter !== "all" ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-600",
+                )}
+              >
+                <option value="all">All numbers</option>
+                {waNumbers.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
+              </select>
+            )}
             {/* Channel filter dropdown */}
             <div ref={channelRef} className="relative">
               <button
@@ -505,6 +537,7 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
                 conv={conv}
                 isActive={conv.id === activeConversationId}
                 onSelect={selectConversation}
+                numberName={conv.whatsapp_config_id ? numberName.get(conv.whatsapp_config_id) : undefined}
               />
             ))}
           </div>
@@ -562,10 +595,13 @@ const ConversationRow = memo(function ConversationRow({
   conv,
   isActive,
   onSelect,
+  numberName,
 }: {
   conv: Conversation
   isActive: boolean
   onSelect: (conv: Conversation) => void
+  /** The WhatsApp number's name, only when the workspace has several. */
+  numberName?: string
 }) {
   const name = conv.contact?.name || conv.contact?.phone || "Unknown"
   const ini = initials(conv.contact?.name, conv.contact?.phone)
@@ -604,6 +640,11 @@ const ConversationRow = memo(function ConversationRow({
             {name}
           </p>
           <span className="flex shrink-0 items-center gap-1.5">
+            {numberName && (
+              <span className="max-w-[88px] truncate rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700" title={`On ${numberName}`}>
+                {numberName}
+              </span>
+            )}
             <ChannelPill channel={conv.channel} />
             <span className={cn("text-[11px]", hasUnread ? "font-semibold text-indigo-600" : "text-slate-400")}>
               {conv.last_message_at ? relTime(conv.last_message_at) : ""}

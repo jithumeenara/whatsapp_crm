@@ -75,21 +75,28 @@ export interface VerifyPhoneNumberArgs {
 
 /**
  * Verify a Meta phone number ID by fetching its public metadata
- * (display_phone_number, verified_name, quality_rating,
- * messaging_limit_tier).
+ * (display_phone_number, verified_name, quality_rating, and the
+ * portfolio messaging limit as messaging_limit_tier).
  */
 export async function verifyPhoneNumber(
   args: VerifyPhoneNumberArgs
 ): Promise<MetaPhoneInfo> {
   const { phoneNumberId, accessToken } = args
-  const url = `${META_API_BASE}/${phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating,messaging_limit_tier`
+  // messaging_limit_tier is deprecated (Oct 2025: one limit per business
+  // portfolio); ask for whatsapp_business_manager_messaging_limit and keep
+  // handing it on under the old name, which the settings screen reads.
+  const url = `${META_API_BASE}/${phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating,whatsapp_business_manager_messaging_limit`
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
-  return response.json()
+  const data = (await response.json()) as MetaPhoneInfo & { whatsapp_business_manager_messaging_limit?: unknown }
+  const lim = data.whatsapp_business_manager_messaging_limit
+  const tier = typeof lim === 'string' ? lim : (lim && typeof lim === 'object' ? (lim as { current_limit?: unknown }).current_limit : undefined)
+  if (!data.messaging_limit_tier && typeof tier === 'string') data.messaging_limit_tier = tier
+  return data
 }
 
 // ============================================================
