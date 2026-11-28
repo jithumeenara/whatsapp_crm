@@ -50,6 +50,10 @@ export function normaliseForFingerprint(text: string): string {
   return redactSecrets(text)
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '<id>')
     .replace(/\b[0-9a-f]{16,}\b/gi, '<hex>')
+    // WhatsApp message ids (wamid.HBgM…==) and other long base64 ids: one
+    // error per kind, not one row per message.
+    .replace(/\bwamid\.[A-Za-z0-9+/=_-]+/g, '<wamid>')
+    .replace(/(?<![A-Za-z0-9])(?=[A-Za-z0-9+/_-]*\d)(?=[A-Za-z0-9+/_-]*[A-Za-z])[A-Za-z0-9+/_-]{24,}={0,2}/g, '<token>')
     .replace(/\d+/g, '<n>')
     .replace(/\s+/g, ' ')
     .trim()

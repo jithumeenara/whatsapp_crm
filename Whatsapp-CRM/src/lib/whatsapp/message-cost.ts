@@ -108,7 +108,10 @@ export async function recordMessageCost(input: RecordCostInput): Promise<void> {
         conversation: { select: { whatsapp_config_id: true } },
       },
     })
-    if (!message) console.error(`[cost] ${wamid}: our copy of the message is not saved yet; cost kept without attribution`)
+    // Not an error: the cost is still recorded, only not linked to a
+    // message (the status arrived first, or the message was sent from the
+    // WhatsApp Business app). A warning, so it stays out of Settings → Errors.
+    if (!message) console.warn(`[cost] ${wamid}: our copy of the message is not saved yet; cost kept without attribution`)
 
     const account = await prisma.account.findUnique({
       where: { id: accountId },

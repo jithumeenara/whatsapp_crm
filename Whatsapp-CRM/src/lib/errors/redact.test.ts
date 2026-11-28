@@ -26,4 +26,14 @@ describe('normaliseForFingerprint', () => {
     const b = normaliseForFingerprint('Conversation 0a0b0c0d-1111-4222-8333-944455556666 not found after 7 tries')
     expect(a).toBe(b)
   })
+
+  it('the same error about different WhatsApp messages is one error', () => {
+    const a = normaliseForFingerprint('[cost] wamid.HBgMOTE5NDQ3MzEwMjQ0FQIAERgSNzdEMzIxRjBEOTY4Njc2OUQ2AA==: not saved yet')
+    const b = normaliseForFingerprint('[cost] wamid.HBgMOTE5NDk3ODU4NzM1FQIAERgSMEM3OUFCQzc5OENGNzQxRUNCAA==: not saved yet')
+    expect(a).toBe(b)
+  })
+
+  it('ordinary words are not mistaken for ids', () => {
+    expect(normaliseForFingerprint('Google refused the saved sign-in. Connect Google again.')).toBe('Google refused the saved sign-in. Connect Google again.')
+  })
 })
