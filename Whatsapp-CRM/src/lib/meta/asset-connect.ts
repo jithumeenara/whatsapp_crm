@@ -29,17 +29,22 @@ export const MAX_ASSETS = 50
 type Json = Record<string, unknown>
 type MetaError = { message?: string; code?: number; error_subcode?: number }
 
-async function graph(path: string, token: string, app: MetaApp, params: Record<string, string> = {}): Promise<{ ok: boolean; data: Json; error?: MetaError }> {
+async function graph(path: string, token: string, app: MetaApp, params: Record<string, string> = {}, errors?: MetaError[]): Promise<{ ok: boolean; data: Json; error?: MetaError }> {
   const url = new URL(`${FB}${path}`)
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
-  url.searchParams.set('access_token', token)
   url.searchParams.set('appsecret_proof', appSecretProof(token, app.appSecret))
-  const res = await fetch(url.toString(), { cache: 'no-store' }).catch(() => null)
+  // The token goes in a header, never in a URL a log or proxy could keep.
+  const res = await fetch(url.toString(), { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } }).catch(() => null)
   if (!res) return { ok: false, data: {}, error: { message: 'network' } }
   const data = (await res.json().catch(() => ({}))) as Json & { error?: MetaError }
-  if (!res.ok || data.error) return { ok: false, data, error: data.error ?? { message: `HTTP ${res.status}` } }
+  if (!res.ok || data.error) {
+    const error = data.error ?? { message: `HTTP ${res.status}` }
+    errors?.push(error)
+    return { ok: false, data, error }
+  }
   return { ok: true, data }
 }
+
 
 // ── What the login granted ───────────────────────────────────────────────
 
@@ -49,8 +54,7 @@ export interface Grants { valid: boolean; scopes: string[]; targets: Record<stri
 export async function tokenGrants(token: string, app: MetaApp): Promise<Grants> {
   const url = new URL(`${FB}/debug_token`)
   url.searchParams.set('input_token', token)
-  url.searchParams.set('access_token', `${app.appId}|${app.appSecret}`)
-  const res = await fetch(url.toString(), { cache: 'no-store' }).catch(() => null)
+  const res = await fetch(url.toString(), { cache: 'no-store', headers: { Authorization: `Bearer ${app.appId}|${app.appSecret}` } }).catch(() => null)
   const body = (await res?.json().catch(() => ({})) ?? {}) as { data?: { is_valid?: boolean; scopes?: unknown; granular_scopes?: unknown } }
   const d = body.data ?? {}
   const scopes = Array.isArray(d.scopes) ? d.scopes.filter((s): s is string => typeof s === 'string') : []
@@ -99,12 +103,12 @@ const AD_FIELDS = 'account_id,name,currency,timezone_name,account_status'
  * Meta's documented way; /me/businesses often answers nothing for them),
  * then /me/businesses.
  */
-async function reachableBusinesses(token: string, app: MetaApp): Promise<string[]> {
+async function reachableBusinesses(token: string, app: MetaApp, errors?: MetaError[]): Promise<string[]> {
   const out: string[] = []
-  const me = await graph('/me', token, app, { fields: 'client_business_id' })
+  const me = await graph('/me', token, app, { fields: 'client_business_id' }, errors)
   const own = me.ok ? str(me.data.client_business_id) : null
   if (own && ID.test(own)) out.push(own)
-  const b = await graph('/me/businesses', token, app, { fields: 'id', limit: '10' })
+  const b = await graph('/me/businesses', token, app, { fields: 'id', limit: '10' }, errors)
   for (const biz of (b.ok && Array.isArray(b.data.data) ? b.data.data : []) as Json[]) {
     const id = str(biz.id)
     if (id && ID.test(id) && !out.includes(id)) out.push(id)
@@ -114,26 +118,26 @@ async function reachableBusinesses(token: string, app: MetaApp): Promise<string[
 const CATALOG_FIELDS = 'id,name,product_count'
 
 /** The ad accounts this login shared, each checked against the token. */
-export async function discoverAdAccounts(token: string, app: MetaApp, grants: Grants): Promise<AdAccountAsset[]> {
+export async function discoverAdAccounts(token: string, app: MetaApp, grants: Grants, errors?: MetaError[]): Promise<AdAccountAsset[]> {
   const seen = new Map<string, AdAccountAsset>()
   const granted = [...new Set(ADS_SCOPES.flatMap((s) => grants.targets[s] ?? []))].slice(0, MAX_ASSETS)
   for (const id of granted) {
-    const r = await graph(`/act_${id}`, token, app, { fields: AD_FIELDS })
+    const r = await graph(`/act_${id}`, token, app, { fields: AD_FIELDS }, errors)
     const a = r.ok ? toAdAccount(r.data) : null
     if (a) seen.set(a.id, a)
   }
   if (seen.size === 0) {
     // Fallback: the system user only holds what was shared, so this lists just those.
-    const r = await graph('/me/adaccounts', token, app, { fields: AD_FIELDS, limit: String(MAX_ASSETS) })
+    const r = await graph('/me/adaccounts', token, app, { fields: AD_FIELDS, limit: String(MAX_ASSETS) }, errors)
     for (const row of (r.ok && Array.isArray(r.data.data) ? r.data.data : []) as Json[]) {
       const a = toAdAccount(row)
       if (a) seen.set(a.id, a)
     }
   }
   if (seen.size === 0) {
-    for (const bizId of await reachableBusinesses(token, app)) {
+    for (const bizId of await reachableBusinesses(token, app, errors)) {
       for (const edge of ['owned_ad_accounts', 'client_ad_accounts']) {
-        const r = await graph(`/${bizId}/${edge}`, token, app, { fields: AD_FIELDS, limit: String(MAX_ASSETS) })
+        const r = await graph(`/${bizId}/${edge}`, token, app, { fields: AD_FIELDS, limit: String(MAX_ASSETS) }, errors)
         for (const row of (r.ok && Array.isArray(r.data.data) ? r.data.data : []) as Json[]) {
           const a = toAdAccount(row)
           if (a) seen.set(a.id, a)
@@ -145,17 +149,17 @@ export async function discoverAdAccounts(token: string, app: MetaApp, grants: Gr
 }
 
 /** The catalogs this login shared, each checked against the token. */
-export async function discoverCatalogs(token: string, app: MetaApp, grants: Grants): Promise<CatalogAsset[]> {
+export async function discoverCatalogs(token: string, app: MetaApp, grants: Grants, errors?: MetaError[]): Promise<CatalogAsset[]> {
   const seen = new Map<string, CatalogAsset>()
   for (const id of (grants.targets.catalog_management ?? []).slice(0, MAX_ASSETS)) {
-    const r = await graph(`/${id}`, token, app, { fields: CATALOG_FIELDS })
+    const r = await graph(`/${id}`, token, app, { fields: CATALOG_FIELDS }, errors)
     const c = r.ok ? toCatalog(r.data) : null
     if (c) seen.set(c.id, c)
   }
   if (seen.size === 0) {
-    for (const bizId of await reachableBusinesses(token, app)) {
+    for (const bizId of await reachableBusinesses(token, app, errors)) {
       for (const edge of ['owned_product_catalogs', 'client_product_catalogs']) {
-        const r = await graph(`/${bizId}/${edge}`, token, app, { fields: CATALOG_FIELDS, limit: String(MAX_ASSETS) })
+        const r = await graph(`/${bizId}/${edge}`, token, app, { fields: CATALOG_FIELDS, limit: String(MAX_ASSETS) }, errors)
         for (const row of (r.ok && Array.isArray(r.data.data) ? r.data.data : []) as Json[]) {
           const c = toCatalog(row)
           if (c) seen.set(c.id, c)

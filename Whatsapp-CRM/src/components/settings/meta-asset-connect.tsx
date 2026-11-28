@@ -41,6 +41,8 @@ const ERRORS: Record<string, string> = {
   no_catalog_permission: 'Meta did not grant catalog access. Press Connect Catalog again and allow it.',
   no_ad_account: 'No ad account was shared. Press Connect Ads again and tick your ad accounts.',
   no_catalog: 'No catalog was shared. Press Connect Catalog again and tick your catalogs.',
+  ads_app_denied: 'Meta did not let this app read ad accounts yet. The app needs ads_management (Marketing API access) approved in Meta, and you must be an admin of the ad account. Then press Connect Ads again.',
+  catalog_app_denied: 'Meta did not let this app read catalogs yet. The app needs catalog_management and business_management approved in Meta, and you must be an admin of the catalog. Then press Connect Catalog again.',
   failed: 'The connection did not finish. Press Connect again.',
 };
 

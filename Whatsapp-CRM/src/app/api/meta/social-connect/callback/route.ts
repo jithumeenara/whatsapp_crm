@@ -4,6 +4,7 @@ import { auditCtx } from '@/lib/audit'
 import { auditConfigChange } from '@/lib/audit/config-change'
 import { CONNECT_NONCE_COOKIE, isAssetKind, verifyConnectState } from '@/lib/meta/connect-state'
 import { createAssetSession, discoverAdAccounts, discoverCatalogs, hasAssetScope, saveAssets, tokenGrants } from '@/lib/meta/asset-connect'
+import { isAppDenied } from '@/lib/meta/graph-errors'
 import { discoverAssets, exchangeCode, saveSocialConnection, tokenInfo } from '@/lib/meta/social-connect'
 import { CONNECT_CALLBACK_PATH, assetsForChannel, connectOrigin, createConnectSession, linkedPageId, loadSocialApp, settingsUrl } from '@/lib/meta/social-connect-server'
 
@@ -65,9 +66,15 @@ export async function GET(req: NextRequest) {
         console.warn(`[meta connect] ${channel} login without the needed permission; scopes: ${grants.scopes.join(',').slice(0, 300)}`)
         return done({ meta_connect: 'error', code: channel === 'ads' ? 'no_ads_permission' : 'no_catalog_permission', kind: channel })
       }
-      const assets = channel === 'ads' ? await discoverAdAccounts(token, app, grants) : await discoverCatalogs(token, app, grants)
+      const graphErrors: Array<{ code?: number; message?: string }> = []
+      const assets = channel === 'ads' ? await discoverAdAccounts(token, app, grants, graphErrors) : await discoverCatalogs(token, app, grants, graphErrors)
       if (assets.length === 0) {
-        console.warn(`[meta connect] ${channel} login shared nothing we could read; scopes: ${grants.scopes.join(',').slice(0, 300)}; targets: ${granted || 'none'}`)
+        // Codes only in the log — Meta's message can name the business.
+        const codes = [...new Set(graphErrors.map((e) => e.code).filter((c) => typeof c === 'number'))].join(',')
+        console.warn(`[meta connect] ${channel} login shared nothing we could read; scopes: ${grants.scopes.join(',').slice(0, 300)}; targets: ${granted || 'none'}; graph error codes: ${codes || 'none'}`)
+        // Meta refused the app (permission / access level): ticking more
+        // boxes will not help — the app needs that access in Meta.
+        if (isAppDenied(graphErrors)) return done({ meta_connect: 'error', code: channel === 'ads' ? 'ads_app_denied' : 'catalog_app_denied', kind: channel })
         return done({ meta_connect: 'error', code: channel === 'ads' ? 'no_ad_account' : 'no_catalog', kind: channel })
       }
       if (assets.length === 1) {

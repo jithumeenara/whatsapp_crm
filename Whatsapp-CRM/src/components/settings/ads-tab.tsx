@@ -653,11 +653,14 @@ function LeadAdFormsManager() {
   async function rename(form: LeadFormRow, name: string) {
     if (!name.trim() || name === form.name) return;
     try {
-      await fetch('/api/meta-ads/lead-forms', {
+      // Renamed on screen only once the server saved it (it used to show
+      // the new name even when the save failed).
+      const res = await fetch('/api/meta-ads/lead-forms', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: form.id, name }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setForms((prev) => prev.map((f) => (f.id === form.id ? { ...f, name } : f)));
     } catch {
       toast.error('Failed to rename form');
